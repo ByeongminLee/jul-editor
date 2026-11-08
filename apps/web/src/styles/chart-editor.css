@@ -1,0 +1,91 @@
+/* Chart settings panel (the plugin's chart editor). The plugin ships only
+   zero-specificity layout defaults; everything visual lives here, driven by the
+   --chart-* tokens so it follows light/dark and per-theme palettes. */
+.editor-content .jul-editor-chart-editor {
+  gap: 14px;
+  margin-top: 8px;
+  padding: 14px 4px 4px;
+  border-top: 1px solid var(--chart-border);
+  color: var(--chart-tooltip-fg);
+  --chart-control-bg: color-mix(in srgb, var(--chart-surface) 92%, var(--chart-tooltip-fg));
+  --chart-control-border: color-mix(in srgb, var(--chart-border) 70%, var(--chart-tooltip-fg));
+}
+
+.editor-content .jul-editor-chart-editor__title,
+.editor-content .jul-editor-chart-editor__heading {
+  color: var(--chart-muted);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  opacity: 1;
+}
+
+.editor-content .jul-editor-chart-editor__title { color: var(--chart-tooltip-fg); }
+
+.editor-content .jul-editor-chart-editor__section + .jul-editor-chart-editor__section {
+  padding-top: 12px;
+  border-top: 1px dashed var(--chart-border);
+}
+
+.editor-content .jul-editor-chart-editor__label,
+.editor-content .jul-editor-chart-editor__rows,
+.editor-content .jul-editor-chart-editor__empty { color: var(--chart-muted); opacity: 1; }
+
+.editor-content .jul-editor-chart-editor select,
+.editor-content .jul-editor-chart-editor input:not([type="checkbox"], [type="color"]),
+.editor-content .jul-editor-chart-editor textarea {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--chart-control-border);
+  border-radius: 7px;
+  background: var(--chart-control-bg);
+  color: var(--chart-tooltip-fg);
+  font-size: 12px;
+}
+
+.editor-content .jul-editor-chart-editor textarea { resize: vertical; line-height: 1.5; }
+.editor-content .jul-editor-chart-editor input[type="checkbox"] { accent-color: var(--chart-1); }
+
+.editor-content .jul-editor-chart-editor__button,
+.editor-content .jul-editor-chart-editor__choice {
+  padding: 6px 10px;
+  border: 1px solid var(--chart-control-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--chart-tooltip-fg);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background .12s ease, border-color .12s ease;
+}
+
+.editor-content .jul-editor-chart-editor__button:hover:not(:disabled),
+.editor-content .jul-editor-chart-editor__choice:hover { background: var(--chart-hover); border-color: var(--chart-1); }
+.editor-content .jul-editor-chart-editor__button:disabled { opacity: .45; cursor: default; }
+
+.editor-content .jul-editor-chart-editor__button[data-active],
+.editor-content .jul-editor-chart-editor__choice[data-active] {
+  border-color: var(--chart-1);
+  background: color-mix(in srgb, var(--chart-1) 16%, transparent);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.editor-content .jul-editor-chart-editor__kind { padding: 9px 6px 7px; }
+.editor-content .jul-editor-chart-editor__kind svg { color: var(--chart-muted); }
+.editor-content .jul-editor-chart-editor__kind[data-active] svg { color: var(--chart-1); }
+
+.editor-content .jul-editor-chart-editor__code { background: var(--chart-control-bg); font-size: 11px; }
+
+.editor-content .jul-editor-chart-editor__chip {
+  padding: 2px 8px;
+  border: 1px solid var(--chart-border);
+  border-radius: 999px;
+  background: var(--chart-control-bg);
+}
+
+.editor-content .jul-editor-chart-editor__swatches { overflow: hidden; border-radius: 3px; }
+.editor-content .jul-editor-chart-editor__color { border-radius: 6px; box-shadow: 0 0 0 1px var(--chart-control-border); }
+.editor-content .jul-editor-chart-editor__error { padding: 8px 10px; border-radius: 7px; background: color-mix(in srgb, #d1495b 12%, transparent); color: #e5707f; }
+html[data-theme="light"] .editor-content .jul-editor-chart-editor__error { color: #b3283b; }
+
+@media (max-width: 520px) {
+  .editor-content .jul-editor-chart-editor__field { flex-basis: 100%; }
+}

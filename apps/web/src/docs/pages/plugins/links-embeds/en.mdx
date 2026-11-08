@@ -1,0 +1,54 @@
+`@jul-editor/plugins/links` adds two void blocks: `bookmark` (a link card) and `iframe` (a framed embed), plus a Notion style paste menu. The package contains no network code. Metadata fetching and iframe origins are decisions you pass in.
+
+```tsx
+import { BookmarkView, IframeView, LinkContextProvider, createLinkBlocks, linkSlashItems,
+  installUrlPaste } from "@jul-editor/plugins/links";
+
+const iframePolicy = { allowedOrigins: ["https://example.com", "https://*.example.com"] };
+const blocks = createLinkBlocks(iframePolicy); // module scope
+
+<LinkContextProvider value={{ fetchMetadata, iframePolicy }}>
+  <Editor defaultValue={doc}>
+    <Editor.Plugin blocks={blocks} renderers={{ bookmark: BookmarkView, iframe: IframeView }} slashItems={linkSlashItems} />
+    <Editor.Content /><Editor.SlashMenu />
+  </Editor>
+</LinkContextProvider>
+```
+
+`linkSlashItems` adds Bookmark, Embed, Figma, and GitHub entries. The main entry's `pluginRenderers` and `pluginSlashItems` already map `bookmark` and `iframe`, but you still register the block specs yourself.
+
+## The fetchMetadata adapter
+
+```ts
+type FetchMetadata = (url: string, opts: { signal: AbortSignal }) => Promise<LinkMetadata>;
+// LinkMetadata: { title?, description?, image?, favicon?, siteName? }
+
+const fetchMetadata: FetchMetadata = async (url, { signal }) => {
+  const res = await fetch("/api/link-preview?url=" + encodeURIComponent(url), { signal });
+  if (!res.ok) throw new Error("preview failed");
+  return res.json();
+};
+```
+
+Put CORS and SSRF protection on your server or proxy. Throw to show the error state, which still renders the card built from the URL alone. Without an adapter, `parseLink` derives title and subtitle from the URL for GitHub, Figma, YouTube, Vimeo, Loom, Notion, Google Docs, Linear, CodePen, and Google Maps, with no request. Fetched values are cached in the block props, so a saved document never refetches. Wrap your function with `cacheFetchMetadata` to dedupe requests, or use `createStaticMetadata(map)` in demos. Image and favicon URLs are sanitized to http and https.
+
+## Iframe allowlist
+
+`IframePolicy` is default deny. Built-in providers (YouTube, Vimeo, Figma, Loom, CodePen, Google Maps, Gist) are transformed to their embed URL. Any other site loads only when its origin is listed in `allowedOrigins`, either exact (`https://example.com`) or subdomains (`https://*.example.com`, apex excluded). Only https is accepted. The sandbox defaults to `DEFAULT_IFRAME_SANDBOX`. Never list your own app origin while `allow-same-origin` is in the sandbox. The iframe block stores the page URL and derives the `src` at render and export time through the same policy, so HTML export emits an iframe only when it would render.
+
+## Paste menu
+
+```ts
+const off = installUrlPaste({
+  defaultChoice: "menu", // "link" | "bookmark" | "embed" | "mention" | "menu" | "native"
+  fetchMetadata,
+  onMenu: (req) => showMenu(req.options, (choice) => req.choose(choice), req.dismiss),
+});
+```
+
+Pasting a bare URL first inserts a normal link, then applies the default choice. A conversion is a second history step, so one undo returns to the link. `choose` resolves `false` if the pasted text is gone. Without `onMenu`, `"menu"` falls back to core behavior. The interceptor is registered once at module level and applies to every editor on the page. Call the returned function to remove it.
+
+## Limits
+
+- Markdown has no card syntax. Bookmark and iframe blocks serialize as a plain link line and report a lossy conversion. HTML round-trips fully.
+- `/figma` and `/github` insert empty blocks. Set the URL through `updateProps` or your own input UI.

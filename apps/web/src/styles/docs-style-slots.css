@@ -1,0 +1,14 @@
+.docs-style-slots .slot-demo-editor { background: var(--surface); }
+.docs-style-slots .slot-demo-toolbar { display: flex; gap: 5px; padding: 10px 15px; border-bottom: 1px solid var(--accent); background: var(--accent-soft); }
+.docs-style-slots .slot-demo-button { padding: 6px 10px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text); }
+.docs-style-slots .slot-demo-button:hover, .docs-style-slots .slot-demo-button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.docs-style-slots .slot-demo-label { font-size: 11px; font-weight: 700; }
+.docs-style-slots .slot-demo-content { min-height: 170px; padding: 22px 28px; color: var(--text); font-size: 13px; outline: none; }
+.docs-style-slots .slot-demo-content [data-type="heading"] { margin-bottom: 12px; font-size: 20px; }
+.docs-style-slots .slot-demo-content [data-type="paragraph"] { min-height: 24px; }
+.docs-style-slots .slot-demo-content [data-placeholder]:empty::before { content: attr(data-placeholder); color: var(--muted); }
+.docs-style-slots .slot-demo-menu { width: min(100% - 28px, 360px); margin: 0 14px 16px; padding: 5px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); box-shadow: 0 16px 30px #0003; }
+.docs-style-slots .slot-demo-item { padding: 7px 9px; border-radius: 5px; }
+.docs-style-slots .slot-demo-item:hover, .docs-style-slots .slot-demo-item[aria-selected="true"] { background: var(--accent-soft); }
+.docs-style-slots .slot-demo-text { color: var(--text); font-size: 12px; }
+.docs-style-slots .slot-demo-description, .docs-style-slots .slot-demo-empty { color: var(--muted); font-size: 10px; }

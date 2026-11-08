@@ -1,0 +1,74 @@
+The document stores an asset's **URL and metadata**. Your application owns validation, storage, authentication, and S3 integration. Pasting, dropping, and choosing a file all use the same insertion path. Images preview immediately; other files need the optional attachment block.
+
+## Choose when to upload
+
+- `immediate` calls `onUpload` as soon as a file is inserted. Use it when each asset should be uploaded right away.
+- `deferred` holds the `File` and a local image preview in memory. Before saving a durable document, call `uploadPending()` and save the latest `editor.getDoc()` only when no upload failed.
+- In `deferred` mode, files remain local pending assets when no upload handler is configured. In `immediate` mode without a handler, file insertion is ignored. The document never persists `File`, `blob:`, or `data:` URLs. A reload cannot restore files that have not been uploaded.
+
+The mode is an initial editor setting. Use separate editor instances if two products need different policies.
+
+<Demo example="media" />
+
+## Add images and attachments
+
+The default image renderer supports a remote image URL, alt text, width, alignment, and caption. Select an image block to edit its URL. For PDFs and other files, register `attachmentBlock` and `AttachmentView` explicitly. A file input can call `editor.insertFiles(files)`; paste and drop work through the same API. `createFileBlock` lets your app choose a different block type for a non-image file.
+
+```tsx
+import { Editor, useEditor, attachmentBlock, AttachmentView,
+  createAttachmentBlock, defaultRenderers } from "@jul-editor/react";
+
+function AddFiles() {
+  const editor = useEditor();
+  return <input type="file" multiple onChange={(event) => {
+    if (event.currentTarget.files)
+      editor?.insertFiles(Array.from(event.currentTarget.files));
+  }} />;
+}
+
+async function uploadAsset(file: File) {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch("/api/assets", { method: "POST", body });
+  if (!response.ok) throw new Error("Asset upload failed");
+  const result = await response.json() as { src: string; assetId?: string };
+  return result;
+}
+
+function SaveDocument() {
+  const editor = useEditor();
+  return <button type="button" onClick={async () => {
+    if (!editor) return;
+    const result = await editor.uploadPending();
+    if (result.failed.length) throw new Error("Retry failed uploads before saving");
+    await fetch("/api/documents/current", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editor.getDoc()),
+    });
+  }}>Save document</button>;
+}
+
+<Editor uploadMode="deferred" onUpload={uploadAsset}
+  createFileBlock={createAttachmentBlock} renderers={defaultRenderers}>
+  <Editor.Plugin blocks={[attachmentBlock]}
+    renderers={{ attachment: AttachmentView }} />
+  <Editor.Content />
+  <AddFiles />
+  <SaveDocument />
+</Editor>
+```
+
+## Connect S3 or your own storage
+
+The callback may upload through your API or request a short-lived signed S3 upload URL. Return a stable read URL and optional asset ID. Keep private credentials on the server. The editor passes `{ blockId, kind: "image" | "file" }` to the callback, so your app can apply separate rules for each kind. Set `uploadMode="immediate"` with the same callback to upload at insertion time.
+
+An image block can also start with `props.src = "https://..."`. External CSV/JSON files for charts use the separate chart data resolver.
+
+<Note>
+
+An S3 URL is only the storage location. Authorization, expired signed URLs, file limits, and CORS belong to the host app and storage server.
+
+</Note>
+
+Related: [Tables and media](/docs/core/tables-media) for the default image and embed renderers.

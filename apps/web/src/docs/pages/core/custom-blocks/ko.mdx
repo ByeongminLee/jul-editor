@@ -1,0 +1,78 @@
+커스텀 블록에는 저장 데이터를 정의하는 블록 스펙, 화면에 그리는 React 렌더러, 삽입 명령이 필요합니다. 세 항목을 `Editor.Plugin`으로 등록하세요. 블록 타입은 고정하고 삽입할 때마다 새 ID를 생성합니다.
+
+## 에디터 안의 지표 카드
+
+아래 카드는 실제 문서 내용입니다. 이름이나 숫자를 바꾸고 카드를 하나 더 넣은 뒤 실행 취소해 보세요. `updateProps`는 실행 취소 가능한 변경을 기록하며 void 블록 안의 버튼과 입력은 텍스트 편집 영역이 되지 않습니다.
+
+<Demo example="custom-blocks" />
+
+```tsx
+import { defineBlock, newId } from "@jul-editor/core";
+import { Editor, type VoidRendererProps } from "@jul-editor/react";
+
+const metric = defineBlock({ type: "metric", content: "none", children: "none",
+  props: { label: "Visitors", value: 120 } });
+
+function MetricView({ block, updateProps }: VoidRendererProps) {
+  const value = Number(block.props.value);
+  return <div>
+    <strong>{String(block.props.label)}</strong><span>{value}</span>
+    <button type="button" onClick={() => updateProps({ value: value + 1 })}>+1</button>
+  </div>;
+}
+
+const metricItem = { id: "metric", type: "metric", title: "Metric",
+  create: () => ({ id: newId(), type: "metric", props: { label: "Visitors", value: 120 } }) };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin blocks={[metric]} renderers={{ metric: MetricView }} slashItems={[metricItem]} />
+  <Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+## 형식 변환에서도 블록 보존하기
+
+JSON은 속성을 보존하지만 Markdown과 HTML에는 변환 규칙을 직접 제공해야 합니다. 내보내기와 가져오기에 같은 레지스트리를 사용하세요. 아래 예제는 URI 인코딩한 JSON으로 따옴표나 마크업이 포함된 이름도 양방향으로 보존하며, 디코딩한 값은 경계에서 검증합니다.
+
+````metric-formats.ts
+import { createRegistry, coreBlocks, coreInlines, coreMarks, defineBlock, newId, type BlockSpec, type Doc } from "@jul-editor/core";
+import { toMarkdown, fromMarkdown, toHTML, fromHTML } from "@jul-editor/core/serde";
+
+const metric = defineBlock({ type: "metric", content: "none", children: "none",
+  props: { label: "Visitors", value: 120 } });
+
+function parseMetric(encoded: string) {
+  let raw: unknown;
+  try { raw = JSON.parse(decodeURIComponent(encoded.trim())); } catch { raw = {}; }
+  const props = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return { id: newId(), type: "metric", props: {
+    label: "label" in props && typeof props.label === "string" ? props.label : "Visitors",
+    value: "value" in props && typeof props.value === "number" && Number.isFinite(props.value) ? props.value : 120,
+  } };
+}
+
+const portableMetric: BlockSpec = {
+  ...metric,
+  toMarkdown: (block) => "```metric\n" + encodeURIComponent(JSON.stringify(block.props)) + "\n```",
+  fromMarkdown: { fence: "metric", parse: (token) => parseMetric(token.text) },
+  toHTML: (block, ctx) => '<div data-metric="' + ctx.escapeAttr(encodeURIComponent(JSON.stringify(block.props))) + '"></div>',
+  fromHTML: { selector: "[data-metric]", parse: (el) => parseMetric(el.getAttribute("data-metric") ?? "") },
+};
+const registry = createRegistry({ blocks: [...coreBlocks, portableMetric],
+  inlines: coreInlines, marks: coreMarks });
+const doc: Doc = { version: 1, blocks: [
+  { id: "metric-1", type: "metric", props: { label: "Visitors", value: 120 } },
+] };
+const md = toMarkdown(doc, { registry }).markdown;
+const restoredMd = fromMarkdown(md, { registry }).doc;
+const html = toHTML(doc, { registry });
+const restoredHtml = fromHTML(html, { registry }).doc;
+// Editor.Plugin blocks={[portableMetric]} uses the same spec.
+// Import may regenerate IDs; keep original Doc JSON when identity matters.
+````
+
+복제·타입 변경·삭제 같은 명령은 `useBlockActions(blockId)`로 만들고 같은 에디터 인스턴스 안에 배치하세요.
+
+<Demo example="extension-api" />
+
+관련 문서: [Markdown과 HTML](/docs/core/formats), [읽기 전용 보기](/docs/core/read-only-view).

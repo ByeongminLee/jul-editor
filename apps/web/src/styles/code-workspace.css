@@ -1,0 +1,53 @@
+.editor-content [data-jul-editor-plugin="code-workspace"] { margin: 24px 0; overflow: hidden; border: 1px solid #343536; border-radius: 11px; background: #090a0b; color: #d6d8dc; font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.editor-content [data-jul-editor-code-title] { padding: 9px 16px; border-bottom: 1px solid #26292b; background: #141618; color: #aeb5bb; font: 11px/1.4 ui-sans-serif, system-ui, sans-serif; }
+.editor-content [data-jul-editor-code-tabs] { display: flex; gap: 3px; min-height: 38px; overflow-x: auto; padding: 5px 8px 0; border-bottom: 1px solid #26292b; background: #0c0d0e; }
+.editor-content [data-jul-editor-code-tabs] button { flex: 0 0 auto; padding: 5px 11px 7px; border: 1px solid transparent; border-radius: 6px 6px 0 0; background: transparent; color: #838c93; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.editor-content [data-jul-editor-code-tabs] button[aria-selected="true"] { border-color: #303336; border-bottom-color: #151719; background: #151719; color: #f4f4f1; }
+.editor-content [data-jul-editor-code-layout] { display: grid; grid-template-columns: minmax(154px, 27%) minmax(0, 1fr); min-height: 300px; }
+.editor-content [data-jul-editor-code-layout]:not(:has([data-jul-editor-code-tree])) { grid-template-columns: minmax(0, 1fr); }
+.editor-content [data-jul-editor-code-tree] { min-width: 0; padding: 12px 9px; overflow: auto; border-right: 1px solid #292c2f; background: #131517; color: #909ba3; font-size: 11px; }
+.editor-content [data-jul-editor-code-tree] ul { margin: 0; padding: 0 0 0 12px; list-style: none; }
+.editor-content [data-jul-editor-code-tree] > ul { padding-left: 0; }
+.editor-content [data-jul-editor-code-tree] li { margin: 0; }
+.editor-content [data-jul-editor-code-tree] summary { padding: 3px 6px; cursor: pointer; }
+.editor-content [data-jul-editor-code-tree] button { width: 100%; min-width: 0; padding: 3px 6px; overflow: hidden; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.editor-content [data-jul-editor-code-tree] button:hover, .editor-content [data-jul-editor-code-tree] button[aria-current="page"] { background: #222d34; color: #67c9f1; }
+.editor-content [data-jul-editor-code-panel] { min-width: 0; padding-bottom: 16px; overflow: auto; background: #090a0b; }
+.editor-content [data-jul-editor-code-path] { padding: 9px 17px; border-bottom: 1px solid #1d2022; color: #8c979e; font-size: 10px; }
+/* Scoped to the read-only view: the IDE view reuses the same data attributes for its own gutter rows and must not inherit these row backgrounds, min-height and grid. */
+/* One shared track as wide as the longest line (min 100%) so every row background spans the full width, also while scrolled horizontally. */
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-viewport] { padding: 7px 0; overflow-x: auto; display: grid; grid-template-columns: minmax(100%, max-content); }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line] { display: grid; grid-template-columns: 54px 1fr; min-height: 21px; white-space: pre; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line] code { display: block; margin: 0; padding: 0 18px 0 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; color: #c5ccd1; font: inherit; }
+/* Same reset for the IDE preview: the site's inline-code rules (.editor-content code, .mdx-doc-content :not(pre) > code) would otherwise add padding, a border or a box background that cuts the row band. */
+.editor-content [data-jul-editor-plugin="code-workspace-ide"] [data-jul-editor-code-preview] > code { margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: none; font: inherit; color: inherit; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-gutter] { padding: 0 12px 0 4px; color: #626c73; text-align: right; user-select: none; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 4px; }
+/* The +/- marker has its own reserved column on every row so a changed line number stays in the same column as the others. */
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-marker-slot] { text-align: center; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line][data-change="added"] { background: #163326; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line][data-change="added"] [data-jul-editor-code-gutter] { color: #72d69a; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line][data-change="deleted"] { background: #3a2023; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line][data-change="deleted"] [data-jul-editor-code-gutter] { color: #f08e8e; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line][data-change="modified"] { background: #38301e; }
+.editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line][data-change="modified"] [data-jul-editor-code-gutter] { color: #efbb69; }
+.editor-content [data-jul-editor-token="keyword"], .editor-content [data-jul-editor-token="meta"] { color: #dc8cf2; }
+.editor-content [data-jul-editor-token="string"], .editor-content [data-jul-editor-token="literal"] { color: #79d49a; }
+.editor-content [data-jul-editor-token="comment"] { color: #858f98; }
+.editor-content [data-jul-editor-token="number"], .editor-content [data-jul-editor-token="attr"] { color: #f0ab68; }
+.editor-content [data-jul-editor-token="title"], .editor-content [data-jul-editor-token="function"] { color: #69c5e7; }
+.editor-content [data-jul-editor-token="type"], .editor-content [data-jul-editor-token="built_in"] { color: #e8c37e; }
+.editor-content [data-jul-editor-code-controls] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; margin: 0; padding: 17px; border: 0; border-top: 1px solid #303335; background: #17191b; color: #cdd2d6; font: 11px/1.5 ui-sans-serif, system-ui, sans-serif; }
+.editor-content [data-jul-editor-code-controls] legend { float: left; grid-column: 1 / -1; padding: 0 0 5px; color: #f2f2ee; font-weight: 700; }
+.editor-content [data-jul-editor-code-controls] label { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.editor-content [data-jul-editor-code-controls] label:has(textarea) { grid-column: 1 / -1; align-items: stretch; flex-direction: column; }
+.editor-content [data-jul-editor-code-controls] input:not([type="checkbox"]), .editor-content [data-jul-editor-code-controls] textarea { min-width: 0; width: 100%; padding: 6px 8px; border: 1px solid #45494d; border-radius: 5px; background: #0d0e0f; color: #e0e3e5; font: 11px/1.5 ui-monospace, monospace; }
+.editor-content [data-jul-editor-code-controls] textarea { min-height: 105px; resize: vertical; }
+.editor-content [data-jul-editor-code-controls] button { padding: 5px 8px; border: 1px solid #45494d; border-radius: 5px; background: #24282b; color: #e3e6e8; font-size: 11px; }
+.docs-code-workspace .editor-content-compact { padding: 18px 20px 28px; }
+@media (max-width: 560px) {
+  .docs-code-workspace .editor-content-compact { padding: 12px 10px 20px; }
+  .editor-content [data-jul-editor-code-layout] { grid-template-columns: minmax(102px, 32%) minmax(0, 1fr); }
+  .editor-content [data-jul-editor-code-tree] { padding-inline: 4px; font-size: 10px; }
+  .editor-content [data-jul-editor-plugin="code-workspace"] [data-jul-editor-code-line] { grid-template-columns: 40px 1fr; }
+  .editor-content [data-jul-editor-code-controls] { grid-template-columns: 1fr; }
+}

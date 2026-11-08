@@ -1,0 +1,26 @@
+Compare two `Doc` values by stable block ID. `DiffView` marks insertions, deletions, modifications, and moves; `useDiff` exposes the counts. Keep a captured baseline and render the comparison when a reader asks to inspect a change.
+
+Both the comparison algorithm and the React UI live in `@jul-editor/plugins/diff`, so the core and React packages stay free of diff code. Install `@jul-editor/plugins` to use it.
+
+## Show the change
+
+The preview compares two versions of a setup guide. One paragraph changes and another is inserted. `mode="changes"` gives a compact review; `mode="full"` keeps unchanged context visible.
+
+<Demo example="diff" />
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { DiffView, useDiff } from "@jul-editor/plugins/diff";
+
+function Changes({ before, after }: { before: Doc; after: Doc }) {
+  const { stats } = useDiff(before, after);
+  return <>
+    <p>{stats.inserted} added · {stats.modified} modified</p>
+    <DiffView before={before} after={after} mode="changes" />
+  </>;
+}
+```
+
+Custom void block renderers in diff mode receive `block` and `readOnly=true`, without an editor or `updateProps`. Supply a dedicated read-only renderer for charts or cards and style the `data-diff` states in your app.
+
+Related: [Document model](/docs/core/document-model) for stable block IDs.

@@ -1,0 +1,54 @@
+JulEditor는 편집 동작과 스타일 없는 구성 요소를 제공합니다. **어떤 컨트롤을 둘지**, 순서·문구·아이콘·호버 카드·스타일은 앱이 정합니다. 필요 없는 구성 요소는 렌더링하지 마세요. React 자식이나 `Editor.Plugin`으로 기능을 더하고, 관련 메뉴나 블록 타입별 렌더러를 교체할 수 있습니다.
+
+## 바꾸려는 화면에서 시작하기
+
+| 부분 | 빼기·순서 변경 | 추가·교체 | 디자인 방법 |
+| --- | --- | --- | --- |
+| 툴바 | `Editor.Toolbar`의 자식 선택 | `useCommands()`를 쓰는 버튼 또는 기본 버튼 | 자유로운 JSX와 앱 CSS |
+| 슬래시 메뉴 | `items={(defaults) => defaults.filter(...)}` | `items`와 `Editor.Plugin blocks` | 렌더 함수·`description`·아이콘·호버 카드 |
+| 버블 메뉴 | 생략하거나 자식 선택 | 렌더 함수에 기본 버튼 또는 사용자 버튼 | 렌더 함수와 앱 CSS |
+| 태그·멘션 | 메뉴 생략 | `onSearch`와 결과 UI | 렌더 함수 |
+| 블록 핸들 | `Editor.DragHandle` 생략 | 반환된 핸들 옆에 컨트롤 추가 | 렌더 함수 |
+| 이미지·플러그인 | 렌더러·플러그인 import 생략 | `renderers={{ image: ..., chart: ... }}` | 렌더러 컴포넌트와 CSS |
+| 저장 문서 보기 | 렌더러 키 선택 | `Editor.View renderers` | 같은 블록 속성과 테마 CSS |
+
+## 툴바를 줄이고 앱 버튼 더하기
+
+`Editor.Toolbar`에는 넣은 자식만 나타납니다. 아래 예제는 밑줄 버튼을 빼고 굵게를 제목보다 앞에 두며 구분선 명령을 더합니다. 사용자 버튼은 `onMouseDown`에서 편집 영역의 선택을 유지하세요. 문구와 아이콘은 앱에서 정하며 코어는 아이콘 라이브러리를 불러오지 않습니다.
+
+```tsx
+import { newId } from "@jul-editor/core";
+import { Editor, useCommands } from "@jul-editor/react";
+
+function AddDivider() {
+  const commands = useCommands();
+  return <button type="button"
+    onMouseDown={(event) => event.preventDefault()}
+    onClick={() => commands.insertBlock({
+      id: newId(), type: "divider", props: {},
+    })}>
+    Add divider
+  </button>;
+}
+
+<Editor.Toolbar aria-label="Formatting">
+  <Editor.Bold>Bold</Editor.Bold>
+  <Editor.Heading level={2}>H2</Editor.Heading>
+  <AddDivider />
+  <Editor.Undo>Undo</Editor.Undo>
+</Editor.Toolbar>
+```
+
+<Demo example="toolbar" />
+
+## 슬래시 메뉴와 호버 카드 고르기
+
+`items`는 기본·플러그인 명령을 모은 뒤 실행됩니다. 목록을 걸러 내거나 새 배열로 바꾸세요. H1과 H2는 `type: "heading"`을 공유하므로 `id`로 구분합니다. 렌더 함수는 `items`, `activeIndex`, `getListboxProps`, `getOptionProps`를 제공합니다. 호버 미리보기에는 `onMouseEnter`를 쓰고, 선택 동작을 위해 반환된 옵션 속성은 유지하세요. 전체 코드와 실제 호버 카드는 [메뉴](/docs/core/menus)에 있습니다.
+
+<Demo example="menus-custom" />
+
+## 다른 화면 교체하기
+
+`Editor.BubbleMenu`와 `Editor.DragHandle`은 렌더 함수를 제공하므로 선택 영역 위치나 블록 이동 동작은 유지하면서 마크업 전체를 바꿀 수 있습니다. `Editor.TagMenu`와 `Editor.MentionMenu`에는 앱의 검색 함수와 결과 UI를 넣으세요. 이미지·차트·표·코드 워크스페이스·사용자 블록은 타입 키에 렌더러를 등록합니다. 저장 문서는 [Editor.View](/docs/core/read-only-view)에서 같은 키를 사용합니다.
+
+문구는 `Editor`의 `locale`과 `labels`로 바꾸고, 색상·간격·모서리·글꼴은 앱 CSS로 바꿉니다. 선택자와 테마 토큰은 [스타일·다국어](/docs/core/styling-i18n-performance)를 보세요.

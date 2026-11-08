@@ -1,0 +1,99 @@
+The core and React controls ship without a visual theme or icon package. The showcase styles come from that site's own CSS. Style JulEditor with Tailwind classes on components, host CSS against stable `data-jul-editor-*` hooks, or both. Visual plugins keep small usable fallback styles; their class slots and color props remain available to the host.
+
+## Theme from host CSS
+
+Use a wrapper class and app variables. The chart plugin reads `--chart-1` through `--chart-6`, so its palette can match the rest of your UI. Keep color contrast and focus outlines in both themes.
+
+```css
+.my-editor .editor-content { color: var(--foreground); background: var(--background); }
+.my-editor .editor-toolbar { border-color: var(--border); background: var(--card); }
+.my-editor { --chart-1: #ee9b51; --chart-2: #7ca4ca; }
+```
+
+## Use Tailwind classes directly
+
+`Editor`, `Editor.Content`, and each toolbar atom accept a string `className`. Components with several parts accept an object. A toolbar's `container`, `button`, and `text` keys style the outer toolbar, built-in action buttons, and their default labels. Give your own child content its own classes. The same approach works for slash, tag, and mention menus; omit a menu entirely when the feature is not needed. Tailwind arbitrary variants on `Editor.Content` can style core-generated blocks by their stable data attributes.
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import type { Doc } from "@jul-editor/core";
+
+export function ArticleEditor({ doc }: { doc: Doc }) {
+  return <Editor defaultValue={doc} className="rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-100">
+    <Editor.Toolbar className={{
+      container: "flex gap-1 border-b border-zinc-800 p-2",
+      button: "rounded-md px-2 py-1 hover:bg-orange-950 aria-pressed:bg-orange-900",
+      text: "text-xs font-semibold",
+    }}>
+      <Editor.Bold />
+      <Editor.Italic />
+      <Editor.Heading level={2} />
+    </Editor.Toolbar>
+    <Editor.Content className="min-h-80 p-8 [&_[data-type=heading]]:font-bold [&_[data-type=quote]]:border-l-2 [&_[data-type=quote]]:border-orange-500" />
+    <Editor.SlashMenu className={{
+      container: "rounded-lg border border-zinc-700 bg-zinc-900 p-2 shadow-xl",
+      item: "rounded-md px-3 py-2 hover:bg-zinc-800",
+      text: "text-sm text-zinc-100",
+      description: "text-xs text-zinc-400",
+      empty: "p-3 text-sm text-zinc-500",
+    }} />
+  </Editor>;
+}
+```
+
+This live preview uses the same slot API with classes supplied by this site's CSS. In a Tailwind app, replace those class strings with your utilities as above.
+
+<Demo example="style-slots" />
+
+<DocsStyleAnatomy />
+
+| Component | `className` slots | DOM hook for host CSS or Tailwind variants |
+| --- | --- | --- |
+| `Editor.Toolbar` | `container`, `button`, `text` | `[role=toolbar]`, `[data-jul-editor-toolbar-item]` |
+| `Editor.SlashMenu` | `container`, `item`, `text`, `description`, `empty`, `loading` | `[data-jul-editor-slash-menu]`, `[data-jul-editor-slash-item]` |
+| `Editor.TagMenu`, `Editor.MentionMenu` | `container`, `item`, `text`, `empty`, `loading` | `[data-jul-editor-tag-menu]`, `[data-jul-editor-mention-menu]` |
+| `ChartView` | `container`, `plot`, `controls`, `status`, `tooltip`, `legend` | `[data-jul-editor-plugin=chart]`, `[data-chart-tooltip]` |
+| `CodeWorkspaceIDEView` | `container`, `tree`, `tabs`, `tab`, `toolbar`, `panel`, `gutter`, `code`, `input` | `[data-jul-editor-plugin=code-workspace-ide]` |
+| `CodeWorkspaceView` | `container`, `title`, `layout`, `tree`, `tabs`, `tab`, `panel`, `path`, `code`, `line`, `gutter`, `toolbar` | `[data-jul-editor-plugin=code-workspace]` |
+| `DiagramView` | `container`, `source`, `preview`, `error` | `[data-jul-editor-plugin=diagram]` |
+| `DataTableView` | `container`, `table`, `head`, `row`, `headerCell`, `cell`, `controls`, `source`, `range`, `status`, `more` | `[data-jul-editor-plugin=dataTable]` |
+
+## Set chart colors without a CSS file
+
+Wrap the plugin renderer and pass `theme` as data. `series` controls up to six data colors; the other values control the plot and tooltip. `className` sets Tailwind classes on chart regions. The chart's fallback sizes and tooltip layout still work when no host theme exists. When a visual plugin uses an inline fallback for legibility, use its `theme` prop for color changes; a Tailwind utility alone cannot override an inline style at normal specificity.
+
+```tsx
+import { ChartView, type ChartViewProps } from "@jul-editor/plugins/chart";
+import { Editor } from "@jul-editor/react";
+
+function BrandChart(props: ChartViewProps) {
+  return <ChartView {...props}
+    className={{ container: "rounded-xl border border-zinc-700 p-4", plot: "min-h-72", tooltip: "rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl", legend: "flex justify-center gap-4 text-xs text-zinc-400", controls: "border-t border-zinc-700" }}
+    theme={{
+      series: ["#f97316", "#38bdf8", "#84cc16"],
+      surface: "#101114", grid: "#38383f", muted: "#a1a1aa",
+      tooltipBackground: "#18181b", tooltipForeground: "#fafafa", tooltipBorder: "#3f3f46",
+    }} />;
+}
+
+<Editor.Plugin renderers={{ chart: BrandChart }} />
+```
+
+For Code Workspace, pass `theme={{ sidebar: "#17191f", accent: "#f97316" }}` to `CodeWorkspaceIDEView` and choose its `className` slots. [The plugin guide](/docs/plugins/code-workspace) shows the complete setup. Diagram and data table use their own slot objects; wrap a renderer under its block key to set them once for your app. The basic editor remains unstyled even if you import a visual plugin elsewhere.
+
+For a ready example, open the [showcase](/showcase). Use the **shadcn** case for your own design tokens, or open **Custom**, pick a preset (Notebook, Editorial, Midnight, Terminal, Studio, Blueprint, Canvas), and adjust the palette, typography, spacing, corner radius, page background, and chart colors. Copy the theme CSS into `theme.css` and the React component into your app. The copied CSS includes the editor rules and the current token values; changing the controls does not add a theme dependency to the core.
+
+## Labels and document language
+
+Set `locale="ko"` or `locale="en"` for built-in labels, then pass `labels` for product-specific overrides. Keep translated UI separate from stored document content. Switching labels at runtime preserves the mounted editor's document and undo history.
+
+## Profile before optimizing
+
+Optional visual plugins load only when used. Run type checks, benchmarks, and browser tests from this repository, then profile your own long documents and custom blocks before setting a performance target.
+
+```sh
+pnpm typecheck
+pnpm bench
+pnpm perf
+pnpm e2e
+```

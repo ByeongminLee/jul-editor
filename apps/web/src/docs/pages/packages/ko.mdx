@@ -1,0 +1,37 @@
+패키지는 앱이 실제로 import하는 기능에 맞춰 나뉩니다. 코어에는 React 의존성이 없습니다. React 패키지는 컨트롤과 훅을 제공하고, 플러그인은 별도 경로로 가져옵니다. 텍스트만 쓰는 에디터는 차트·다이어그램·구문 강조를 불러올 필요가 없습니다.
+
+## 현재 워크스페이스 경로
+
+| Import | 역할 |
+| --- | --- |
+| `@jul-editor/core` | 문서 스키마, JSON 변환, 트랜잭션, 블록 레지스트리, ID |
+| `@jul-editor/core/serde` | Markdown, HTML, 일반 텍스트 변환 |
+| `@jul-editor/plugins/diff` | 고정된 블록 ID로 두 문서 비교와 `DiffView` UI |
+| `@jul-editor/react` | 에디터 조합, 툴바, 메뉴, 훅과 선택형 첨부파일 |
+| `@jul-editor/plugins/chart` | 직접 입력한 CSV/JSON 또는 외부 데이터 URL의 차트 |
+| `@jul-editor/plugins/diagram` | Mermaid 다이어그램 렌더러와 슬래시 항목 |
+| `@jul-editor/plugins/table` | 데이터 표 렌더러와 리졸버 Provider |
+| `@jul-editor/plugins/code` | 선택형 구문 강조 |
+| `@jul-editor/plugins/code-workspace` | 선택형 다중 파일 트리·탭·줄별 변경 표시 |
+| `@jul-editor/plugins/data` | React 없는 CSV/JSON 파싱과 데이터 도우미 |
+
+필요한 플러그인의 하위 경로만 import하세요. `Editor.Plugin`은 해당 렌더러와 슬래시 명령을 에디터 인스턴스에 등록합니다.
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { ChartView, chartSlashItem } from "@jul-editor/plugins/chart";
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ chart: ChartView }} slashItems={[chartSlashItem]} />
+  <Editor.Content />
+  <Editor.SlashMenu />
+</Editor>
+```
+
+<Note>
+
+현재 워크스페이스의 `@jul-editor/core`, `@jul-editor/react`, `@jul-editor/plugins`는 비공개 패키지로 npm에서 설치할 수 없습니다. 차트·다이어그램·표·코드·코드 워크스페이스·데이터는 plugins의 하위 경로로 제공하며, 공개 배포 시 별도 플러그인 패키지로 나눌 계획입니다.
+
+</Note>
+
+다음 단계: 저장소 실행은 [설치](/docs/installation), 에디터 구성은 [React 조합](/docs/core/composition)을 보세요.

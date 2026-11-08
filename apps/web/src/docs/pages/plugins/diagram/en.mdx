@@ -1,0 +1,25 @@
+The diagram plugin stores Mermaid source in a document block and renders a preview. Keep the source editable so the diagram can be changed and serialized with the rest of the document. Register its renderer and slash item only where diagrams are needed.
+
+## Edit source and preview together
+
+The live example has a real diagram block. Select it to edit its text; the preview updates from the saved block props. Your app may wrap the renderer for a different frame or replace it while preserving the source.
+
+<Demo example="diagram" />
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { DiagramView, diagramSlashItem } from "@jul-editor/plugins/diagram";
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ diagram: DiagramView }} slashItems={[diagramSlashItem]} />
+  <Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+<Note>
+
+Mermaid is optional and can add substantial code to the page. Keep the plugin import in a route or component that actually displays diagrams.
+
+</Note>
+
+Related: [Packages](/docs/packages) for the `@jul-editor/plugins/diagram` import path.

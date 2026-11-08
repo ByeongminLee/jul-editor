@@ -1,0 +1,27 @@
+{
+  "name": "jul-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "test": "vitest run --maxWorkers=2",
+    "e2e": "playwright test --project=chromium --grep-invert perf --workers=2",
+    "e2e:smoke": "playwright test --project=webkit --project=firefox --grep @smoke",
+    "e2e:web": "playwright test --config=playwright.web.config.ts --project=chromium",
+    "bench": "node bench/check.mjs",
+    "perf": "playwright test --project=chromium -g perf && node bench/check.mjs",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/react && tsc --noEmit -p packages/plugins && tsc --noEmit -p e2e/fixtures && tsc --noEmit -p apps/web"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0"
+  }
+}

@@ -1,0 +1,32 @@
+A `Doc` is a versioned tree of blocks. Each block spec decides whether it accepts inline content, child blocks, or both; a list item can hold text and nested list children. Keep block IDs stable when editing so selection, undo, and diff can track a block over time.
+
+## Controlled state and saving
+
+`defaultValue` initializes an editor once. `value` plus `onChange` makes it controlled. `useAutosave` can store a local draft and call your server save function; check server responses and throw on failure so status and retries stay accurate.
+
+```tsx
+import { useState } from "react";
+import type { Doc } from "@jul-editor/core";
+import { Editor, useAutosave } from "@jul-editor/react";
+
+function SaveStatus() {
+  const { status } = useAutosave({ key: "article:42", localDebounceMs: 500 });
+  return <output aria-live="polite">{status}</output>;
+}
+
+function Article({ initialDoc }: { initialDoc: Doc }) {
+  const [doc, setDoc] = useState(initialDoc);
+  return <Editor value={doc} onChange={setDoc} locale="en">
+    <SaveStatus />
+    <Editor.Content />
+  </Editor>;
+}
+```
+
+<Demo example="state" />
+
+## Restore safely
+
+Compare a local draft with the server's update time before applying it. Pass the same custom block registry used by the editor when restoring custom content. Changing `locale` or labels while the editor remains mounted preserves its document and undo stack.
+
+Related: [Markdown and HTML](/docs/core/formats) for exchange formats, and [Read-only view](/docs/core/read-only-view) for showing a saved `Doc`.

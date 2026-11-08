@@ -1,0 +1,32 @@
+`Editor` owns one document. Its children decide which controls appear: a toolbar for formatting, content for editing, menus for insertion, and drag handles for moving blocks. You can render a small or complete interface without changing the stored `Doc` shape.
+
+## Compose a surface
+
+Put `Editor.Plugin` directly under `Editor` so its blocks, renderers, and slash items are registered when the editor mounts. The icons and layout belong to your app. The package does not ship an icon set or CSS theme.
+
+```tsx
+import { Editor } from "@jul-editor/react";
+
+<Editor defaultValue={doc} locale="en">
+  <Editor.Toolbar aria-label="Formatting">
+    <Editor.Heading level={2}>H2</Editor.Heading>
+    <Editor.Bold>Bold</Editor.Bold>
+    <Editor.Undo>Undo</Editor.Undo>
+  </Editor.Toolbar>
+  <Editor.Content />
+  <Editor.SlashMenu />
+  <Editor.DragHandle>{({ blockId, rect, getHandleProps }) =>
+    blockId && rect && <button {...getHandleProps()}
+      aria-label="Move block"
+      style={{ position: "fixed", top: rect.top, left: rect.left - 28 }}>⋮⋮</button>
+  }</Editor.DragHandle>
+</Editor>
+```
+
+<Demo example="composition" />
+
+## State boundary
+
+Use `defaultValue` for an editor that owns its state. For a controlled editor, pass `value` and echo each `onChange` value back into it. A new external document can reset selection and history; switching a view of the same mounted editor should not.
+
+Related: [Document model](/docs/core/document-model) for controlled state and autosave, and [Customize controls](/docs/core/customize-controls) for choosing what to render.

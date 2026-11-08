@@ -1,0 +1,17 @@
+.docs-style-anatomy { margin: 26px 0 32px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.docs-style-anatomy-tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 9px; border-bottom: 1px solid var(--line); }
+.docs-style-anatomy-tabs button { padding: 7px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 11px; }
+.docs-style-anatomy-tabs button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.docs-style-anatomy-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.docs-style-anatomy-scroll { overflow-x: auto; padding: 14px; }
+.docs-style-anatomy svg { display: block; width: 100%; min-width: 660px; color: var(--accent); }
+.docs-style-anatomy .anatomy-canvas { fill: var(--surface-2); stroke: var(--line); }
+.docs-style-anatomy .anatomy-region { fill: color-mix(in srgb, var(--accent) 9%, transparent); stroke: var(--accent); stroke-width: 1.4; }
+.docs-style-anatomy .anatomy-region-1, .docs-style-anatomy .anatomy-region-3 { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+.docs-style-anatomy .anatomy-arrow { stroke: var(--accent); stroke-width: 1.3; }
+.docs-style-anatomy .anatomy-label { fill: var(--surface); stroke: var(--line); }
+.docs-style-anatomy text { fill: var(--text); font: 600 12px ui-monospace, SFMono-Regular, monospace; }
+.docs-style-anatomy .anatomy-preview-content { pointer-events: none; }
+.docs-style-anatomy .anatomy-preview-content text { fill: var(--muted); font-size: 11px; font-weight: 500; }
+.docs-style-anatomy .anatomy-preview-content rect { fill: var(--accent); opacity: .65; }
+.docs-style-anatomy > p { margin: 0; padding: 0 16px 14px; color: var(--muted); font-size: 11px; }

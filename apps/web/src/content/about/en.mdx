@@ -1,0 +1,84 @@
+export const meta = {
+  title: "A document, from first edit to lasting view.",
+  subtitle: "Why we built another editor core, what we learned from established engines, and what our measurements actually say.",
+};
+
+JulEditor takes its name from the Korean word *jul* (줄), the line you count when you say "one line, two lines". Writing grows the same way, one line at a time. This project gives that growing text a durable shape: edit a document, save its data, and render it again without recreating the editing surface.
+
+## Three editing engines, then our approach
+
+We chose three widely used projects with their own editing engines: **Quill, Lexical, and ProseMirror**. Tiptap is an important product in this space, but it builds on ProseMirror; comparing both as separate engines would count the same foundation twice. Tiptap also offers a [Static Renderer](https://tiptap.dev/docs/editor/api/utilities/static-renderer), so a view without an editor instance is not unique to JulEditor. [Tiptap architecture](https://tiptap.dev/docs/editor/core-concepts/extensions)
+
+| Engine | Saved document | Extending and building UI | Reading a saved document |
+| --- | --- | --- | --- |
+| **Quill** | [Delta](https://quilljs.com/docs/delta) JSON: a stream of `insert` operations, with attributes for formatting. Deltas also describe changes with `retain` and `delete`. | Toolbar module and themes cover common UI. Modules, Parchment Blots, and Attributors extend behavior and content. [Customization](https://quilljs.com/docs/customization) | Disable editing or export semantic HTML. [API](https://quilljs.com/docs/api) |
+| **Lexical** | The editor state's [serialized node tree](https://lexical.dev/docs/concepts/editor-state) from `toJSON()`. Runtime selection and node keys are separate from saved JSON. | Nodes, commands, transforms, listeners, and [Extensions](https://lexical.dev/docs/extensions/intro) compose features. The application supplies the layout, toolbar, menus, and storage. [Introduction](https://lexical.dev/docs/intro) | [Read mode](https://lexical.dev/docs/concepts/read-only) turns editing off; exported HTML or app components can display content. |
+| **ProseMirror** | A schema-based node and mark tree serialized with `toJSON()`. [Guide](https://prosemirror.net/docs/guide/) | Schema, transactions, plugins, commands, and NodeViews provide deep control. The application supplies much of the interface. [Guide](https://prosemirror.net/docs/guide/) | An editor view can be non-editable; `DOMSerializer` can produce static DOM. [Reference](https://prosemirror.net/docs/ref/) |
+| **JulEditor** | Versioned `{ blocks: [{ id, type, props, content, children }] }` JSON. Markdown and HTML round trips use registered block rules. | `defineBlock`, `Editor.Plugin`, compound controls, and renderer keys provide one path from a block definition to editing and display. | `Editor.View` renders the same `Doc` and custom renderer keys as React output, without creating an editor instance. |
+
+Lexical's freedom is useful when a product wants to assemble every piece. It also means the product chooses how toolbars, menus, persistence, and custom nodes fit together. JulEditor includes a small set of composable React controls and a shared block contract to make that assembly shorter. Quill and ProseMirror can also be highly customized; this table describes different starting points, not a universal ranking.
+
+## Measured, with the scope visible
+
+These are measurements from this repository on **2026-10-04**, not vendor benchmarks. Each browser ESM editing entry was bundled with esbuild 0.28.2, `minify: true`, target `es2022`, then gzipped. The entries import JulEditor `createEditor` + `coreRegistry`, Lexical `createEditor` + base nodes, Quill's default entry, or ProseMirror `model` + `state` + `view`. They cover different amounts of functionality and exclude React UI, CSS, and visual plugins. Treat them as entry costs, not equal-feature product sizes.
+
+For storage, we generated **500 equal plain-text paragraphs** in each native format, then timed only `JSON.parse` followed by `JSON.stringify`: five warmups and the median of 20 runs on Node 25.2.1. It measures format processing, not typing, DOM paint, or full Markdown/HTML conversion. Quill can combine plain text into a single Delta insert, while node-tree formats preserve more explicit structure. Gzip and raw JSON sizes answer different storage questions.
+
+| Engine (version) | Edit entry gzip | 500-paragraph JSON | JSON parse + stringify |
+| --- | ---: | ---: | ---: |
+| JulEditor (workspace) | 56.49 KiB | 82.44 KiB | 0.279 ms |
+| Lexical 0.52.0 | 67.40 KiB | 141.69 KiB | 0.433 ms |
+| Quill 2.0.3 | 58.65 KiB | 43.48 KiB | 0.047 ms |
+| ProseMirror 1.25/1.4/1.42 | 55.44 KiB | 71.31 KiB | 0.240 ms |
+
+The charts below use JulEditor's own chart plugin and the same values as the table. Each engine keeps the same color as in the diagram below.
+
+<AboutCharts />
+
+Reproduce the measurements with Node 24 or newer after building the core. The comparison dependencies and their exact versions are isolated in `bench/about/package-lock.json`; they are not library runtime dependencies. Values vary with Node, zlib, and the machine, so rerun before making a performance decision.
+
+```sh
+pnpm --filter @jul-editor/core build
+npm ci --prefix bench/about
+node bench/about/compare.mjs
+```
+
+## What happens when you type one letter?
+
+Every editor has to answer the same five questions when a key is pressed: how is the input noticed, how is the change described, what is the new data, how does the screen catch up, and what is saved. The swimlane diagram follows one keystroke through each engine. Read each lane from left to right.
+
+<AboutSwimlane>Read each lane from left to right. Tags on the JulEditor lane say where it matches another engine and where it does not.</AboutSwimlane>
+
+The biggest difference sits in step 1. Quill lets the browser edit first and reads the result. ProseMirror also mostly reads the browser's edit, while its plugins can step in. For plain text at a collapsed caret, Lexical generally lets the browser insert the character and then reconciles its state from the DOM change; for other cases it cancels the event and handles it model first. JulEditor cancels `beforeinput` `insertText`, changes the model first, and then patches the DOM, closer to ProseMirror's handled-input paths and Lexical's non-plain-text paths. This is a simplification: each engine has special cases, such as IME input and paste. [ProseMirror guide](https://prosemirror.net/docs/guide/) · [Lexical updates](https://lexical.dev/docs/concepts/updates) · [Quill Parchment](https://quilljs.com/docs/guides/cloning-medium-with-parchment)
+
+### Follow the letter "a" through JulEditor
+
+Here is the same keystroke in JulEditor as a sequence of messages between its parts, from the cancelled `beforeinput` to the single changed text node.
+
+<AboutWalkthrough setup={"Setup: a heading b1 \"Notes\", a paragraph b2 \"Dat\" with the caret at the end, and a paragraph b3 \"Todo\". You press the key a. The records map is copied on commit, so the cost of one edit still grows with document size."} caption={"Time flows down. History keeps the before and after states, the inverse Op only decides whether typing merges, only b2 is rendered, and the optional box shows what changes during IME composition."} />
+
+### Similar, borrowed, different
+
+JulEditor did not invent every part. The diagram shows where it matches the established engines and where it chose differently.
+
+<AboutSummary>Solid lines mark ideas borrowed as concepts, dashed lines mark similar behavior. The box lists what JulEditor does differently.</AboutSummary>
+
+The flat record map has a cost. Each commit copies the map, so the cost of one edit still grows with document size, and in the measurements above Quill's Delta is smaller and faster to process. What the design buys is a small, predictable amount of DOM work and one block contract shared by the saved `Doc`, Markdown, HTML, and the read-only React view. [Document model](/docs/core/document-model) · [Formats](/docs/core/formats) · [Read-only view](/docs/core/read-only-view)
+
+| After typing, in JulEditor | Work performed |
+| --- | --- |
+| Store → saved `Doc` | `toDoc` rebuilds a tree for storage and reuses unchanged subtrees through a record-keyed cache. |
+| `Doc` → Markdown/HTML | The registry calls the matching block serializers. A converter can report information that the target format cannot preserve. |
+| `Doc` → `Editor.View` | React renders blocks and custom renderer keys without mounting the editing engine. |
+
+Quill's Delta is worth seeing directly. A stored document is a sequence of inserts; a newline can carry a line format. An edit can retain existing text and insert or delete at a position. [Delta reference](https://quilljs.com/docs/delta)
+
+```json
+{"ops":[{"insert":"Release notes"},{"insert":"\n","attributes":{"header":1}}]}
+```
+
+## A smaller styling decision for the host app
+
+The document core imports no icon library or CSS theme. React controls are compound pieces: the app chooses which toolbar and menu actions exist. Their `className` slots accept Tailwind classes, and stable `data-jul-editor-*` attributes also support ordinary CSS. Visual plugins keep a usable fallback; charts accept direct color data through `theme`. The same block key can use one renderer while editing and another in `Editor.View`, which lets a saved document keep the product's design without a second parsing system. [Styling guide](/docs/core/styling-i18n-performance) · [Custom blocks](/docs/core/custom-blocks)
+
+This project studied the design tradeoffs above and implemented its own core. It does not import Quill, Lexical, ProseMirror, or Tiptap as an editing runtime. The comparison is a record of choices and limits, not a claim of a direct code lineage.

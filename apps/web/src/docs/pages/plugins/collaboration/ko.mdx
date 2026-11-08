@@ -1,0 +1,81 @@
+`@jul-editor/plugins/collaboration`은 Yjs 없이 코어의 op 모델 위에서 실시간 공동 편집을 제공합니다. 호스트 앱이 제공할 것은 트랜스포트뿐입니다. 원격 캐럿과 선택 영역은 자동으로 그려지고, 실행 취소는 각자에게 로컬로 남습니다.
+
+```tsx
+import { CollabAvatars, createBroadcastChannelTransport, useCollaboration } from "@jul-editor/plugins/collaboration";
+import { useEditor } from "@jul-editor/react";
+
+const transport = createBroadcastChannelTransport(); // 모듈 범위: 참조가 고정되어야 합니다
+const user = { id: "u1", name: "Ada", color: "#2563eb" };
+
+function Presence() {
+  const editor = useEditor();
+  const { status, peers } = useCollaboration(editor, { transport, user, docId: "page-1" });
+  return <><span>{status}</span><CollabAvatars peers={peers} /></>;
+}
+```
+
+`Presence`는 `<Editor>` 안에 렌더하세요. React 밖에서는 `createCollaboration(editor, { transport, user, docId })`와 `attachRemoteCursors(editor, client)`를 호출합니다. `transport`, `docId`, `user.id`가 바뀌면 다시 연결됩니다.
+
+## 트랜스포트 어댑터 계약
+
+트랜스포트는 문서 방 하나를 위한 단순한 파이프입니다.
+
+```ts
+interface CollabTransport {
+  readonly authority?: "peer" | "server";
+  connect(docId: string, clientId: string): void | Promise<void>;
+  send(message: CollabMessage): void;          // 나를 뺀 모든 구성원에게, 순서대로, 안정적으로
+  onMessage(handler: (m: CollabMessage) => void): () => void;
+  onStatus?(handler: (s: "connected" | "disconnected") => void): () => void;
+  disconnect(): void;
+}
+```
+
+메시지는 평범한 JSON입니다. `to`가 있는 메시지는 해당 클라이언트만 처리하지만 물리적으로는 브로드캐스트해도 됩니다.
+
+| 트랜스포트 | 용도 | 권한 주체 |
+| --- | --- | --- |
+| `createBroadcastChannelTransport()` | 한 브라우저의 탭, 데모 | peer (리더 탭이 순서 부여) |
+| `createMemoryHub().createTransport()` | 테스트, 한 페이지의 편집기 두 개 | peer 또는 서버 방식 |
+| `createWebSocketTransport({ url })` | 예제 어댑터, 실제 서버로는 검증하지 않음 | server |
+
+## WebSocket 예제
+
+```ts
+import { createWebSocketTransport } from "@jul-editor/plugins/collaboration";
+
+const transport = createWebSocketTransport({
+  url: "wss://example.com/collab",
+  buildUrl: (url, docId, clientId) => `${url}?doc=${docId}&client=${clientId}&token=${getToken()}`,
+});
+```
+
+지수 백오프로 재연결합니다(`reconnectDelayMs`, `maxDelayMs`). `authority: "server"`이면 백엔드가 방마다 `createAuthority({ registry, doc })` 하나를 운영합니다.
+
+```ts
+// 서버 스케치, 런타임 무관
+socket.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  relayToOtherSockets(room, msg);                 // hello / welcome / presence / leave
+  for (const out of room.authority.handle(msg)) { // "ops" -> "applied", "sync-request" -> "snapshot"
+    room.sockets.forEach((s) => s.send(JSON.stringify(out)));
+  }
+  persist(docId, room.authority.snapshot());      // 실제로는 디바운스하세요
+};
+```
+
+`applied`는 보낸 사람을 포함한 모든 소켓에 가야 합니다. 보낸 클라이언트가 이를 확인 응답으로 쓰기 때문입니다. 클라이언트는 `to`가 자신이 아닌 `snapshot`을 버립니다.
+
+## 보장하는 것
+
+- 모든 클라이언트가 같은 순서의 스트림을 재생하므로, 대기 중인 편집이 비워지면 편집기는 권한 주체의 문서로 수렴합니다.
+- 서로 다른 블록의 동시 편집, 블록 삽입, 삭제, 이동, 한 블록 안의 동시 입력이 수렴합니다. 텍스트는 삽입/삭제 OT를, props와 이동은 마지막 쓰기 우선을 사용합니다.
+- 늦게 들어온 사용자는 스냅샷을 받습니다. 실행 취소와 다시 실행은 로컬이며 다른 사람의 편집을 되돌리지 않습니다.
+
+## 한계
+
+- 오프라인 편집은 병합되지 않습니다. 연결되지 않은 동안의 로컬 편집은 전송되지 않고, 다시 들어가면 방의 스냅샷이 로컬 문서를 대체합니다.
+- 서버 없는 리더 선출(BroadcastChannel, 메모리)은 최선의 노력 수준이며 모든 탭이 닫히면 아무것도 남지 않습니다. 운영 환경에서는 서버 권한 주체를 쓰세요.
+- 같은 텍스트 영역에 대한 원격 편집을 가로지르는 실행 취소는 몇 글자 어긋날 수 있습니다.
+- 블록과 셀 선택은 공유되지 않고 텍스트 캐럿과 범위만 공유됩니다.
+- WebSocket 어댑터와 서버 스케치는 예제입니다. 인증, 권한, 영속화는 백엔드가 맡아야 합니다.

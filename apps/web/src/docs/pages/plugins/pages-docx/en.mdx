@@ -1,0 +1,47 @@
+`@jul-editor/plugins/pages` turns the editor into a Word-like paged document: sheets with margins, page breaks, header and footer tokens, zoom, print CSS, and DOCX import and export. Pagination is a visual layer around the editor, and the document model stays an ordinary `Doc`.
+
+```tsx
+import { PagedEditor, PageBreakView, pageBreak, ZoomControl, PageSettingsPanel,
+  DEFAULT_SETTINGS } from "@jul-editor/plugins/pages";
+
+const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+const [zoom, setZoom] = useState(100);
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin blocks={[pageBreak]} renderers={{ pageBreak: PageBreakView }} />
+  <PagedEditor settings={settings} zoom={zoom} onPageCountChange={setPages}>
+    <Editor.Content />
+  </PagedEditor>
+</Editor>
+```
+
+`DocumentSettings` covers `size` (`PAGE_SIZE_NAMES`), orientation, `margins` in millimetres, and header and footer text with alignment. `applyPageTokens` and `splitPageTokens` handle page number tokens, and `buildPrintCss` produces the `@page` rules. `PagedEditor` injects `PAGED_CSS` and the print rules unless `injectStyles={false}`. `paginate` and `blocksByPage` expose the pure layout math.
+
+## Page breaks
+
+`pageBreak` is a void block, inserted by its slash item `pageBreakSlashItem`. Markdown is `<!-- pagebreak -->` (also `\pagebreak` and `\newpage` on the way in), and HTML is a `break-after: page` div. Word and Google Docs page break styles are recognized on import.
+
+## DOCX export and import
+
+The `docx` and `mammoth` libraries are injected by you, so the plugin has no hard dependency on them. The web app installs both. Install them in the app that needs file support only:
+
+```ts
+import * as docx from "docx";
+import mammoth from "mammoth";
+import { fromHTML } from "@jul-editor/core/serde";
+import { exportDocx, importDocx } from "@jul-editor/plugins/pages";
+
+const { file: blob, lossy } = await exportDocx(doc, settings, { docxLib: docx });
+const { doc: imported, settings: s, messages } = await importDocx(await file.arrayBuffer(), {
+  mammothLib: mammoth,
+  fromHTML,
+});
+```
+
+`exportDocx` returns a Blob by default (`output: "buffer"` for Node) and a `lossy` list of blocks that were degraded. Pass `resolveImage` to embed a header logo, since the module does no network. `importDocx` goes through mammoth's HTML output and `fromHTML`, which needs a DOM or a parser bound into it.
+
+## Limits
+
+- Import does not recover page size, margins, headers, or footers (mammoth ignores section properties). It returns default settings.
+- Charts, diagrams, and other plugin blocks degrade on export and appear in `lossy`.
+- Pagination is visual and keeps the document as one flow: blocks are pushed to the next sheet by measured height, and a block taller than a page overflows into the following page instead of being split.

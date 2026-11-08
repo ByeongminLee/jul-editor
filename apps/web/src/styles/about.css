@@ -1,0 +1,27 @@
+.about-wrap { max-width: 1150px; }
+.about-hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); align-items: center; gap: clamp(32px, 6vw, 90px); padding: 78px 0 62px; border-bottom: 1px solid var(--line); }
+.about-eyebrow { color: var(--accent); font: 700 11px ui-monospace, SFMono-Regular, monospace; letter-spacing: .13em; }
+.about-hero h1 { max-width: 720px; margin: 19px 0 21px; color: var(--text); font-size: clamp(42px, 5vw, 67px); line-height: 1.08; letter-spacing: -.065em; }
+.about-hero p { max-width: 660px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.about-hero-model { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 20px 65px var(--shadow-color); }
+.about-hero-model > div { display: flex; align-items: center; gap: 9px; padding: 13px 16px; color: var(--muted); font: 700 10px ui-monospace, SFMono-Regular, monospace; letter-spacing: .06em; }
+.about-hero-model > div:first-child { justify-content: space-between; border-bottom: 1px solid var(--line); }
+.about-hero-model > div:last-child { border-top: 1px solid var(--line); color: var(--accent); }
+.about-hero-model pre { margin: 0; padding: 22px 24px; color: var(--code-ink); font: 12px/1.85 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.about-article { padding: 28px 0 105px; }
+.about-article > p { max-width: 850px; }
+.about-article h2 { margin-top: 65px; font-size: clamp(27px, 3vw, 36px); }
+.about-article table { width: 100%; }
+.about-article th:first-child, .about-article td:first-child { min-width: 132px; color: var(--text); }
+.about-bench-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 27px 0 34px; }
+.about-bench-charts > section { min-width: 0; padding: 18px 16px 4px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.about-bench-charts h3 { margin: 0 0 10px; font-size: 13px; }
+.about-chart-editor { min-height: 0; padding: 0; }
+.about-chart-editor [data-jul-editor-block] { margin: 0; }
+.about-chart-editor [data-jul-editor-plugin="chart"] { margin: 0; padding: 6px 0 0; border: 0; background: transparent; }
+@media (max-width: 760px) { .about-hero { grid-template-columns: 1fr; padding-block: 55px 43px; } .about-hero-model { max-width: 470px; } .about-bench-charts { grid-template-columns: 1fr; } }
+@media (max-width: 500px) { .about-hero h1 { font-size: 40px; } .about-article table { display: block; overflow-x: auto; } .about-article td, .about-article th { min-width: 155px; } }
+.about-chart-note { margin: -6px 0 6px; color: var(--muted); font-size: 11px; }
+.about-article .ap-legend { margin-top: 22px; }
+.about-article .ap-legend + .about-bench-charts { margin-top: 12px; }
+.about-hero-model .docs-code { margin: 0; border: 0; border-radius: 0; }

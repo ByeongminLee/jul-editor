@@ -1,0 +1,43 @@
+Document tables and external data tables serve different jobs. A document `table` contains editable `tableRow` and `tableCell` blocks. The optional `dataTable` plugin displays inline CSV/JSON, a linked data file, or an application view.
+
+## Edit a document table
+
+Use table toolbar atoms to add, move, merge, and split cells. `useTableState` tells your UI which cell and table are active. Your host stylesheet owns the grid and borders, including merged-cell layout.
+
+<Demo example="tables" />
+
+```tsx
+<Editor.Toolbar>
+  <Editor.InsertTable rows={3} cols={3} />
+  <Editor.AddRowAfter />
+  <Editor.AddColumnAfter />
+  <Editor.MergeCells />
+  <Editor.SplitCell />
+  <Editor.DeleteTable />
+</Editor.Toolbar>
+```
+
+## Images and embeds
+
+The default image renderer supports source, alt text, width, alignment, and caption. File validation, upload timing, and storage live in the host application; see [Assets and uploads](/docs/core/assets). Embeds validate provider URLs and use a link for unsupported providers; keep URL validation and iframe sandboxing if you replace the renderer.
+
+<Demo example="media" />
+
+```tsx
+import { Editor, defaultRenderers } from "@jul-editor/react";
+
+async function upload(file: File) {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch("/api/upload", { method: "POST", body });
+  if (!response.ok) throw new Error("Upload failed");
+  const result: unknown = await response.json();
+  if (!result || typeof result !== "object" || !("url" in result) || typeof result.url !== "string")
+    throw new Error("Upload response must include a URL");
+  return result.url;
+}
+
+<Editor defaultValue={doc} onUpload={upload} renderers={defaultRenderers}>
+  <Editor.Content />
+</Editor>
+```

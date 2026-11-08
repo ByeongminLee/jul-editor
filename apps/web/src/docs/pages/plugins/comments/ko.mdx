@@ -1,0 +1,48 @@
+댓글 스레드는 텍스트 범위 또는 블록에 고정됩니다. 앵커는 텍스트 자체에 붙는 `comment` 마크이므로 편집을 따라 움직이고 복사와 실행 취소에도 유지됩니다. 스레드는 호스트 API에 맞춰 구현하는 `CommentAdapter` 뒤에 있으며, 플러그인은 네트워크나 저장소를 직접 다루지 않습니다.
+
+```tsx
+import { commentMark, createMemoryCommentAdapter, AddCommentButton, CommentsPanel,
+  CommentStyles, EditorCommentsProvider } from "@jul-editor/plugins/comments";
+
+const adapter = createMemoryCommentAdapter(); // 모듈 범위에 두어 참조를 고정하세요
+const me = { id: "u1", name: "Mina", color: "#2563eb" };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin marks={[commentMark]} />
+  <EditorCommentsProvider adapter={adapter} author={me} locale="ko">
+    <Editor.Content />
+    <AddCommentButton>댓글</AddCommentButton>
+    <CommentsPanel layout="list" />
+  </EditorCommentsProvider>
+</Editor>
+```
+
+`EditorCommentsProvider`는 컨텍스트에서 편집기를 읽습니다. 코어 편집기를 직접 들고 있다면 `editor` prop을 받는 `CommentsProvider`를 쓰세요. 하이라이트 스타일은 기본으로 주입되며, 직접 꾸미려면 `injectStyles={false}`로 끄고 `[data-mark="comment"]`를 스타일링합니다. 문구는 `EN_COMMENT_LABELS`, `KO_COMMENT_LABELS`를 기본으로 하고 `labels`로 일부만 덮어쓸 수 있습니다.
+
+## 어댑터 계약
+
+```ts
+interface CommentAdapter {
+  listThreads(): Promise<CommentThread[]>;
+  createThread(input: NewThreadInput): Promise<CommentThread>;
+  addReply(threadId, { body, author }): Promise<CommentThread>;
+  editComment(threadId, commentId, body): Promise<CommentThread>;
+  deleteComment(threadId, commentId): Promise<CommentThread | null>; // 마지막 댓글이면 스레드 삭제
+  deleteThread(threadId): Promise<void>;
+  resolveThread(threadId, by?): Promise<CommentThread>;
+  reopenThread(threadId): Promise<CommentThread>;
+  subscribe(onChange: (change: CommentChange) => void): () => void;
+}
+```
+
+`subscribe`는 로컬 호출을 포함한 모든 변경에서 호출되어야 컨트롤러가 어댑터를 단일 진실 공급원으로 쓸 수 있습니다. 서버가 변경을 푸시할 때도 호출하세요. 참고 구현으로 데모와 테스트용 `createMemoryCommentAdapter`, 같은 출처의 탭끼리 동기화하는 `createBroadcastCommentAdapter`가 있습니다.
+
+## React 없이 컨트롤러 쓰기
+
+`createCommentsController({ editor, adapter, author })`는 `beginDraft`, `submitDraft`, `addComment`, `reply`, `editComment`, `deleteThread`, `resolve`, `getState` / `subscribe`를 제공합니다. `addCommentMark`, `findCommentRanges`, `threadIdsAtPoint`는 스토어에서 바로 동작하고, `filterThreads`는 열림 / 해결됨 필터를 구현합니다.
+
+## 한계
+
+- 마크는 문서의 일부이므로 텍스트가 모두 삭제되면 스레드는 유지되지만 `detached`로 표시되며 `getState().threads`의 맨 뒤에 놓입니다.
+- Markdown과 일반 텍스트는 댓글 마크를 버립니다. HTML은 `data-mark="comment"` span으로 보존합니다.
+- 메모리 어댑터는 영속적이지 않습니다. 스레드는 백엔드에 저장하고 저장하는 문서와 함께 동기화하세요.

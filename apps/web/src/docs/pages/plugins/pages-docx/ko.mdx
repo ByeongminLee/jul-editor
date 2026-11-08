@@ -1,0 +1,47 @@
+`@jul-editor/plugins/pages`는 편집기를 Word 같은 페이지 문서로 바꿉니다. 여백이 있는 용지, 페이지 나누기, 머리글과 바닥글 토큰, 확대와 축소, 인쇄 CSS, DOCX 가져오기와 내보내기를 제공합니다. 페이지 분할은 편집기를 감싸는 시각적 계층이며 문서 모델은 평범한 `Doc` 그대로입니다.
+
+```tsx
+import { PagedEditor, PageBreakView, pageBreak, ZoomControl, PageSettingsPanel,
+  DEFAULT_SETTINGS } from "@jul-editor/plugins/pages";
+
+const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+const [zoom, setZoom] = useState(100);
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin blocks={[pageBreak]} renderers={{ pageBreak: PageBreakView }} />
+  <PagedEditor settings={settings} zoom={zoom} onPageCountChange={setPages}>
+    <Editor.Content />
+  </PagedEditor>
+</Editor>
+```
+
+`DocumentSettings`에는 `size`(`PAGE_SIZE_NAMES`), 방향, 밀리미터 단위 `margins`, 정렬이 있는 머리글과 바닥글 텍스트가 들어 있습니다. `applyPageTokens`와 `splitPageTokens`는 쪽 번호 토큰을 처리하고 `buildPrintCss`는 `@page` 규칙을 만듭니다. `PagedEditor`는 `injectStyles={false}`가 아니면 `PAGED_CSS`와 인쇄 규칙을 주입합니다. `paginate`와 `blocksByPage`는 순수한 레이아웃 계산을 제공합니다.
+
+## 페이지 나누기
+
+`pageBreak`는 void 블록이며 슬래시 항목 `pageBreakSlashItem`으로 넣습니다. Markdown은 `<!-- pagebreak -->`(읽을 때는 `\pagebreak`, `\newpage`도 인식)이고 HTML은 `break-after: page` div입니다. 가져올 때 Word와 Google Docs의 페이지 나누기 스타일도 인식합니다.
+
+## DOCX 내보내기와 가져오기
+
+`docx`와 `mammoth` 라이브러리는 호스트가 주입하므로 플러그인은 둘에 직접 의존하지 않습니다. 웹 앱에는 두 패키지가 설치되어 있습니다. 파일 지원이 필요한 앱에만 설치하세요.
+
+```ts
+import * as docx from "docx";
+import mammoth from "mammoth";
+import { fromHTML } from "@jul-editor/core/serde";
+import { exportDocx, importDocx } from "@jul-editor/plugins/pages";
+
+const { file: blob, lossy } = await exportDocx(doc, settings, { docxLib: docx });
+const { doc: imported, settings: s, messages } = await importDocx(await file.arrayBuffer(), {
+  mammothLib: mammoth,
+  fromHTML,
+});
+```
+
+`exportDocx`는 기본으로 Blob을 돌려주고(Node에서는 `output: "buffer"`), 품질이 낮아진 블록의 `lossy` 목록도 돌려줍니다. 이 모듈은 네트워크를 쓰지 않으므로 머리글 로고는 `resolveImage`로 넘기세요. `importDocx`는 mammoth의 HTML 결과를 `fromHTML`로 변환하며, `fromHTML`에는 DOM이나 연결된 파서가 필요합니다.
+
+## 한계
+
+- 가져오기는 용지 크기, 여백, 머리글, 바닥글을 복원하지 않습니다(mammoth가 섹션 속성을 무시). 기본 설정이 반환됩니다.
+- 차트, 다이어그램 등 플러그인 블록은 내보낼 때 품질이 낮아지며 `lossy`에 나타납니다.
+- 페이지 분할은 시각적이며 문서는 하나의 흐름으로 유지됩니다. 측정한 높이로 블록을 다음 용지로 밀고, 한 페이지보다 큰 블록은 나뉘지 않고 다음 페이지로 넘쳐 흐릅니다.

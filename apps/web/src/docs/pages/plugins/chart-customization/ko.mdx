@@ -1,0 +1,35 @@
+기본 차트 렌더러는 교체할 수 있습니다. 차트 표시와 데이터 연결을 재사용하면서 컨트롤을 직접 만들려면 `ChartView`를 감싸고, 화면 전체를 바꾸려면 다른 렌더러를 등록하세요. `selected={false}`는 기본 차트 컨트롤을 숨깁니다. 슬래시 항목은 제품 데이터가 미리 들어간 차트를 만들 수 있습니다.
+
+색상은 CSS 변수 `--chart-1`~`--chart-8`, `theme.series` prop(최대 8색), 블록의 `palette` prop에서 정해지며 `palette`가 가장 우선합니다. 계열이 하나인 막대 차트의 막대마다 색을 달리하려면 `colorBy: "category"`, 계열마다 한 가지 색을 쓰려면 `colorBy: "series"`를 지정하세요.
+
+## 브랜드 색상과 차트 종류 선택기
+
+아래 예제는 `ChartView.theme`으로 색을 직접 전달하고 선택한 차트의 종류를 바꿉니다. `className` 슬롯은 차트·그래프·툴팁·범례·컨트롤에 Tailwind 클래스를 적용합니다. 종류 선택기가 `updateProps`를 호출하므로 문서 상태와 실행 취소 기록도 함께 갱신됩니다.
+
+<Demo example="chart-customization" />
+
+```tsx
+import { ChartView } from "@jul-editor/plugins/chart";
+import { Editor, type VoidRendererProps } from "@jul-editor/react";
+
+function BrandedChart(props: VoidRendererProps) {
+  return <div className="brand-chart">
+    <ChartView {...props} selected={false}
+      className={{ container: "rounded-xl border border-zinc-700 p-4", tooltip: "rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl" }}
+      theme={{ series: ["#f97316", "#38bdf8", "#84cc16"], tooltipBackground: "#18181b", tooltipForeground: "#fafafa" }} />
+    {props.selected && <select aria-label="Chart type"
+      value={String(props.block.props.kind ?? "bar")}
+      onChange={(event) => props.updateProps({ kind: event.target.value })}>
+      <option value="bar">bar</option><option value="line">line</option>
+      <option value="pie">pie</option>
+    </select>}
+  </div>;
+}
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ chart: BrandedChart }} />
+  <Editor.Content />
+</Editor>
+```
+
+차트 뷰를 바꿔도 같은 데이터 리졸버를 사용할 수 있습니다. 원격 데이터셋은 앱 데이터이므로 응답 상태·접근 권한·스키마를 확인한 뒤 렌더러에 전달하세요.

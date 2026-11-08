@@ -1,0 +1,32 @@
+Code blocks remain editable document blocks. Syntax highlighting paints ranges over the editable text without rewriting that text. Register a highlighter only in editors that need code, and provide the languages you want in the block's picker.
+
+## Register the renderer and highlighter
+
+The default plugins package uses lowlight. You can supply a smaller language list, a different highlighter, or a custom code block renderer. Without the browser CSS Custom Highlight API, the block still edits normally.
+
+For a file tree, tabs, line numbers, and added/deleted markers, use the separate [Code Workspace](/docs/plugins/code-workspace) plugin. The ordinary code block stays a single editable snippet.
+
+<Demo example="code-blocks" />
+
+```tsx
+import { useEffect } from "react";
+import { Editor, createCodeBlockRenderer, useEditor } from "@jul-editor/react";
+import { createLowlightHighlighter, pluginCodeLanguages } from "@jul-editor/plugins/code";
+
+const CodeView = createCodeBlockRenderer({ languages: pluginCodeLanguages });
+function HighlightSetup() {
+  const editor = useEditor();
+  useEffect(() => editor?.registerHighlighter(createLowlightHighlighter()), [editor]);
+  return null;
+}
+
+<Editor defaultValue={doc} renderers={{ codeBlock: CodeView }}>
+  <HighlightSetup /><Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+```css
+::highlight(jul-editor-keyword) { color: #c99fe6; }
+::highlight(jul-editor-string) { color: #a0c793; }
+::highlight(jul-editor-comment) { color: #8f959d; }
+```

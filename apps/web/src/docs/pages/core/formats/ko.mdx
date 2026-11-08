@@ -1,0 +1,20 @@
+문서 모델이 원본입니다. Markdown과 HTML은 교환 형식으로, `Doc`을 내보내거나 입력 텍스트를 다시 블록으로 파싱할 수 있습니다. 커스텀 블록의 일부 속성은 변환 규칙이 없으면 Markdown에서 완전히 왕복하지 못하므로 내보낼 때 `lossy` 정보를 확인하세요.
+
+## 양방향 변환
+
+```ts
+import { fromHTML, fromMarkdown, toHTML, toMarkdown } from "@jul-editor/core/serde";
+
+const { markdown, lossy } = toMarkdown(doc);
+const html = toHTML(doc);
+const { doc: fromMd } = fromMarkdown(markdown);
+const { doc: fromHtml } = fromHTML(html);
+
+if (lossy.length) console.info(lossy);
+```
+
+<Demo example="formats" />
+
+HTML 입력은 안전하게 정제합니다. 이미지 업로드는 앱이 처리합니다. `fromHTML`은 브라우저의 `DOMParser`를 사용하므로 Node 서버에서는 옵션으로 파서를 전달하세요. 커스텀 속성과 고정 ID까지 문서 전체를 보존해야 한다면 JSON을 저장하세요.
+
+관련 문서: JSON 저장은 [문서 모델](/docs/core/document-model), 직접 만든 블록의 변환은 [커스텀 블록과 API](/docs/core/custom-blocks)를 보세요.

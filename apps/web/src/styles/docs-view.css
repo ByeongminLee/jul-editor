@@ -1,0 +1,8 @@
+.docs-view-demo [data-docs-custom-card] { margin: 18px 0; padding: 17px 19px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 7px; background: var(--surface); color: var(--text); }
+.docs-view-demo [data-docs-custom-card] strong { font-size: 14px; }
+.docs-view-demo [data-docs-custom-card] p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.docs-view-demo [data-docs-custom-card] input { display: block; width: 100%; margin-top: 12px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-2); color: var(--text); }
+.docs-view-static { min-height: 270px; padding: 20px 24px; outline: none; background: var(--surface); color: var(--text); }
+.docs-view-static [data-type=heading] { margin: 8px 0 14px; }
+.docs-view-static [data-type=paragraph] { margin-bottom: 13px; }
+.docs-view-static [data-jul-editor-plugin=chart] { min-height: 190px; }

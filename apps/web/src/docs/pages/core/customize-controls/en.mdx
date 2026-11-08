@@ -1,0 +1,54 @@
+JulEditor supplies editing behavior and headless pieces. Your app decides **which controls exist**, their order, labels, icons, hover cards, and styling. Do not render a piece you do not need. Add commands with React children or `Editor.Plugin`, then replace the related menu or renderer by block key.
+
+## Start with the surface you need
+
+| Surface | Remove or reorder | Add or replace | Design hook |
+| --- | --- | --- | --- |
+| Toolbar | Choose `Editor.Toolbar` children | Your button with `useCommands()`, or built-in atoms | Any JSX and host CSS |
+| Slash menu | `items={(defaults) => defaults.filter(...)}` | `items` and `Editor.Plugin blocks` | Render prop, `description`, icons, hover card |
+| Bubble menu | Omit it or choose children | Render prop with toolbar atoms or custom buttons | Render prop and host CSS |
+| Tags and mentions | Omit the menu | `onSearch` and custom result markup | Render prop |
+| Block handle | Omit `Editor.DragHandle` | Add controls beside its returned handle | Render prop |
+| Images and plugins | Omit renderer/plugin imports | `renderers={{ image: ..., chart: ... }}` | Renderer component and CSS |
+| Saved document view | Choose renderer keys | `Editor.View renderers` | Same block attributes and theme CSS |
+
+## Build a smaller toolbar and add your own action
+
+`Editor.Toolbar` is just the controls you put inside it. The example omits Underline, moves Bold before Heading, and adds a divider command. Use `onMouseDown` to keep the editor selection while pressing a custom button. Labels and icons come from the app; the core imports no icon library.
+
+```tsx
+import { newId } from "@jul-editor/core";
+import { Editor, useCommands } from "@jul-editor/react";
+
+function AddDivider() {
+  const commands = useCommands();
+  return <button type="button"
+    onMouseDown={(event) => event.preventDefault()}
+    onClick={() => commands.insertBlock({
+      id: newId(), type: "divider", props: {},
+    })}>
+    Add divider
+  </button>;
+}
+
+<Editor.Toolbar aria-label="Formatting">
+  <Editor.Bold>Bold</Editor.Bold>
+  <Editor.Heading level={2}>H2</Editor.Heading>
+  <AddDivider />
+  <Editor.Undo>Undo</Editor.Undo>
+</Editor.Toolbar>
+```
+
+<Demo example="toolbar" />
+
+## Curate the slash menu and its hover card
+
+`items` runs after default and plugin commands are collected. Return a filtered list or an entirely new array. Its `id` distinguishes H1 from H2 even though both have `type: "heading"`. The render prop gives `items`, `activeIndex`, `getListboxProps`, and `getOptionProps`. Use `onMouseEnter` for a hover preview, while retaining the returned option props for selection. [Menus](/docs/core/menus) includes the full component code and a working hover card.
+
+<Demo example="menus-custom" />
+
+## Replace other surfaces
+
+`Editor.BubbleMenu` and `Editor.DragHandle` use render props, so your app can replace their entire markup while keeping the selection rectangle or block handle behavior. `Editor.TagMenu` and `Editor.MentionMenu` accept your search function and result UI. For images, charts, tables, Code Workspace, or your own block, register a renderer under its type key. A saved document uses the same keys in [Editor.View](/docs/core/read-only-view).
+
+Changing labels uses `locale` and `labels` on `Editor`. Changing color, spacing, radius, or typography is host CSS. [Styling and i18n](/docs/core/styling-i18n-performance) shows the selectors and theme tokens.

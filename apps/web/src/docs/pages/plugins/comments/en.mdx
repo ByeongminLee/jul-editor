@@ -1,0 +1,48 @@
+Comment threads anchor to a text range or a block. The anchor is a `comment` mark on the text itself, so it moves with edits and survives copy and undo. Threads live behind a `CommentAdapter` that you implement against your own API. The plugin never does network or storage on its own.
+
+```tsx
+import { commentMark, createMemoryCommentAdapter, AddCommentButton, CommentsPanel,
+  CommentStyles, EditorCommentsProvider } from "@jul-editor/plugins/comments";
+
+const adapter = createMemoryCommentAdapter(); // module scope: keep it stable
+const me = { id: "u1", name: "Mina", color: "#2563eb" };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin marks={[commentMark]} />
+  <EditorCommentsProvider adapter={adapter} author={me} locale="en">
+    <Editor.Content />
+    <AddCommentButton>Comment</AddCommentButton>
+    <CommentsPanel layout="list" />
+  </EditorCommentsProvider>
+</Editor>
+```
+
+`EditorCommentsProvider` reads the editor from context. `CommentsProvider` takes an `editor` prop when you hold the core editor yourself. Highlights are injected by default; set `injectStyles={false}` and style `[data-mark="comment"]` to own the look. Labels come from `EN_COMMENT_LABELS` and `KO_COMMENT_LABELS`, with partial overrides through `labels`.
+
+## The adapter contract
+
+```ts
+interface CommentAdapter {
+  listThreads(): Promise<CommentThread[]>;
+  createThread(input: NewThreadInput): Promise<CommentThread>;
+  addReply(threadId, { body, author }): Promise<CommentThread>;
+  editComment(threadId, commentId, body): Promise<CommentThread>;
+  deleteComment(threadId, commentId): Promise<CommentThread | null>; // last comment removes the thread
+  deleteThread(threadId): Promise<void>;
+  resolveThread(threadId, by?): Promise<CommentThread>;
+  reopenThread(threadId): Promise<CommentThread>;
+  subscribe(onChange: (change: CommentChange) => void): () => void;
+}
+```
+
+`subscribe` must fire for every change, local calls included, so the controller can treat the adapter as the single source of truth. Call it when your server pushes a change too. Two references ship: `createMemoryCommentAdapter` for demos and tests, and `createBroadcastCommentAdapter`, which also syncs tabs of one origin.
+
+## Controller without React
+
+`createCommentsController({ editor, adapter, author })` exposes `beginDraft`, `submitDraft`, `addComment`, `reply`, `editComment`, `deleteThread`, `resolve`, and `getState` / `subscribe`. The helpers `addCommentMark`, `findCommentRanges`, and `threadIdsAtPoint` work directly on the store. `filterThreads` implements the open / resolved filter.
+
+## Limits
+
+- The mark is part of the document, so a thread whose text is fully deleted is kept but reported as `detached` (listed last in `getState().threads`).
+- Markdown and plain text drop comment marks. HTML keeps them as `data-mark="comment"` spans.
+- The memory adapters are not durable. Persist threads in your backend and keep them in sync with the document you save.

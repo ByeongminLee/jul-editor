@@ -1,0 +1,57 @@
+diff 플러그인에는 블록 비교 외에 두 가지 보기가 더 있습니다. `InlineDiffView`는 문서 하나에 추가와 삭제를 겹쳐 보여 주고, `SuggestionView`는 변경마다 수락과 거절 버튼을 붙입니다. `useEditorSuggestions`는 같은 검토를 실제 편집기 안에서 하게 해 줍니다. 모두 `@jul-editor/plugins/diff`에 있으며, 컴포넌트를 렌더하기 전까지 DOM을 쓰지 않습니다.
+
+## 한 문서 안에서 비교하기
+
+`InlineDiffView`는 `Doc` 두 개를 받아 단어 단위의 추가, 삭제, 서식 변경을 표시합니다. `DiffCompare`는 두 레이아웃을 토글(`defaultLayout="block" | "inline"`)로 묶고, `DiffStyles`는 기본 CSS(`DIFF_CSS`)를 한 번 주입합니다.
+
+```tsx
+import { DiffCompare, DiffStyles, InlineDiffView } from "@jul-editor/plugins/diff";
+
+<DiffStyles />
+<DiffCompare before={before} after={after} defaultLayout="inline" />
+<InlineDiffView before={before} after={after} />
+```
+
+`attribute={(change) => ({ id, name, color })}`로 변경한 사람을 표시할 수 있습니다(`data-diff-author*`와 `title`로 나타납니다). 이 함수는 참조가 바뀌지 않게 유지하세요.
+
+## 제안 검토하기
+
+`SuggestionView`는 `base`와 `proposed`를 비교해 변경마다 수락, 거절, 되돌리기를 보여 주고, 결과를 `onResult`로 전달합니다. 결정하지 않은 변경은 거절로 계산되므로 결과는 항상 유효한 문서입니다.
+
+```tsx
+import { SuggestionView } from "@jul-editor/plugins/diff";
+
+<SuggestionView
+  base={current}
+  proposed={agentDraft}
+  onResult={(doc) => save(doc)}
+  labels={{ /* DEFAULT_SUGGESTION_LABELS 일부 덮어쓰기 */ }}
+/>
+```
+
+직접 UI를 만들려면 `useSuggestions({ base, proposed })`를 쓰세요. `diff`, `decisions`, `pending`, `result`와 `decide`, `undo`, `acceptAll`, `rejectAll`, `reset`을 돌려줍니다. `computeInlineDiff`, `applyDecisions`, `decideAll` 같은 모델 함수는 React 없이 서버에서도 실행됩니다.
+
+## 편집기 안의 제안
+
+`useEditorSuggestions(editor, proposed)`는 실제 편집기에 변경을 표시합니다. 추가와 삭제가 본문에 나타나고 변경마다 수락, 거절 위젯이 붙습니다. 결정은 `reconcileDoc`을 통해 되돌릴 수 있는 하나의 트랜잭션으로 적용되어 히스토리와 선택 영역이 유지됩니다. `proposed`에 `null`을 넘기면 제안 모드가 꺼집니다.
+
+```tsx
+import { SUGGESTION_CSS, useEditorSuggestions } from "@jul-editor/plugins/diff";
+import { useEditor } from "@jul-editor/react";
+
+function Review({ proposed }: { proposed: Doc | null }) {
+  const editor = useEditor();
+  const s = useEditorSuggestions(editor, proposed, { controls: true });
+  return <p>대기 {s.changes.length}건 <button onClick={s.acceptAll}>모두 수락</button></p>;
+}
+```
+
+`controls: false`로 위젯을 숨기고 `s.changes`로 목록을 직접 그릴 수 있습니다. `perspective: "proposed"`는 제안을 현재 문서로 두고 원본을 변경으로 보여 줍니다. `SUGGESTION_CSS`를 포함하거나 `jul-editor-suggest-ins`, `-del`, `-fmt` 클래스를 직접 스타일링하세요.
+
+## 한계
+
+- 변경은 안정적인 블록 ID로 대응시킵니다. ID를 새로 만드는 문서는 전체가 바뀐 것으로 보입니다.
+- 텍스트 비교는 단어 단위이며 메인 스레드에서 실행됩니다. 매우 큰 문서는 서버에서 비교하세요.
+- 커스텀 void 블록은 블록 비교처럼 `renderers`로 읽기 전용 렌더링을 제공해야 합니다.
+
+관련 문서: [문서 비교](/docs/plugins/diff).

@@ -1,0 +1,35 @@
+The bundled chart renderer is replaceable. Wrap `ChartView` to reuse chart rendering and data resolution while supplying your own controls, or provide a different renderer for a complete redesign. Passing `selected={false}` hides the built-in chart controls. A slash item can create a chart preloaded with your product's data.
+
+Colors come from the `--chart-1` to `--chart-8` CSS variables, the `theme.series` prop (up to eight colors), or a block's own `palette` prop, which wins over both. Use `colorBy: "category"` to color each bar of a single-series chart and `colorBy: "series"` for one color per series.
+
+## Add a brand palette and chart type selector
+
+The preview passes colors through `ChartView.theme` and changes the selected chart's kind. Use `className` slots for Tailwind classes on the chart, plot, tooltip, legend, and controls. Its type selector calls `updateProps`, so document state and undo history stay in sync.
+
+<Demo example="chart-customization" />
+
+```tsx
+import { ChartView } from "@jul-editor/plugins/chart";
+import { Editor, type VoidRendererProps } from "@jul-editor/react";
+
+function BrandedChart(props: VoidRendererProps) {
+  return <div className="brand-chart">
+    <ChartView {...props} selected={false}
+      className={{ container: "rounded-xl border border-zinc-700 p-4", tooltip: "rounded-lg border border-zinc-700 bg-zinc-900 p-3 text-zinc-100 shadow-xl" }}
+      theme={{ series: ["#f97316", "#38bdf8", "#84cc16"], tooltipBackground: "#18181b", tooltipForeground: "#fafafa" }} />
+    {props.selected && <select aria-label="Chart type"
+      value={String(props.block.props.kind ?? "bar")}
+      onChange={(event) => props.updateProps({ kind: event.target.value })}>
+      <option value="bar">bar</option><option value="line">line</option>
+      <option value="pie">pie</option>
+    </select>}
+  </div>;
+}
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ chart: BrandedChart }} />
+  <Editor.Content />
+</Editor>
+```
+
+Keep the same data resolver for custom chart views. Treat remote datasets as application data: check response status, access control, and schema before passing rows to the renderer.

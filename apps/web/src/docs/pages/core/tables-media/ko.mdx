@@ -1,0 +1,43 @@
+문서 표와 외부 데이터 표는 목적이 다릅니다. 문서 `table`에는 편집 가능한 `tableRow`와 `tableCell` 블록이 있습니다. 선택형 `dataTable` 플러그인은 직접 입력한 CSV/JSON, 연결한 데이터 파일, 앱에서 가져온 데이터셋을 보여 줍니다.
+
+## 문서 표 편집
+
+표 툴바 버튼으로 행·열을 추가·이동하고 셀을 병합·분할하세요. `useTableState`는 활성 셀과 표를 알려 줍니다. 병합 셀을 포함한 격자와 테두리 스타일은 앱이 지정합니다.
+
+<Demo example="tables" />
+
+```tsx
+<Editor.Toolbar>
+  <Editor.InsertTable rows={3} cols={3} />
+  <Editor.AddRowAfter />
+  <Editor.AddColumnAfter />
+  <Editor.MergeCells />
+  <Editor.SplitCell />
+  <Editor.DeleteTable />
+</Editor.Toolbar>
+```
+
+## 이미지와 임베드
+
+기본 이미지 렌더러는 소스, 대체 텍스트, 너비, 정렬, 캡션을 지원합니다. 파일 검증·업로드 시점·저장소 연결은 앱이 결정합니다. 자세한 내용은 [파일과 업로드](/docs/core/assets)를 보세요. 임베드는 제공자 URL을 검증하고 지원하지 않는 주소는 링크로 표시합니다. 렌더러를 교체해도 URL 검증과 iframe sandbox를 유지하세요.
+
+<Demo example="media" />
+
+```tsx
+import { Editor, defaultRenderers } from "@jul-editor/react";
+
+async function upload(file: File) {
+  const body = new FormData();
+  body.set("file", file);
+  const response = await fetch("/api/upload", { method: "POST", body });
+  if (!response.ok) throw new Error("Upload failed");
+  const result: unknown = await response.json();
+  if (!result || typeof result !== "object" || !("url" in result) || typeof result.url !== "string")
+    throw new Error("Upload response must include a URL");
+  return result.url;
+}
+
+<Editor defaultValue={doc} onUpload={upload} renderers={defaultRenderers}>
+  <Editor.Content />
+</Editor>
+```

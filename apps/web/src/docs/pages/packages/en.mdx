@@ -1,0 +1,37 @@
+The package boundary follows what an application actually imports. The core has no React dependency. The React package supplies controls and hooks. Plugins are separate entry points, so a text-only editor does not need chart, diagram, or highlighting code.
+
+## Workspace imports today
+
+| Import | Responsibility |
+| --- | --- |
+| `@jul-editor/core` | Document schema, JSON conversion, transactions, registry, and IDs |
+| `@jul-editor/core/serde` | Markdown, HTML, and text conversion |
+| `@jul-editor/plugins/diff` | Compare two documents by stable block ID, plus the `DiffView` UI |
+| `@jul-editor/react` | Editor composition, toolbar, menus, hooks, and opt-in attachments |
+| `@jul-editor/plugins/chart` | Charts with inline CSV/JSON or external data URLs |
+| `@jul-editor/plugins/diagram` | Mermaid diagram renderer and slash item |
+| `@jul-editor/plugins/table` | Data table renderer and resolver provider |
+| `@jul-editor/plugins/code` | Optional code highlighting |
+| `@jul-editor/plugins/code-workspace` | Optional multi-file tree, tabs, and line diff markers |
+| `@jul-editor/plugins/data` | CSV/JSON parsing and data helpers without React |
+
+Import a specific plugins subpath when you need that feature. `Editor.Plugin` then registers its renderer and slash command inside the editor instance.
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { ChartView, chartSlashItem } from "@jul-editor/plugins/chart";
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ chart: ChartView }} slashItems={[chartSlashItem]} />
+  <Editor.Content />
+  <Editor.SlashMenu />
+</Editor>
+```
+
+<Note>
+
+The workspace packages `@jul-editor/core`, `@jul-editor/react`, and `@jul-editor/plugins` are private and not installable from npm yet. Chart, diagram, table, code, Code Workspace, and data are currently plugins subpaths; separate public plugin packages are planned.
+
+</Note>
+
+Next: [Installation](/docs/installation) to run the repository, or [React composition](/docs/core/composition) to build an editor.

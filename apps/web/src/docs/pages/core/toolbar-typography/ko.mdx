@@ -1,0 +1,33 @@
+타이포그래피와 서식은 같은 문서를 다루는 앱의 컨트롤입니다. 에디터는 명령과 현재 상태를 제공하고, 앱은 표시할 버튼·글꼴 컨트롤·레이블을 정합니다.
+
+## 스키마를 바꾸지 않는 타이포그래피
+
+글꼴, 간격, 색상은 래퍼 클래스와 CSS로 적용하세요. 아래 예제는 글꼴을 바꿔도 `Doc`이 그대로 유지됩니다. 글자 일부에 적용할 서식은 저장 내용에 CSS 클래스를 넣는 대신 마크를 사용합니다.
+
+<Demo example="typography" />
+
+```css
+.my-editor .editor-content { font-family: var(--reading-font); }
+.my-editor .editor-toolbar { border-color: var(--border); }
+```
+
+## 툴바 조합하기
+
+`Editor.Toolbar`는 컨트롤 사이 키보드 이동을 지원합니다. 기본 버튼은 `aria-pressed`와 `data-active`로 현재 상태를 알립니다. 버튼은 필요에 따라 빼거나 교체할 수 있습니다. 아래 예제에서 밑줄 버튼을 숨겨 보세요.
+
+<Demo example="toolbar" />
+
+```tsx
+import { Editor } from "@jul-editor/react";
+
+<Editor.Toolbar aria-label="Formatting">
+  <Editor.Bold>Bold</Editor.Bold>
+  <Editor.Italic>Italic</Editor.Italic>
+  <Editor.Underline>Underline</Editor.Underline>
+  <Editor.Heading level={2}>H2</Editor.Heading>
+  <Editor.BulletList>List</Editor.BulletList>
+  <Editor.Undo>Undo</Editor.Undo>
+</Editor.Toolbar>
+```
+
+관련 문서: [컨트롤 맞춤 설정](/docs/core/customize-controls), [스타일·다국어·성능](/docs/core/styling-i18n-performance).

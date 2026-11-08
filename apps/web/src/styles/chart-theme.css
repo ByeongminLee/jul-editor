@@ -1,0 +1,62 @@
+/* The chart plugin reads these host tokens; applications can override them on any wrapper. */
+:root {
+  --chart-1: #ee9b51;
+  --chart-2: #80a8bc;
+  --chart-3: #8cad8b;
+  --chart-4: #c88775;
+  --chart-5: #b39bc2;
+  --chart-6: #d1b96f;
+  --chart-surface: #181a1c;
+  --chart-border: #323538;
+  --chart-grid: #35383a;
+  --chart-hover: #ee9b5114;
+  --chart-muted: #93999f;
+  --chart-cursor: #837a70;
+  --chart-tooltip-bg: #101112;
+  --chart-tooltip-border: #47413a;
+  --chart-tooltip-fg: #f4f4f1;
+  --chart-tooltip-muted: #b1aca5;
+}
+
+html[data-theme="light"] {
+  --chart-1: #a65014;
+  --chart-2: #426b82;
+  --chart-3: #5d8064;
+  --chart-4: #a65b50;
+  --chart-5: #816b92;
+  --chart-6: #9a7930;
+  --chart-surface: #fff;
+  --chart-border: #e1e3e5;
+  --chart-grid: #e7e8e9;
+  --chart-hover: #a6501414;
+  --chart-muted: #737a80;
+  --chart-cursor: #c5bdb4;
+  --chart-tooltip-bg: #fff;
+  --chart-tooltip-border: #d6d9db;
+  --chart-tooltip-fg: #202428;
+  --chart-tooltip-muted: #60676d;
+}
+
+.editor-content [data-jul-editor-plugin="chart"] {
+  min-width: 0;
+  overflow: visible;
+  margin-block: 18px;
+  padding: 16px 14px 8px;
+  border: 1px solid var(--chart-border);
+  border-radius: 12px;
+  background: var(--chart-surface);
+  color: var(--chart-tooltip-fg);
+}
+
+.editor-content [data-jul-editor-plugin="chart"] .recharts-responsive-container {
+  min-width: 0;
+}
+
+.editor-content [data-jul-editor-plugin="chart"] [data-chart-tooltip] {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .editor-content [data-jul-editor-plugin="chart"] { padding-inline: 6px; }
+}

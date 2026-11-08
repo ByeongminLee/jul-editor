@@ -1,0 +1,25 @@
+다이어그램 플러그인은 Mermaid 소스를 문서 블록에 저장하고 미리보기를 그립니다. 소스를 편집 가능한 상태로 두어야 다이어그램을 고치고 문서와 함께 직렬화할 수 있습니다. 필요한 에디터에만 렌더러와 슬래시 항목을 등록하세요.
+
+## 소스와 미리보기 함께 편집
+
+아래 예제에는 실제 다이어그램 블록이 있습니다. 블록을 선택해 텍스트를 바꾸면 저장된 속성에서 미리보기가 갱신됩니다. 앱은 소스를 보존하면서 프레임을 감싸거나 렌더러를 교체할 수 있습니다.
+
+<Demo example="diagram" />
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { DiagramView, diagramSlashItem } from "@jul-editor/plugins/diagram";
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ diagram: DiagramView }} slashItems={[diagramSlashItem]} />
+  <Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+<Note>
+
+Mermaid는 선택형 기능이며 페이지에 많은 코드를 추가할 수 있습니다. 실제 다이어그램을 보여 주는 경로나 컴포넌트에서만 플러그인을 import하세요.
+
+</Note>
+
+관련 문서: `@jul-editor/plugins/diagram` 경로는 [패키지](/docs/packages)를 보세요.

@@ -1,0 +1,122 @@
+**코드 워크스페이스**는 기술 글을 위한 별도 플러그인입니다. 기본 `codeBlock`은 구문 강조가 가능한 단일 코드 조각으로 유지됩니다. 코드 워크스페이스는 이름이 있는 여러 파일을 한 블록에 저장합니다. 패키지에는 속성을 폼으로 수정하는 기본 렌더러와 파일 트리·코드 화면에서 직접 편집하는 IDE 렌더러가 있습니다. 필요한 화면에서만 가져오세요.
+
+## 기본 렌더러
+
+왼쪽 파일 트리에서 파일을 고르면 위쪽에 탭이 열립니다. 블록을 선택하면 제목, 파일, 코드, 변경 줄과 표시 옵션을 바꿀 수 있습니다. 트리·탭·줄 번호는 각각 끌 수 있습니다. 속성을 폼에서 수정하는 간결한 기본형입니다.
+
+<Demo example="code-workspace" />
+
+## IDE 편집 테마
+
+파일을 자주 다루는 작성자에게는 `CodeWorkspaceIDEView`를 사용하세요. 편집 중에도 파일 트리·탭·줄 번호가 제자리에 있습니다. 탐색기나 폴더 안의 폴더 아이콘·더하기 버튼을 누르고 이름을 입력한 뒤 Enter를 누르세요. 파일을 한 번 클릭하면 코드가 열리고, 파일이나 폴더를 두 번 클릭하면 이름을 바꿀 수 있습니다. 항목을 폴더 위에 끌어다 놓으면 이동하고, 탐색기 빈 공간에 놓으면 최상위로 이동합니다. 트리 오른쪽의 체크박스를 선택하면 그 파일의 탭이 기본으로 열립니다. 파일 생성·이름 변경 시 `.tsx`, `.css` 같은 확장자로 언어를 정합니다. 기본 렌더러에서는 언어를 직접 입력할 수도 있습니다.
+
+코드 화면에는 추가 **+**와 삭제 **−** 줄 표시가 각각 있습니다. 줄 옆 표시를 클릭하거나 종류별 입력란에 `3-7, 11`처럼 범위를 적을 수 있습니다. 변경 표시는 문서 JSON에 저장되는 시각 정보이며 소스 텍스트를 바꾸거나 diff를 계산하지 않습니다. 코드는 화면에서 바로 편집합니다.
+
+<Demo example="code-workspace-ide" />
+
+## 필요한 곳에만 등록하기
+
+블록에는 파일 배열이 JSON으로 저장됩니다. 파일마다 경로·언어·코드 문자열을 지정합니다. `addedLines`와 `removedLines`는 1부터 시작하는 줄 번호이며 원본 코드를 바꾸지 않고 여백의 변경 표시만 만듭니다. 색상과 레이아웃은 앱 CSS가 정합니다. 구문 색상에는 기존 선택형 lowlight를 사용합니다.
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { Editor } from "@jul-editor/react";
+import {
+  codeWorkspaceBlock, CodeWorkspaceView, codeWorkspaceSlashItem,
+} from "@jul-editor/plugins/code-workspace";
+
+const doc: Doc = { version: 1, blocks: [{
+  id: "component-files", type: "codeWorkspace", props: {
+    title: "acme/components",
+    showTree: true, showTabs: true, showLineNumbers: true,
+    files: [
+      { path: "src/Button.tsx", language: "typescript",
+        code: "export function Button() {\n  return <button>Save</button>;\n}",
+        addedLines: [2] },
+      { path: "src/theme.css", language: "css",
+        code: ":root {\n  --accent: #f97316;\n}",
+        removedLines: [2] },
+    ],
+  },
+}] };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin
+    blocks={[codeWorkspaceBlock]}
+    renderers={{ codeWorkspace: CodeWorkspaceView }}
+    slashItems={[codeWorkspaceSlashItem]}
+  />
+  <Editor.Content />
+  <Editor.SlashMenu />
+</Editor>
+```
+
+## 렌더러와 테마 바꾸기
+
+두 화면은 같은 `codeWorkspace` 블록과 저장 데이터를 사용합니다. 기본 렌더러는 추가 설정이 필요 없습니다. IDE 프리셋을 쓰려면 해당 키의 렌더러만 교체하세요. 기본 다크 팔레트가 포함되어 있고, 바꾸려는 색만 `theme`에 전달하면 됩니다. `defaultOpenPaths`와 `defaultActivePath`는 처음 열리는 로컬 탭 상태를 정하고, 블록의 `pinnedPaths`는 문서에 저장되어 다시 열립니다. 블록 스키마를 바꾸지 않고 앱의 React 컴포넌트를 같은 키에 등록할 수도 있습니다.
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { Editor } from "@jul-editor/react";
+import {
+  codeWorkspaceBlock, codeWorkspaceSlashItem,
+  CodeWorkspaceIDEView, type CodeWorkspaceIDEViewProps,
+} from "@jul-editor/plugins/code-workspace";
+
+function ArticleWorkspace(props: CodeWorkspaceIDEViewProps) {
+  return <CodeWorkspaceIDEView
+    {...props}
+    theme={{ accent: "#f97316", sidebar: "#15191e", added: "#4caf7b" }}
+    className={{ container: "rounded-xl", tree: "border-r border-zinc-700", tabs: "border-b border-zinc-700", code: "font-mono" }}
+    defaultOpenPaths={["src/Button.tsx"]}
+    defaultActivePath="src/Button.tsx"
+  />;
+}
+
+export function ArticleEditor({ doc }: { doc: Doc }) {
+  return <Editor defaultValue={doc}>
+    <Editor.Plugin
+      blocks={[codeWorkspaceBlock]}
+      renderers={{ codeWorkspace: ArticleWorkspace }}
+      slashItems={[codeWorkspaceSlashItem]}
+    />
+    <Editor.Content />
+    <Editor.SlashMenu />
+  </Editor>;
+}
+```
+
+| 데이터 필드 | 역할 |
+| --- | --- |
+| `files: { path, language, code, addedLines?, removedLines? }[]` | 파일 내용과 1부터 시작하는 변경 줄 번호입니다. IDE에서 파일을 만들면 언어를 추론합니다. |
+| `folders?: string[]` | 빈 폴더와 명시적인 폴더 경로입니다. 파일 경로의 상위 폴더도 트리에 나타납니다. |
+| `pinnedPaths?: string[]` | 저장한 JSON을 불러올 때 다시 열 탭입니다. 실제 파일의 경로만 지정합니다. |
+| `title?`, `showTree?`, `showTabs?`, `showLineNumbers?` | 기본 렌더러의 표시 옵션입니다. |
+| `theme?: Partial<CodeWorkspaceIDETheme>` | IDE의 배경·사이드바·패널·글자·테두리·강조색·diff·구문 색상입니다. |
+| `className?: string \| CodeWorkspaceIDEClassNames` | `container`, `tree`, `tabs`, `tab`, `toolbar`, `panel`, `gutter`, `code`, `input` 영역의 Tailwind 클래스입니다. |
+
+## Markdown과 HTML 왕복 보존하기
+
+형식 변환 함수에도 같은 레지스트리를 전달하세요. 코드 워크스페이스는 Markdown의 `jul-editor-code-workspace` 펜스와 HTML의 인코딩된 figure 데이터를 사용하므로 파일·빈 폴더·고정 탭·변경 줄 정보가 왕복 변환 뒤에도 남습니다. JSON에는 블록 전체가 그대로 저장됩니다.
+
+```ts
+import {
+  coreBlocks, coreInlines, coreMarks, createRegistry,
+} from "@jul-editor/core";
+import { toMarkdown, fromMarkdown } from "@jul-editor/core/serde";
+import { codeWorkspaceBlock } from "@jul-editor/plugins/code-workspace";
+
+const registry = createRegistry({
+  blocks: [...coreBlocks, codeWorkspaceBlock],
+  inlines: coreInlines,
+  marks: coreMarks,
+});
+const markdown = toMarkdown(doc, { registry }).markdown;
+const restored = fromMarkdown(markdown, { registry }).doc;
+```
+
+<Note>
+
+파일 경로와 코드는 글에 저장된 내용입니다. 이 플러그인은 문서 스냅샷을 보여 주며 방문자의 파일 시스템을 읽거나 코드를 실행하지 않습니다.
+
+</Note>

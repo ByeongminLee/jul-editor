@@ -1,0 +1,36 @@
+Tags and mentions are structured inline content, not decorated plain strings. A tag is a mention with `kind: "tag"`; people and post references use their own kinds. This lets your product render, search, and serialize each reference consistently.
+
+## Insert a tag
+
+Type `#` in the live editor below and choose a suggestion. The editor stores the tag ID and label, then inserts a following space so you can keep writing. The Markdown output preserves a `jul-editor:tag` target for round trips.
+
+<Demo example="tags" />
+
+```tsx
+import { Editor, type TagItem } from "@jul-editor/react";
+
+const tags: TagItem[] = [
+  { id: "research", label: "research" },
+  { id: "design", label: "design" },
+];
+
+<Editor defaultValue={doc}>
+  <Editor.Content />
+  <Editor.TagMenu onSearch={(query) =>
+    tags.filter((tag) => tag.label.includes(query.toLowerCase()))
+  } />
+</Editor>
+```
+
+## Mention people or posts
+
+`Editor.MentionMenu` calls `onSearch(query, kind)`. Return matching `MentionItem`s for `user` or `post`, and keep IDs stable even if the visible label changes. You can provide custom listbox markup while retaining the menu's keyboard props.
+
+```tsx
+<Editor.MentionMenu onSearch={async (query, kind) =>
+  peopleAndPosts.filter((item) => item.kind === kind &&
+    item.label.toLowerCase().includes(query.toLowerCase()))
+} />
+```
+
+Related: [Menus](/docs/core/menus) for customizing the tag and mention lists.

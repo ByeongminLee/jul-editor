@@ -1,0 +1,78 @@
+A custom block has three parts: a block spec for stored data, a React renderer for the visible component, and an insert command. Register all three with `Editor.Plugin`. Keep the block type stable and create a new ID for every insertion.
+
+## A metric card inside the editor
+
+The card below is real document content. Change its label or count, insert another one, and undo the change. `updateProps` writes an undoable transaction; buttons and inputs inside a void block do not become editable text.
+
+<Demo example="custom-blocks" />
+
+```tsx
+import { defineBlock, newId } from "@jul-editor/core";
+import { Editor, type VoidRendererProps } from "@jul-editor/react";
+
+const metric = defineBlock({ type: "metric", content: "none", children: "none",
+  props: { label: "Visitors", value: 120 } });
+
+function MetricView({ block, updateProps }: VoidRendererProps) {
+  const value = Number(block.props.value);
+  return <div>
+    <strong>{String(block.props.label)}</strong><span>{value}</span>
+    <button type="button" onClick={() => updateProps({ value: value + 1 })}>+1</button>
+  </div>;
+}
+
+const metricItem = { id: "metric", type: "metric", title: "Metric",
+  create: () => ({ id: newId(), type: "metric", props: { label: "Visitors", value: 120 } }) };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin blocks={[metric]} renderers={{ metric: MetricView }} slashItems={[metricItem]} />
+  <Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+## Preserve the block through formats
+
+JSON preserves props, but Markdown and HTML need explicit serialization hooks. Use the same registry for export and import. The example stores a URI-encoded JSON payload so labels with quotes or markup survive both routes; validate decoded values at the boundary.
+
+````metric-formats.ts
+import { createRegistry, coreBlocks, coreInlines, coreMarks, defineBlock, newId, type BlockSpec, type Doc } from "@jul-editor/core";
+import { toMarkdown, fromMarkdown, toHTML, fromHTML } from "@jul-editor/core/serde";
+
+const metric = defineBlock({ type: "metric", content: "none", children: "none",
+  props: { label: "Visitors", value: 120 } });
+
+function parseMetric(encoded: string) {
+  let raw: unknown;
+  try { raw = JSON.parse(decodeURIComponent(encoded.trim())); } catch { raw = {}; }
+  const props = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return { id: newId(), type: "metric", props: {
+    label: "label" in props && typeof props.label === "string" ? props.label : "Visitors",
+    value: "value" in props && typeof props.value === "number" && Number.isFinite(props.value) ? props.value : 120,
+  } };
+}
+
+const portableMetric: BlockSpec = {
+  ...metric,
+  toMarkdown: (block) => "```metric\n" + encodeURIComponent(JSON.stringify(block.props)) + "\n```",
+  fromMarkdown: { fence: "metric", parse: (token) => parseMetric(token.text) },
+  toHTML: (block, ctx) => '<div data-metric="' + ctx.escapeAttr(encodeURIComponent(JSON.stringify(block.props))) + '"></div>',
+  fromHTML: { selector: "[data-metric]", parse: (el) => parseMetric(el.getAttribute("data-metric") ?? "") },
+};
+const registry = createRegistry({ blocks: [...coreBlocks, portableMetric],
+  inlines: coreInlines, marks: coreMarks });
+const doc: Doc = { version: 1, blocks: [
+  { id: "metric-1", type: "metric", props: { label: "Visitors", value: 120 } },
+] };
+const md = toMarkdown(doc, { registry }).markdown;
+const restoredMd = fromMarkdown(md, { registry }).doc;
+const html = toHTML(doc, { registry });
+const restoredHtml = fromHTML(html, { registry }).doc;
+// Editor.Plugin blocks={[portableMetric]} uses the same spec.
+// Import may regenerate IDs; keep original Doc JSON when identity matters.
+````
+
+For commands such as duplicate, turn into, or delete, build controls with `useBlockActions(blockId)` and keep them under the same editor instance.
+
+<Demo example="extension-api" />
+
+Related: [Markdown and HTML](/docs/core/formats) and [Read-only view](/docs/core/read-only-view).

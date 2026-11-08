@@ -1,0 +1,45 @@
+/* --eng-jul/lexical/quill/prosemirror are set inline on .about-page from lib/about-engines.ts (ENGINE_COLORS). */
+[data-engine="jul"] { --c: var(--eng-jul); } [data-engine="lexical"] { --c: var(--eng-lexical); }
+[data-engine="quill"] { --c: var(--eng-quill); } [data-engine="prosemirror"] { --c: var(--eng-prosemirror); }
+
+/* Chart legend (the About charts share one color per engine). */
+.ap-swatch { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 3px; background: var(--c, var(--muted)); }
+.ap-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 14px; padding: 0; list-style: none; font-size: 12px; color: var(--text); }
+.ap-legend li { display: inline-flex; align-items: center; gap: 7px; margin: 0; padding: 0; }
+
+/* SVG diagrams. Tokens follow the html-design skin, remapped to the site's two themes (html[data-theme]).
+ * Every mask fill in the SVG is var(--dg-paper) or var(--dg-band), so it equals its ground exactly. */
+.ad-figure {
+  --dg-paper: #181a1c; --dg-band: #202326; --dg-focal-band: #3e2f25;
+  --dg-node: #2a2d31; --dg-focal-node: #4e3a2e;
+  --dg-ink: #f4f4f1; --dg-muted: #b3b8bd; --dg-soft: #8b9198;
+  --dg-rule: rgba(244, 244, 241, .28); --dg-hair: rgba(244, 244, 241, .14); --dg-dot: rgba(244, 244, 241, .12);
+  --dg-act: rgba(244, 244, 241, .08); --dg-accent: #f47721; --dg-accent-weak: rgba(244, 119, 33, .6);
+  margin: 26px 0 34px; padding: 0;
+}
+html[data-theme="light"] .ad-figure {
+  --dg-paper: #f5f5f5; --dg-band: #ececed; --dg-focal-band: #f5e8e0;
+  --dg-node: #ffffff; --dg-focal-node: #fef1e9;
+  --dg-ink: #2d3142; --dg-muted: #4f5d75; --dg-soft: #7a8399;
+  --dg-rule: rgba(45, 49, 66, .26); --dg-hair: rgba(45, 49, 66, .14); --dg-dot: rgba(45, 49, 66, .10);
+  --dg-act: rgba(45, 49, 66, .06); --dg-accent: #f47721; --dg-accent-weak: rgba(244, 119, 33, .7);
+}
+.ad-panel { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--dg-paper); }
+.ad-svg { display: block; width: 100%; height: auto; }
+.ad-tall { display: none; max-width: 400px; margin-inline: auto; }
+.ad-scroll { overflow-x: auto; }
+.ad-scroll .ad-seq { min-width: 976px; }
+.ad-figure > figcaption, .ad-snippets > figure > figcaption { margin-top: 12px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.ad-walk { margin: 22px 0 30px; }
+.ad-walk .ad-figure { margin: 14px 0 18px; }
+.ad-setup { margin: 0; color: var(--muted); }
+.ad-snippets { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start; }
+.ad-snippets > figure { min-width: 0; margin: 0; }
+.ad-snippets > figure > figcaption { margin: 0 0 6px; }
+.ad-snippets .docs-code { margin: 0; }
+/* Below this width the wide swimlane and overview would shrink their type, so portrait variants take over.
+ * The sequence diagram keeps its native size and scrolls inside its own frame. */
+@media (max-width: 960px) {
+  .ad-wide { display: none; }
+  .ad-tall { display: block; }
+}

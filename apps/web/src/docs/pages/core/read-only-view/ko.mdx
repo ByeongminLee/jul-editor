@@ -1,0 +1,73 @@
+`Editor.View`는 저장한 `Doc`을 에디터 인스턴스 없이 렌더링합니다. contenteditable 영역, 커서, 툴바, 업로드 동작이 없습니다. 편집할 때 사용한 앱 CSS 클래스와 블록 타입별 렌더러 키를 그대로 전달하면 이미지·표·서식·차트·사용자 블록의 디자인을 유지할 수 있습니다.
+
+## 한 번 편집하고 필요한 곳에 표시하기
+
+아래 문서를 편집한 뒤 보기로 전환해 보세요. 같은 `Doc`을 입력창 없이 표시합니다. 차트와 `customCard` 블록은 각각의 타입 키로 등록된 렌더러를 사용합니다.
+
+<Demo example="view" />
+
+## 저장된 블록 키로 렌더러 연결하기
+
+`renderers`는 저장된 `block.type`을 React 컴포넌트에 연결합니다. 사용자 블록은 `blocks`에 `BlockSpec`도 전달해 내용과 자식 블록 규칙을 알려 주세요. 보기 렌더러는 `{ block, readOnly: true, locale, children }`을 받습니다. 직접 만든 컴포넌트는 `readOnly`일 때 수정 컨트롤을 숨기세요. 기본 이미지·임베드·첨부파일·텍스트 서식·목록·문서 표에는 안전한 읽기 전용 렌더링이 포함됩니다.
+
+```tsx
+import { coreBlocks, coreInlines, coreMarks, createRegistry, fromJSON,
+  defineBlock } from "@jul-editor/core";
+import { Editor, type ViewRendererProps } from "@jul-editor/react";
+import { ChartView } from "@jul-editor/plugins/chart";
+import { codeWorkspaceBlock, CodeWorkspaceView }
+  from "@jul-editor/plugins/code-workspace";
+
+const customCardBlock = defineBlock({
+  type: "customCard", content: "none", children: "none",
+  props: { title: "", detail: "" },
+});
+
+function CustomCard({ block }: ViewRendererProps) {
+  return <aside className="custom-card">
+    <strong>{String(block.props.title ?? "")}</strong>
+    <p>{String(block.props.detail ?? "")}</p>
+  </aside>;
+}
+
+const registry = createRegistry({
+  blocks: [...coreBlocks, customCardBlock, codeWorkspaceBlock],
+  inlines: coreInlines, marks: coreMarks,
+});
+const savedJson = JSON.stringify({ version: 1, blocks: [
+  { id: "title", type: "heading", props: { level: 2 },
+    content: [{ type: "text", text: "Quarterly brief" }] },
+  { id: "card", type: "customCard",
+    props: { title: "Design review", detail: "The approved layout is ready." } },
+  { id: "chart", type: "chart", props: { kind: "bar",
+    source: { type: "inline", csv: "month,visitors\nJan,120\nFeb,160" },
+    x: "month", y: "visitors" } },
+  { id: "files", type: "codeWorkspace", props: { title: "Source files",
+    files: [{ path: "src/index.ts", language: "ts", code: "export const ready = true;" }] } },
+] });
+const savedDoc = fromJSON(savedJson, registry).doc;
+
+export function SavedDocument() {
+  return <Editor.View
+    doc={savedDoc}
+    blocks={[customCardBlock, codeWorkspaceBlock]}
+    renderers={{
+      customCard: CustomCard,
+      chart: ChartView,
+      codeWorkspace: CodeWorkspaceView,
+    }}
+    locale="ko"
+    className="editor-content"
+  />;
+}
+```
+
+이 예제에는 저장 JSON과 사용자 블록 정의가 모두 들어 있어 그대로 복사할 수 있습니다. 앱에서는 `savedJson`을 DB나 API에서 읽은 값으로 바꾸세요. 예제의 인라인 차트 데이터에는 Provider가 필요 없고, URL이나 뷰 ID를 쓰면 에디터와 같은 데이터 리졸버 Provider를 연결해야 합니다. 코드 워크스페이스는 파일 탐색과 탭 전환을 유지하면서 수정 컨트롤을 숨깁니다. 타입 키에 다른 렌더러를 전달해 읽기 화면을 바꿀 수도 있습니다.
+
+<Note>
+
+편집과 보기 모두 `.editor-content [data-jul-editor-block]` 선택자로 스타일을 적용할 수 있습니다. 선택형 시각 플러그인은 해당 페이지에 표시할 블록 타입만 가져오세요.
+
+</Note>
+
+관련 문서: 편집 화면은 [React 조합](/docs/core/composition), `Doc` 저장은 [문서 모델](/docs/core/document-model)을 보세요.

@@ -1,0 +1,20 @@
+The document model is the source of truth. Markdown and HTML are exchange formats: serialize a `Doc`, or parse incoming text back into blocks. Some custom block details cannot round trip through Markdown without format hooks, so inspect `lossy` notes when exporting.
+
+## Convert in both directions
+
+```ts
+import { fromHTML, fromMarkdown, toHTML, toMarkdown } from "@jul-editor/core/serde";
+
+const { markdown, lossy } = toMarkdown(doc);
+const html = toHTML(doc);
+const { doc: fromMd } = fromMarkdown(markdown);
+const { doc: fromHtml } = fromHTML(html);
+
+if (lossy.length) console.info(lossy);
+```
+
+<Demo example="formats" />
+
+HTML input is sanitized. Image uploads remain the host application's responsibility. `fromHTML` uses the browser's `DOMParser`; on a Node server, provide a parser through its options. Keep JSON when you need to preserve the full document, including custom props and stable IDs.
+
+Related: [Document model](/docs/core/document-model) for saving JSON, and [Custom blocks and API](/docs/core/custom-blocks) for converting your own blocks.

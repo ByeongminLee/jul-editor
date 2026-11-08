@@ -1,0 +1,8 @@
+.docs-menu-customization [data-type="notice"] { margin: 9px 0; padding: 12px 15px; border-left: 3px solid var(--accent); border-radius: 5px; background: var(--surface); }
+.docs-curated-menu { width: 236px; overflow: visible; }
+.docs-curated-menu .slash-option { gap: 8px; }
+.docs-curated-menu .slash-option > span:first-child { color: var(--accent); }
+.docs-curated-preview { position: absolute; top: 0; left: calc(100% + 8px); width: 185px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 14px 35px #0005; }
+.docs-curated-preview strong { font-size: 12px; }
+.docs-curated-preview p { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+@media (max-width: 650px) { .docs-curated-preview { position: static; width: auto; margin-top: 6px; box-shadow: none; } }

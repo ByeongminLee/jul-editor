@@ -1,0 +1,32 @@
+`Editor`가 하나의 문서를 관리합니다. 자식 요소로 툴바, 편집 영역, 삽입 메뉴, 블록 이동 핸들을 선택해 배치합니다. 간단한 화면과 전체 기능 화면이 같은 `Doc` 구조를 사용합니다.
+
+## 편집 화면 조합하기
+
+`Editor.Plugin`을 `Editor`의 직접 자식으로 두세요. 마운트할 때 블록, 렌더러, 슬래시 항목을 등록합니다. 아이콘과 레이아웃은 앱에서 정하며 패키지에는 아이콘 세트나 CSS 테마가 포함되지 않습니다.
+
+```tsx
+import { Editor } from "@jul-editor/react";
+
+<Editor defaultValue={doc} locale="en">
+  <Editor.Toolbar aria-label="Formatting">
+    <Editor.Heading level={2}>H2</Editor.Heading>
+    <Editor.Bold>Bold</Editor.Bold>
+    <Editor.Undo>Undo</Editor.Undo>
+  </Editor.Toolbar>
+  <Editor.Content />
+  <Editor.SlashMenu />
+  <Editor.DragHandle>{({ blockId, rect, getHandleProps }) =>
+    blockId && rect && <button {...getHandleProps()}
+      aria-label="Move block"
+      style={{ position: "fixed", top: rect.top, left: rect.left - 28 }}>⋮⋮</button>
+  }</Editor.DragHandle>
+</Editor>
+```
+
+<Demo example="composition" />
+
+## 상태 경계
+
+에디터가 상태를 관리한다면 `defaultValue`를 사용합니다. 제어형 에디터라면 `value`를 전달하고 `onChange`로 받은 값을 다시 반영하세요. 완전히 다른 외부 문서를 넣으면 선택과 기록이 초기화될 수 있지만, 같은 에디터의 보기만 바꿀 때는 유지해야 합니다.
+
+관련 문서: 제어형 상태와 자동 저장은 [문서 모델](/docs/core/document-model), 렌더링할 컨트롤 고르기는 [컨트롤 맞춤 설정](/docs/core/customize-controls)을 보세요.

@@ -1,0 +1,60 @@
+{
+  "name": "@jul-editor/core",
+  "version": "0.1.0",
+  "description": "Framework-agnostic core of JulEditor: document model, editing engine and Markdown/HTML serialization.",
+  "license": "MIT",
+  "author": "JulEditor contributors",
+  "keywords": [
+    "editor",
+    "rich-text",
+    "wysiwyg",
+    "markdown",
+    "document-model",
+    "jul"
+  ],
+  "type": "module",
+  "sideEffects": [
+    "./src/serde/builtins-serde.ts",
+    "./src/serde/media-serde.ts",
+    "./src/serde/table-serde.ts",
+    "./dist/chunk-*.js",
+    "./dist/serde/*.js"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./serde": {
+      "types": "./dist/serde/index.d.ts",
+      "import": "./dist/serde/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "marked": "^18.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "jsdom": "^31.0.0",
+    "tsup": "^9.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 460" role="img" aria-label="A document canvas with an orange media block">
+  <rect width="840" height="460" rx="24" fill="#f2eee8"/>
+  <rect x="64" y="48" width="712" height="364" rx="14" fill="#16191c"/>
+  <path d="M64 100h712" stroke="#35393d" stroke-width="2"/>
+  <circle cx="94" cy="74" r="7" fill="#f97316"/>
+  <circle cx="118" cy="74" r="7" fill="#6c7377"/>
+  <circle cx="142" cy="74" r="7" fill="#6c7377"/>
+  <rect x="102" y="132" width="340" height="18" rx="4" fill="#f7f4ef"/>
+  <rect x="102" y="170" width="290" height="9" rx="4" fill="#697177"/>
+  <rect x="102" y="191" width="248" height="9" rx="4" fill="#697177"/>
+  <rect x="102" y="235" width="340" height="136" rx="9" fill="#262b2d"/>
+  <rect x="122" y="255" width="126" height="8" rx="4" fill="#f97316"/>
+  <rect x="122" y="277" width="204" height="7" rx="3.5" fill="#869098"/>
+  <rect x="122" y="297" width="166" height="7" rx="3.5" fill="#869098"/>
+  <rect x="122" y="325" width="82" height="24" rx="5" fill="#f97316"/>
+  <rect x="488" y="130" width="250" height="242" rx="10" fill="#f97316"/>
+  <circle cx="611" cy="211" r="60" fill="#ffb476"/>
+  <path d="M565 293c28-37 63-37 90-18 17 12 28 13 51 1v68H520v-38c17 5 30 0 45-13Z" fill="#16191c"/>
+  <rect x="528" y="344" width="166" height="6" rx="3" fill="#ffc397"/>
+</svg>

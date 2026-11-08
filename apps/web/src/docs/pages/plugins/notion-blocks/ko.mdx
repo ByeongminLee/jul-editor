@@ -1,0 +1,48 @@
+블록 플러그인 네 가지(콜아웃, 토글, 목차, 컬럼)로 Notion 같은 워크스페이스 느낌을 만듭니다. 각각 별도 서브패스와 `Editor.Plugin`에 펼쳐 쓰는 번들을 제공합니다. 번들에는 블록 스펙, 렌더러, 슬래시 항목, 입력 규칙, 변환(Turn into) 항목이 들어 있습니다.
+
+```tsx
+import { calloutPlugin } from "@jul-editor/plugins/callout";
+import { togglePlugin } from "@jul-editor/plugins/toggle";
+import { tocPlugin } from "@jul-editor/plugins/toc";
+import { columnsPlugin } from "@jul-editor/plugins/columns";
+import { COLUMNS_CSS } from "@jul-editor/plugins/columns";
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin {...calloutPlugin} />
+  <Editor.Plugin {...togglePlugin} />
+  <Editor.Plugin {...tocPlugin} />
+  <Editor.Plugin {...columnsPlugin} />
+  <Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+메인 엔트리도 이 네 번들을 다시 내보냅니다. 컬럼은 순수한 구조이므로 레이아웃에 `COLUMNS_CSS`(또는 직접 만든 규칙)를 포함하세요.
+
+## 콜아웃
+
+이모지 아이콘과 색(`default`, `info`, `success`, `warning`, `danger`)을 가진 텍스트 블록으로, 인라인 내용과 자유로운 자식을 가집니다. 줄 맨 앞에서 `!> `를 입력하거나 `/callout`과 색상 변형으로 만듭니다. Markdown은 GitHub 알림(`> [!NOTE]`)을 쓰고 사용자 지정 아이콘은 마커 줄에 붙습니다. HTML은 `<aside data-jul-editor-type="callout">`입니다. `quoteToCallout`은 인용문을 변환합니다.
+
+## 토글
+
+제목과 자식을 가진 접이식 블록입니다. `open` 상태는 일반 prop이라 실행 취소와 공유가 됩니다. 사용자별로 따로 두려면 `ToggleView`에 `openStore`(`createMemoryOpenStore()`)를 넘기세요. `>> `는 토글, `>>## `는 제목 토글(1~3단계)을 만들고, 슬래시 메뉴에는 `/toggle`과 제목 변형이 있습니다. Markdown과 HTML은 `<details>`와 `<summary>`를 씁니다.
+
+## 목차
+
+제목을 나열하는 void 블록이며 편집 중에는 실시간으로 갱신됩니다. `minLevel`, `maxLevel`로 단계를 거르고, 항목을 누르면 해당 제목으로 스크롤하며 감싸는 토글을 펼칩니다. 읽기 전용 페이지에서는 내용을 `<TocDocProvider value={doc}>`로 감싸세요. 떠 있는 개요는 `TocSidebar`로 쓸 수 있습니다.
+
+```tsx
+import { TocSidebar } from "@jul-editor/plugins/toc";
+
+<TocSidebar editor={editor} scrollContainer={scrollEl} minHeadings={2} />
+```
+
+직접 목록을 만들려면 `extractOutline`을 쓰세요. Markdown의 `[TOC]`는 목차 블록이 됩니다.
+
+## 컬럼
+
+`columns`는 `column` 자식 2~5개를 가지며 각 컬럼에는 어떤 블록이든 넣을 수 있습니다. `/2 columns`, `/3 columns`로 만들고, 기존 레이아웃은 `addColumn`, `removeColumn`, `unwrapColumns`로 편집합니다. Markdown은 컬럼을 평평하게 펼치고 손실 변환으로 보고합니다.
+
+## 한계
+
+- 콜아웃, 토글, 목차는 위에 적은 형태로만 Markdown에서 왕복됩니다. 다른 Markdown 방언에서는 인용문, 원시 HTML, 텍스트로 보일 수 있습니다.
+- `COLUMNS_CSS`는 640px 미만에서 컬럼을 세로로 쌓습니다. 다른 기준이 필요하면 덮어쓰세요.

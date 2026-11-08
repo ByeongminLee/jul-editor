@@ -1,0 +1,119 @@
+/* DOCX editor showcase styles. Everything is scoped under .showcase-docx so cases stay independent.
+   A dark toolbar strip and canvas surround white paper sheets (the sheets stay white in both themes). */
+.showcase-docx {
+  --docx-bar: #1f1f23; --docx-bar-line: #34343a; --docx-ink: #e4e4e7; --docx-muted: #a1a1aa; --docx-hover: #34343a; --docx-accent: #6366f1;
+  --docx-canvas: #17171a; --docx-panel: #26262b; --docx-field: #2f2f35;
+  --docx-line-height: 1.15;
+  border: 1px solid var(--docx-bar-line); border-radius: 12px; overflow: hidden; background: var(--docx-canvas); color: var(--docx-ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.showcase-docx[data-docx-theme="light"] {
+  --docx-bar: #ffffff; --docx-bar-line: #d4d4d8; --docx-ink: #27272a; --docx-muted: #52525b; --docx-hover: #f0f0f2; --docx-accent: #4f46e5;
+  --docx-canvas: #e5e7eb; --docx-panel: #ffffff; --docx-field: #f4f4f5;
+}
+.showcase-docx .editor-instance { display: block; }
+
+/* Toolbar */
+.showcase-docx .docx-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; overflow-x: auto; scrollbar-width: thin; background: var(--docx-bar); border-bottom: 1px solid var(--docx-bar-line); }
+.showcase-docx .docx-group { display: flex; align-items: center; gap: 2px; flex: none; }
+.showcase-docx .docx-sep { flex: none; width: 1px; height: 20px; background: var(--docx-bar-line); margin: 0 4px; }
+.showcase-docx .docx-spacer { flex: 1 0 8px; }
+.showcase-docx .docx-tool { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 30px; height: 30px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--docx-ink); font: 500 12px system-ui, sans-serif; cursor: pointer; }
+.showcase-docx .docx-tool:hover { background: var(--docx-hover); }
+.showcase-docx .docx-tool[aria-pressed="true"], .showcase-docx .docx-tool[data-active] { background: var(--docx-accent); color: #fff; }
+.showcase-docx .docx-tool:disabled { opacity: .45; cursor: progress; }
+.showcase-docx .docx-tool:focus-visible, .showcase-docx .docx-select:focus-visible { outline: 2px solid var(--docx-accent); outline-offset: 1px; }
+.showcase-docx .docx-select { flex: none; height: 30px; padding: 0 6px; border: 1px solid var(--docx-bar-line); border-radius: 6px; background: var(--docx-field); color: var(--docx-ink); font: 12px system-ui, sans-serif; }
+.showcase-docx .docx-select--style { width: 104px; }
+.showcase-docx .docx-select--family { width: 140px; }
+.showcase-docx .docx-select--size { width: 92px; }
+.showcase-docx .docx-zoom { display: inline-flex; align-items: center; gap: 2px; color: var(--docx-ink); }
+.showcase-docx .docx-zoom button { min-width: 26px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--docx-ink); font-size: 16px; cursor: pointer; }
+.showcase-docx .docx-zoom button:hover:not(:disabled) { background: var(--docx-hover); }
+.showcase-docx .docx-zoom button:disabled { opacity: .35; cursor: default; }
+.showcase-docx .docx-zoom [role="status"] { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Floating menus (color, spacing, alignment, more, link) */
+.docx-menu { position: fixed; z-index: 60; display: grid; gap: 2px; min-width: 170px; padding: 6px; border: 1px solid #3f3f46; border-radius: 10px; background: #26262b; color: #e4e4e7; box-shadow: 0 14px 36px #0007; font: 12px system-ui, sans-serif; }
+.docx-menu > button { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.docx-menu > button:hover { background: #3f3f46; }
+.docx-menu > button[aria-checked="true"] { background: #4f46e5; color: #fff; }
+.docx-swatches { display: grid; grid-template-columns: repeat(5, 26px); gap: 6px; padding: 4px; }
+.docx-swatch { width: 26px; height: 26px; border: 2px solid transparent; border-radius: 50%; cursor: pointer; background: #e4e4e7; }
+.docx-swatch[aria-pressed="true"] { border-color: #fff; outline: 2px solid #6366f1; }
+.docx-swatch[data-color="default"] { background: #111; border-color: #71717a; }
+.docx-swatch[data-color="gray"] { background: #6b7280; } .docx-swatch[data-color="brown"] { background: #92400e; } .docx-swatch[data-color="orange"] { background: #ea580c; }
+.docx-swatch[data-color="yellow"] { background: #ca8a04; } .docx-swatch[data-color="green"] { background: #16a34a; } .docx-swatch[data-color="blue"] { background: #2563eb; }
+.docx-swatch[data-color="purple"] { background: #9333ea; } .docx-swatch[data-color="pink"] { background: #db2777; } .docx-swatch[data-color="red"] { background: #dc2626; }
+.docx-linkform { grid-auto-flow: column; align-items: center; min-width: 0; width: 290px; }
+.docx-linkform input { min-width: 0; padding: 6px 8px; border: 1px solid #52525b; border-radius: 6px; background: #17171a; color: #fff; font: inherit; }
+.docx-linkform button { padding: 6px 9px; border: 0; border-radius: 6px; background: #4f46e5; color: #fff; font: inherit; cursor: pointer; }
+
+/* Canvas: dark surround, white paper */
+.showcase-docx .docx-body { position: relative; display: flex; height: min(78vh, 860px); min-height: 420px; }
+.showcase-docx .docx-canvas-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.showcase-docx .docx-canvas { --jul-paged-canvas: var(--docx-canvas); --jul-paged-shadow: 0 2px 10px #0008; flex: 1; min-height: 0; padding: 24px; }
+.showcase-docx[data-docx-theme="light"] .docx-canvas { --jul-paged-shadow: 0 1px 4px #0003; }
+.showcase-docx .docx-statusbar { display: flex; gap: 14px; align-items: center; padding: 6px 14px; border-top: 1px solid var(--docx-bar-line); background: var(--docx-bar); color: var(--docx-muted); font-size: 11.5px; }
+.showcase-docx .docx-status { color: var(--docx-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Page settings side panel */
+.showcase-docx .docx-settings { flex: none; width: 290px; padding: 14px; overflow: auto; border-left: 1px solid var(--docx-bar-line); background: var(--docx-panel); color: var(--docx-ink); }
+.showcase-docx .docx-settings h3 { margin: 0 0 10px; font-size: 13px; }
+.showcase-docx .docx-settings select, .showcase-docx .docx-settings input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid var(--docx-bar-line); border-radius: 6px; background: var(--docx-field); color: var(--docx-ink); font: 12px system-ui, sans-serif; }
+.showcase-docx .docx-settings fieldset { margin: 0; padding: 8px; border: 1px solid var(--docx-bar-line); border-radius: 8px; }
+.showcase-docx .docx-settings legend { padding: 0 4px; color: var(--docx-muted); }
+.showcase-docx .docx-settings .jul-paged-settings__row { grid-template-columns: repeat(2, 1fr); }
+
+/* The paper: Word-like body text. Block margins are what the pagination pass spaces out. */
+.showcase-docx .editor-content { padding: 0; outline: none; color: #1f2328; font: 11pt/var(--docx-line-height) Calibri, Carlito, "Segoe UI", "Helvetica Neue", Arial, sans-serif; caret-color: #111; }
+.showcase-docx .editor-content [data-type="paragraph"] { margin: 0 0 8pt; min-height: 1.2em; }
+.showcase-docx .editor-content [data-type="heading"] { margin: 14pt 0 6pt; font-weight: 700; line-height: 1.2; color: #111; }
+.showcase-docx .editor-content [data-type="heading"][data-jul-editor-level="1"] { margin-top: 0; font-size: 20pt; }
+.showcase-docx .editor-content [data-type="heading"][data-jul-editor-level="2"] { font-size: 13pt; }
+.showcase-docx .editor-content [data-type="heading"][data-jul-editor-level="3"] { font-size: 11.5pt; }
+.showcase-docx .editor-content [data-type="bulletListItem"], .showcase-docx .editor-content [data-type="orderedListItem"] { position: relative; margin: 0 0 4pt; padding-left: 22pt; }
+.showcase-docx .editor-content [data-type="bulletListItem"]::before { content: "•"; position: absolute; left: 8pt; color: inherit; }
+.showcase-docx .editor-content [data-type="orderedListItem"]::before { content: attr(data-jul-editor-index) "."; position: absolute; left: 4pt; color: inherit; }
+.showcase-docx .editor-content [data-jul-editor-children] { margin-left: 18pt; }
+.showcase-docx .editor-content [data-type="quote"] { margin: 8pt 0; padding: 2pt 0 2pt 12pt; border-left: 3px solid #c7c9d1; color: #4b5563; font-style: italic; }
+.showcase-docx .editor-content [data-type="codeBlock"] { margin: 8pt 0; padding: 8pt 10pt; background: #f3f4f6; border-radius: 4px; font: 10pt/1.4 "Courier New", monospace; }
+.showcase-docx .editor-content [data-type="divider"] hr { border: 0; border-top: 1px solid #c7c9d1; margin: 10pt 0; }
+.showcase-docx .editor-content [data-type="table"] { display: table; width: 100%; margin: 8pt 0; border-collapse: collapse; }
+.showcase-docx .editor-content [data-type="table"] > [data-jul-editor-children], .showcase-docx .editor-content [data-type="tableRow"] > [data-jul-editor-children] { display: contents; margin: 0; }
+.showcase-docx .editor-content [data-type="tableRow"] { display: table-row; }
+.showcase-docx .editor-content [data-type="tableCell"] { display: table-cell; padding: 4pt 6pt; border: 1px solid #c7c9d1; }
+.showcase-docx .editor-content [data-jul-editor-text-align="center"] { text-align: center; }
+.showcase-docx .editor-content [data-jul-editor-text-align="right"] { text-align: right; }
+.showcase-docx .editor-content [data-jul-editor-text-align="justify"] { text-align: justify; }
+.showcase-docx .editor-content a { color: #1d4ed8; text-decoration: underline; }
+.showcase-docx .editor-content code { padding: 0 3px; border-radius: 3px; background: #eef0f3; font: .92em "Courier New", monospace; }
+.showcase-docx .editor-content [data-jul-editor-highlight="yellow"] { background: #fff2a8; border-radius: 2px; }
+.showcase-docx .editor-content [data-jul-editor-color="gray"] { color: #6b7280; } .showcase-docx .editor-content [data-jul-editor-color="brown"] { color: #92400e; }
+.showcase-docx .editor-content [data-jul-editor-color="orange"] { color: #ea580c; } .showcase-docx .editor-content [data-jul-editor-color="yellow"] { color: #ca8a04; }
+.showcase-docx .editor-content [data-jul-editor-color="green"] { color: #16a34a; } .showcase-docx .editor-content [data-jul-editor-color="blue"] { color: #2563eb; }
+.showcase-docx .editor-content [data-jul-editor-color="purple"] { color: #9333ea; } .showcase-docx .editor-content [data-jul-editor-color="pink"] { color: #db2777; }
+.showcase-docx .editor-content [data-jul-editor-color="red"] { color: #dc2626; }
+.showcase-docx .editor-content [data-jul-editor-image] { max-width: 100%; margin: 8pt auto; text-align: center; }
+.showcase-docx .editor-content [data-jul-editor-image] img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.showcase-docx .editor-content [data-jul-editor-image] input, .showcase-docx .editor-content [data-jul-editor-image] [data-jul-editor-align-group], .showcase-docx .editor-content [data-jul-editor-image] [data-jul-editor-resize-handle] { display: none; }
+.showcase-docx .editor-content [data-jul-editor-selected] { outline: 2px solid var(--docx-accent); }
+.showcase-docx .editor-content [data-jul-editor-content][data-placeholder]:empty::before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }
+.showcase-docx .jul-paged__sheet { color: #1f2328; }
+
+/* Phones: the toolbar scrolls sideways, the page settings become a bottom sheet, pages scale to fit (see zoom in docx-editor.tsx). */
+@media (max-width: 760px) {
+  .showcase-docx .docx-toolbar { padding: 6px 8px; }
+  .showcase-docx .docx-canvas { padding: 12px 8px; }
+  .showcase-docx .docx-body { height: min(74vh, 700px); }
+  .showcase-docx .docx-settings { position: absolute; inset: auto 0 0 0; z-index: 5; width: auto; max-height: 62%; border-left: 0; border-top: 1px solid var(--docx-bar-line); box-shadow: 0 -10px 30px #0006; }
+  .showcase-docx .docx-tool--text span { display: none; }
+}
+
+/* Printing: only the sheets, on white, one block of paper per page. */
+@media print {
+  body * { visibility: hidden !important; }
+  .showcase-docx .jul-paged, .showcase-docx .jul-paged * { visibility: visible !important; }
+  .showcase-docx .jul-paged { position: absolute; left: 0; top: 0; width: 100%; height: auto !important; overflow: visible !important; padding: 0 !important; background: #fff !important; }
+  .showcase-docx .jul-paged__sheet { box-shadow: none !important; }
+}

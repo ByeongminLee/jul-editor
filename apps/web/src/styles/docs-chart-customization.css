@@ -1,0 +1,9 @@
+.docs-chart-palette { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.docs-chart-palette button { display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); color: var(--ink); font-size: 11px; }
+.docs-chart-palette button[aria-pressed="true"] { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.docs-chart-palette button span { width: 11px; height: 11px; border-radius: 50%; background: #ef9850; }
+.docs-chart-palette button[data-swatch="ocean"] span { background: #3c94b7; }
+.docs-chart-palette button[data-swatch="violet"] span { background: #9b77c9; }
+.docs-chart-type-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px 16px; padding-top: 12px; border-top: 1px solid var(--chart-border); color: var(--chart-muted); font-size: 11px; }
+.docs-chart-type-control select { min-width: 110px; padding: 5px 8px; border: 1px solid var(--chart-border); border-radius: 5px; background: var(--chart-surface); color: var(--chart-tooltip-fg); font: inherit; }
+.docs-chart-palette button:focus-visible, .docs-chart-type-control select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

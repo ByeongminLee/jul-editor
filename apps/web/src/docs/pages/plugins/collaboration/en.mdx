@@ -1,0 +1,81 @@
+`@jul-editor/plugins/collaboration` adds real-time co-editing on top of the core's op model, without Yjs. The host app supplies only a transport. Remote carets and selections are drawn for you, and undo stays local.
+
+```tsx
+import { CollabAvatars, createBroadcastChannelTransport, useCollaboration } from "@jul-editor/plugins/collaboration";
+import { useEditor } from "@jul-editor/react";
+
+const transport = createBroadcastChannelTransport(); // module scope: must be referentially stable
+const user = { id: "u1", name: "Ada", color: "#2563eb" };
+
+function Presence() {
+  const editor = useEditor();
+  const { status, peers } = useCollaboration(editor, { transport, user, docId: "page-1" });
+  return <><span>{status}</span><CollabAvatars peers={peers} /></>;
+}
+```
+
+Render `Presence` inside `<Editor>`. Outside React, call `createCollaboration(editor, { transport, user, docId })` and `attachRemoteCursors(editor, client)`. A changed `transport`, `docId`, or `user.id` reconnects.
+
+## Transport adapter contract
+
+A transport is a dumb pipe for one document room:
+
+```ts
+interface CollabTransport {
+  readonly authority?: "peer" | "server";
+  connect(docId: string, clientId: string): void | Promise<void>;
+  send(message: CollabMessage): void;          // to every OTHER member, in order, reliably
+  onMessage(handler: (m: CollabMessage) => void): () => void;
+  onStatus?(handler: (s: "connected" | "disconnected") => void): () => void;
+  disconnect(): void;
+}
+```
+
+Messages are plain JSON. A message with `to` is consumed only by that client, but may be broadcast physically.
+
+| Transport | Use | Authority |
+| --- | --- | --- |
+| `createBroadcastChannelTransport()` | Tabs of one browser, demos | peer (a leader tab sequences) |
+| `createMemoryHub().createTransport()` | Tests, two editors on one page | peer, or server style |
+| `createWebSocketTransport({ url })` | Example adapter, not tested against a real server | server |
+
+## WebSocket example
+
+```ts
+import { createWebSocketTransport } from "@jul-editor/plugins/collaboration";
+
+const transport = createWebSocketTransport({
+  url: "wss://example.com/collab",
+  buildUrl: (url, docId, clientId) => `${url}?doc=${docId}&client=${clientId}&token=${getToken()}`,
+});
+```
+
+It reconnects with exponential backoff (`reconnectDelayMs`, `maxDelayMs`). For `authority: "server"` your backend hosts one `createAuthority({ registry, doc })` per room:
+
+```ts
+// server sketch, any runtime
+socket.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+  relayToOtherSockets(room, msg);                 // hello / welcome / presence / leave
+  for (const out of room.authority.handle(msg)) { // "ops" -> "applied", "sync-request" -> "snapshot"
+    room.sockets.forEach((s) => s.send(JSON.stringify(out)));
+  }
+  persist(docId, room.authority.snapshot());      // debounce in real life
+};
+```
+
+`applied` must reach every socket, including the sender, because the sender uses it as the acknowledgement. Clients drop `snapshot` messages whose `to` is not theirs.
+
+## What you get
+
+- Every client replays the same sequenced stream, so editors converge to the authority's document once their pending edits drain.
+- Concurrent edits to different blocks, block inserts, deletes, and moves, and typing in one block all converge. Text uses insert/delete OT and props or moves resolve last-write-wins.
+- Late joiners receive a snapshot. Undo and redo stay local and never revert a collaborator's edit.
+
+## Limits
+
+- Offline edits are not merged. While not connected, local edits are not sent, and the room's snapshot replaces the local document on rejoin.
+- Serverless leader election (BroadcastChannel, memory) is best effort and keeps nothing once all tabs close. Use a server authority in production.
+- Undo across remote edits to the same text region can land a few characters off.
+- Block and cell selections are not shared, only text carets and ranges.
+- The WebSocket adapter and the server sketch are examples. Authentication, authorization, and persistence belong to your backend.

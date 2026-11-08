@@ -1,0 +1,33 @@
+JulEditor takes its name from the Korean word *jul* (줄), as in "one line, two lines": documents grow one line at a time. A JulEditor document is a tree of blocks: the core owns that tree, React supplies the editing surface, and optional plugins add blocks such as charts. Start with one paragraph, then add only the controls your product needs.
+
+## Your first document
+
+Every document has a schema version and a `blocks` array. A text block has a stable ID, a type, props, and inline content. Stable IDs let history, selection, and diff refer to the same block after edits.
+
+```ts
+import type { Doc } from "@jul-editor/core";
+
+const doc: Doc = {
+  version: 1,
+  blocks: [{
+    id: "hello",
+    type: "paragraph",
+    props: {},
+    content: [{ type: "text", text: "Hello, JulEditor." }],
+  }],
+};
+```
+
+## Try the editor
+
+The preview below uses the real editor. Change its text, add a block with `/`, or switch between block and rich text controls. Your application can keep its own layout while using the same document model.
+
+<Demo example="composition" />
+
+<Note>
+
+These `@jul-editor/*` imports resolve inside this workspace. The packages are private and are not on npm yet.
+
+</Note>
+
+Next, follow [Installation](/docs/installation) to run this repository or read [React composition](/docs/core/composition) to assemble your own surface.

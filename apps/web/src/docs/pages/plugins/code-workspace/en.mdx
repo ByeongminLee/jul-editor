@@ -1,0 +1,122 @@
+**Code Workspace** is a separate plugin for technical articles. A regular `codeBlock` stays a single editable fenced snippet with optional syntax highlighting. Code Workspace stores several named files in one block. The package offers a basic form renderer and an IDE renderer for editing directly in the file tree and code pane. Import it only on pages that need it.
+
+## Basic renderer
+
+Choose a file in the left tree. Its tab opens above the code. Select the block to change the title, files, source text, line markers, and visibility options. The tree, tabs, and line numbers can each be turned off. This is the smaller, form-based renderer.
+
+<Demo example="code-workspace" />
+
+## IDE editing theme
+
+Use `CodeWorkspaceIDEView` when authors work with files often. The tree, tabs, and line numbers remain in place while editing. Use the folder and plus buttons in the Explorer, or the controls inside a folder, then type a name and press Enter. Click a file once to open its editable code; double-click a file or folder to rename it. Drag an entry onto a folder to move it, or onto the Explorer background to move it to the root. Check a file at the right edge of the tree to keep its tab open by default. Creating or renaming a file sets its language from `.tsx`, `.css`, and other recognized extensions; the basic renderer also allows a manual language value.
+
+The code pane has separate **+** and **−** line controls. Click a line's marker or enter ranges such as `3-7, 11` for each kind. These markers change the presentation and remain in document JSON; they do not edit the source text or run a diff algorithm. Code is edited directly in the pane.
+
+<Demo example="code-workspace-ide" />
+
+## Register only this plugin
+
+The block keeps a JSON array of files. Each file has a path, language, and code string. `addedLines` and `removedLines` are 1-based line numbers; they color the gutter without changing the source. The host app supplies the colors and layout through CSS. The plugin uses the existing optional lowlight dependency for syntax colors.
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { Editor } from "@jul-editor/react";
+import {
+  codeWorkspaceBlock, CodeWorkspaceView, codeWorkspaceSlashItem,
+} from "@jul-editor/plugins/code-workspace";
+
+const doc: Doc = { version: 1, blocks: [{
+  id: "component-files", type: "codeWorkspace", props: {
+    title: "acme/components",
+    showTree: true, showTabs: true, showLineNumbers: true,
+    files: [
+      { path: "src/Button.tsx", language: "typescript",
+        code: "export function Button() {\n  return <button>Save</button>;\n}",
+        addedLines: [2] },
+      { path: "src/theme.css", language: "css",
+        code: ":root {\n  --accent: #f97316;\n}",
+        removedLines: [2] },
+    ],
+  },
+}] };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin
+    blocks={[codeWorkspaceBlock]}
+    renderers={{ codeWorkspace: CodeWorkspaceView }}
+    slashItems={[codeWorkspaceSlashItem]}
+  />
+  <Editor.Content />
+  <Editor.SlashMenu />
+</Editor>
+```
+
+## Swap the renderer and its theme
+
+The two views use the same `codeWorkspace` block and saved data. The basic renderer needs no extra setup. For the IDE preset, replace the renderer under that key. It includes its own dark palette; pass only the colors you want to change through `theme`. `defaultOpenPaths` and `defaultActivePath` control the first local tab state; `pinnedPaths` in the block are saved and reopened. You may also replace the renderer with your own React component without changing the block schema.
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { Editor } from "@jul-editor/react";
+import {
+  codeWorkspaceBlock, codeWorkspaceSlashItem,
+  CodeWorkspaceIDEView, type CodeWorkspaceIDEViewProps,
+} from "@jul-editor/plugins/code-workspace";
+
+function ArticleWorkspace(props: CodeWorkspaceIDEViewProps) {
+  return <CodeWorkspaceIDEView
+    {...props}
+    theme={{ accent: "#f97316", sidebar: "#15191e", added: "#4caf7b" }}
+    className={{ container: "rounded-xl", tree: "border-r border-zinc-700", tabs: "border-b border-zinc-700", code: "font-mono" }}
+    defaultOpenPaths={["src/Button.tsx"]}
+    defaultActivePath="src/Button.tsx"
+  />;
+}
+
+export function ArticleEditor({ doc }: { doc: Doc }) {
+  return <Editor defaultValue={doc}>
+    <Editor.Plugin
+      blocks={[codeWorkspaceBlock]}
+      renderers={{ codeWorkspace: ArticleWorkspace }}
+      slashItems={[codeWorkspaceSlashItem]}
+    />
+    <Editor.Content />
+    <Editor.SlashMenu />
+  </Editor>;
+}
+```
+
+| Data field | Purpose |
+| --- | --- |
+| `files: { path, language, code, addedLines?, removedLines? }[]` | Source files and 1-based changed-line numbers. The IDE infers language when it creates a file. |
+| `folders?: string[]` | Empty folders and explicit folder paths. Parent folders also appear from file paths. |
+| `pinnedPaths?: string[]` | Tabs that reopen from saved JSON. Paths must name existing files. |
+| `title?`, `showTree?`, `showTabs?`, `showLineNumbers?` | Basic renderer display options. |
+| `theme?: Partial<CodeWorkspaceIDETheme>` | IDE colors for background, sidebar, panel, text, borders, accent, diff, and syntax tokens. |
+| `className?: string \| CodeWorkspaceIDEClassNames` | Tailwind classes for `container`, `tree`, `tabs`, `tab`, `toolbar`, `panel`, `gutter`, `code`, and `input`. |
+
+## Preserve the block in Markdown and HTML
+
+Pass the same registry to the format converters. Code Workspace uses a `jul-editor-code-workspace` fence in Markdown and an encoded figure payload in HTML, so files, empty folders, pinned tabs, and line markers survive a round trip. JSON keeps the complete block directly.
+
+```ts
+import {
+  coreBlocks, coreInlines, coreMarks, createRegistry,
+} from "@jul-editor/core";
+import { toMarkdown, fromMarkdown } from "@jul-editor/core/serde";
+import { codeWorkspaceBlock } from "@jul-editor/plugins/code-workspace";
+
+const registry = createRegistry({
+  blocks: [...coreBlocks, codeWorkspaceBlock],
+  inlines: coreInlines,
+  marks: coreMarks,
+});
+const markdown = toMarkdown(doc, { registry }).markdown;
+const restored = fromMarkdown(markdown, { registry }).doc;
+```
+
+<Note>
+
+Treat file paths and source as article content. This plugin displays a document snapshot; it does not read the visitor's filesystem or execute code.
+
+</Note>

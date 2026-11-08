@@ -1,0 +1,33 @@
+Typography and formatting are host controls over the same editable document. The editor supplies commands and active states; your application decides which buttons, font controls, and labels to show.
+
+## Typography without changing the schema
+
+Use CSS and a wrapper class for font families, spacing, and colors. The preview changes its font while its `Doc` stays the same. For per-span formatting, use marks rather than CSS classes embedded in saved content.
+
+<Demo example="typography" />
+
+```css
+.my-editor .editor-content { font-family: var(--reading-font); }
+.my-editor .editor-toolbar { border-color: var(--border); }
+```
+
+## Compose the toolbar
+
+`Editor.Toolbar` supports keyboard movement across its controls. Built-in atoms expose `aria-pressed` and `data-active`; you can omit or replace any button. Try hiding Underline in the live toolbar below.
+
+<Demo example="toolbar" />
+
+```tsx
+import { Editor } from "@jul-editor/react";
+
+<Editor.Toolbar aria-label="Formatting">
+  <Editor.Bold>Bold</Editor.Bold>
+  <Editor.Italic>Italic</Editor.Italic>
+  <Editor.Underline>Underline</Editor.Underline>
+  <Editor.Heading level={2}>H2</Editor.Heading>
+  <Editor.BulletList>List</Editor.BulletList>
+  <Editor.Undo>Undo</Editor.Undo>
+</Editor.Toolbar>
+```
+
+Related: [Customize controls](/docs/core/customize-controls) and [Styling, i18n and performance](/docs/core/styling-i18n-performance).

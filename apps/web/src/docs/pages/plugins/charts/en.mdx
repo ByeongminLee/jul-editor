@@ -1,0 +1,88 @@
+Charts are optional document blocks. Choose **CSV** or **JSON** for data stored with the document, or select **URL** to read a CSV/JSON file from your own storage. The chart block stores only the URL and format for external data. Click a chart below to open its settings: chart type, data, axes, and colors.
+
+## Six charts, one data source
+
+Bar compares categories, line follows change, area emphasizes volume, pie shows proportions, radar compares dimensions, and radial displays a single measure. All six use the same data source. The Axes section adapts to the type: bar, line, and area take one category column and any number of numeric series, pie and radial take a label and one value, and radar takes an axis column and any number of series.
+
+<ChartKinds />
+
+## Inline CSV or JSON
+
+JSON data is an array of flat objects. Use numbers for values you want to chart. The editor keeps both CSV and JSON drafts when you switch formats, so you can compare them before saving. While you type, the editor validates the data, shows an inline error for malformed input, and previews the detected columns, their types, and the row count. **Load sample** fills in example data. If the selected `x` or `y` column disappears after an edit, the chart falls back to sensible columns automatically.
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { Editor } from "@jul-editor/react";
+import { ChartView, chartSlashItem } from "@jul-editor/plugins/chart";
+
+const doc: Doc = { version: 1, blocks: [{
+  id: "visitors-chart", type: "chart",
+  props: {
+    kind: "area", x: "month", y: "visitors",
+    source: { type: "inline", format: "json", json:
+      '[{"month":"Jan","visitors":120},{"month":"Feb","visitors":160}]' },
+  },
+}] };
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin renderers={{ chart: ChartView }} slashItems={[chartSlashItem]} />
+  <Editor.Content />
+</Editor>
+```
+
+## Chart props
+
+| Prop | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `"bar" \| "line" \| "area" \| "pie" \| "radar" \| "radial"` | Chart family. Default `"bar"`. |
+| `x` | `string` | Category (or label) column. |
+| `y` | `string \| string[]` | Value column, or several numeric series for bar, line, area, and radar. A plain string from older documents keeps working. Pie and radial use the first one. |
+| `colorBy` | `"series" \| "category"` | `"category"` colors every bar differently (default for a single-series bar chart). `"series"` gives each series one color (default everywhere else). |
+| `palette` | `string[]` | Per-chart colors that override the theme. Colors cycle when there are more series or categories than entries. |
+
+## Colors
+
+Charts are colorful by default: each series gets its own color, a single-series bar chart colors each category, and pie and radial charts color every slice, cycling through eight colors. The Colors section of the editor offers preset palettes, one color input per swatch, and a reset button that returns to the theme default. Edited colors are stored in the block as `palette`. Dragging inside a color picker updates the swatch live but writes the block once, when the picker closes or loses focus, so one edit is one undo step. Editing one swatch stores all eight entries, but the slots you did not touch are saved as `var(--chart-N, fallback)`, so they keep following the theme; only the slot you changed is a fixed color.
+
+For app-wide colors, set the CSS variables `--chart-1` through `--chart-8` on any ancestor of the chart. Without them, built-in fallback colors that work in light and dark themes are used. `ChartView`'s `theme.series` array sets the same variables from code. A block's own `palette` always wins over the theme.
+
+```css
+:root {
+  --chart-1: #e8833a; --chart-2: #4a90c2; --chart-3: #5aa469; --chart-4: #c9566b;
+  --chart-5: #8e6fc4; --chart-6: #d4a82f; --chart-7: #2fa7a0; --chart-8: #8a93a6;
+}
+```
+
+```tsx
+// Two series on one line chart, with a custom palette for this chart only.
+{ id: "c1", type: "chart", props: {
+  kind: "line", x: "month", y: ["visitors", "signups"],
+  palette: ["#3c94b7", "#f2784b"],
+  source: { type: "inline", csv: "month,visitors,signups\nJan,120,30\nFeb,160,44" } } }
+```
+
+## CSV or JSON from a URL
+
+Register a resolver to fetch external files. `createFetchResolveData` accepts a custom fetch function, so your app can use a signed S3 URL, a CDN, or its own API. The default resolver does not make network requests. Browser requests to another origin need that server's CORS permission.
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { ChartView, ResolveDataProvider, createFetchResolveData } from "@jul-editor/plugins/chart";
+
+const resolveData = createFetchResolveData();
+const doc = { version: 1, blocks: [{
+  id: "remote-chart", type: "chart",
+  props: { kind: "bar", x: "month", y: "visitors",
+    source: { type: "url", format: "json",
+      url: "https://cdn.example.com/data/visitors.json" } },
+}] };
+
+<ResolveDataProvider value={resolveData}>
+  <Editor defaultValue={doc}>
+    <Editor.Plugin renderers={{ chart: ChartView }} />
+    <Editor.Content />
+  </Editor>
+</ResolveDataProvider>
+```
+
+For private database records, keep `source: { type: "view", viewId }` and provide a resolver that maps the ID to a dataset your user may access. Recharts loads only when a chart mounts. Set `--chart-1` through `--chart-8` in your host CSS to match your design.

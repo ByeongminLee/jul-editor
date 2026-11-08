@@ -1,0 +1,66 @@
+Slash, mention, tag, and bubble menus keep their keyboard behavior while you choose their appearance. Render a menu only in editors that need it. Keep the returned listbox and option props on your elements so focus and selection remain accessible.
+
+## Insert blocks and inline references
+
+Typing `/` at the start of a block opens block commands. `@` suggests people or posts, and `#` suggests structured tags. Choosing a tag stores an inline mention with `kind: "tag"`; the visible `#` is presentation, not part of the stored label.
+
+<Demo example="menus" />
+
+```tsx
+import { Editor, type TagItem } from "@jul-editor/react";
+
+const tags: TagItem[] = [{ id: "research", label: "research" }];
+
+<Editor defaultValue={doc}>
+  <Editor.Content />
+  <Editor.SlashMenu />
+  <Editor.TagMenu onSearch={(query) =>
+    tags.filter((tag) => tag.label.includes(query.toLowerCase()))
+  } />
+</Editor>
+```
+
+## Choose commands and design their cards
+
+Pass `items` an array to replace the menu or a function to filter, reorder, rename, and append the built-in and plugin commands. Filter by `id`: heading levels share the same block type. A custom block must also be registered in `Editor.Plugin`. The render function owns every row, icon, description, and hover card; keep `getListboxProps` and `getOptionProps(index)` on the actual list and options so arrow keys, Enter, and pointer selection still work.
+
+<Demo example="menus-custom" />
+
+```tsx
+import { defineBlock, newId } from "@jul-editor/core";
+import { Editor, type SlashItem } from "@jul-editor/react";
+
+const notice = defineBlock({
+  type: "notice", content: "inline", children: "none", props: {},
+});
+const chooseItems = (defaults: SlashItem[]) => [
+  ...defaults.filter((item) => item.id === "paragraph" || item.id === "heading-1"),
+  { id: "notice", type: "notice", title: "Notice card",
+    description: "Highlight a key point", keywords: ["notice"],
+    create: () => ({ id: newId(), type: "notice", props: {}, content: [] }) },
+];
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin blocks={[notice]} />
+  <Editor.Content />
+  <Editor.SlashMenu items={chooseItems}>
+    {({ items, activeIndex, getListboxProps, getOptionProps }) =>
+      <div {...getListboxProps()}>
+        {items.map((item, index) =>
+          <div key={item.id} {...getOptionProps(index)}
+            data-active={index === activeIndex || undefined}>
+            <strong>{item.title}</strong>
+            <small>{item.description}</small>
+          </div>)}
+      </div>}
+  </Editor.SlashMenu>
+</Editor>
+```
+
+## Check the serialized value
+
+Add `#research` in this editor. Its Markdown output keeps a structured `jul-editor:tag` target so import can restore the tag. A plain `#research` string without that target is ordinary text.
+
+<Demo example="tags" />
+
+Related: [Customize controls](/docs/core/customize-controls) for the full list of replaceable parts, and [Tags and mentions](/docs/core/tags-mentions).

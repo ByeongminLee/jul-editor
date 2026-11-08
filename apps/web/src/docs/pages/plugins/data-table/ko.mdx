@@ -1,0 +1,31 @@
+`dataTable`은 각 값을 문서 셀로 편집하는 대신 데이터셋을 표시합니다. 직접 입력한 CSV/JSON은 서버 없이 동작합니다. URL 소스는 선택형 fetch 리졸버로 파일을 읽고, 뷰 ID는 앱의 로딩·접근 권한 검사에 맡깁니다.
+
+## 인라인·원격 데이터 연결
+
+안정적인 리졸버를 `ResolveDataProvider`로 전달하세요. 기본 뷰는 표시 행 수를 제한하고 남은 행 수를 알려 줍니다. 페이지 구분이나 가상화가 필요하면 렌더러를 교체하세요.
+
+<Demo example="data-table" />
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { DataTableView, dataTableSlashItem, ResolveDataProvider,
+  createFetchResolveData, type ResolveData } from "@jul-editor/plugins/table";
+import { parseCSV } from "@jul-editor/plugins/data";
+
+const fetchData = createFetchResolveData();
+const resolveData: ResolveData = async (source) => {
+  if (source.type !== "view") return fetchData(source);
+  const response = await fetch("/api/datasets/" + encodeURIComponent(source.viewId));
+  if (!response.ok) throw new Error("Dataset request failed");
+  return parseCSV(await response.text());
+};
+
+<ResolveDataProvider value={resolveData}>
+  <Editor defaultValue={doc}>
+    <Editor.Plugin renderers={{ dataTable: DataTableView }} slashItems={[dataTableSlashItem]} />
+    <Editor.Content /><Editor.SlashMenu />
+  </Editor>
+</ResolveDataProvider>
+```
+
+문서 안에서 직접 편집하는 표는 [표와 미디어](/docs/core/tables-media)를 보세요. CSV/JSON 도우미는 React가 필요 없는 `@jul-editor/plugins/data`에 있습니다.

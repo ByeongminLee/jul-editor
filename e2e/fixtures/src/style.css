@@ -1,0 +1,297 @@
+/* skin CSS lives only in the playground app, per goal.md headless rule */
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}
+
+.jul-editor-playground {
+  padding: 1rem;
+}
+
+/* "/react" demo skin -- simple, playground-only (packages/core and
+   packages/react stay headless/CSS-free). */
+.jul-editor-react-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.jul-editor-react-toolbar button {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.jul-editor-react-toolbar button[data-active] {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
+.jul-editor-react-content {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.75rem;
+  min-height: 8rem;
+}
+
+.jul-editor-react-void-image {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: #f3f4f6;
+  border: 1px dashed #9ca3af;
+  border-radius: 4px;
+}
+
+/* Slash/mention menu skin -- @jul-editor/react's SlashMenu/MentionMenu are
+   headless (render-prop, no styles of their own); this is the playground's
+   own consumer markup. */
+.jul-editor-menu {
+  z-index: 20;
+  min-width: 10rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.jul-editor-menu-item {
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}
+
+.jul-editor-menu-item[data-active] {
+  background: #dbeafe;
+}
+
+.jul-editor-menu-empty {
+  padding: 0.35rem 0.6rem;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.jul-editor-bubble-menu {
+  z-index: 20;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+.jul-editor-bubble-menu button {
+  padding: 0.2rem 0.4rem;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.jul-editor-bubble-menu button[data-active] {
+  background: #374151;
+}
+
+/* Drag handle skin -- Editor.DragHandle itself is headless (render-prop
+   only, positioning left to the consumer); this is only the playground's
+   own handle icon/drop-indicator/actions-menu markup. */
+.jul-editor-drag-handle {
+  z-index: 10;
+  width: 18px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: #fff;
+  color: #6b7280;
+  cursor: grab;
+  line-height: 1;
+}
+
+.jul-editor-drag-handle[aria-pressed="true"],
+.jul-editor-drag-handle[data-dragging] {
+  cursor: grabbing;
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+
+.jul-editor-drop-indicator {
+  z-index: 9;
+  background: #3b82f6;
+  pointer-events: none;
+}
+
+.jul-editor-drag-actions {
+  z-index: 10;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+.jul-editor-drag-actions button {
+  padding: 0.2rem 0.4rem;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* Visually hidden but announced -- the drag handle's ARIA live region. */
+.jul-editor-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* /diff route skin -- @jul-editor/react's DiffView itself is headless/CSS-free. */
+.jul-editor-diff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.jul-editor-diff-stats {
+  display: flex;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.jul-editor-diff-stats dt {
+  display: none;
+}
+
+.jul-editor-diff-stats dd {
+  margin: 0;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  background: #f3f4f6;
+  font-size: 0.85rem;
+}
+
+.jul-editor-diff [data-jul-editor-diff-block] {
+  border-left: 2px solid transparent;
+  padding: 0.15rem 0.5rem;
+}
+
+.jul-editor-diff [data-diff="insert"] {
+  border-left-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.jul-editor-diff [data-diff="delete"] {
+  border-left-color: #ef4444;
+  background: #fef2f2;
+}
+
+.jul-editor-diff [data-diff="modify"] {
+  border-left-color: #eab308;
+  background: #fefce8;
+}
+
+.jul-editor-diff [data-diff="move"] {
+  border-left-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.jul-editor-diff ins[data-diff-inline] {
+  background: #bbf7d0;
+  text-decoration: none;
+}
+
+.jul-editor-diff del[data-diff-inline] {
+  background: #fecaca;
+}
+
+.jul-editor-diff [data-diff-format] {
+  outline: 1px dotted #a855f7;
+}
+
+.jul-editor-diff [data-diff-move-label] {
+  font-size: 0.75rem;
+  color: #3b82f6;
+  margin-right: 0.25rem;
+}
+
+.jul-editor-diff button[data-diff-collapsed] {
+  padding: 0.15rem 0.5rem;
+  border: 1px dashed #9ca3af;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.jul-editor-diff [data-jul-editor-diff-children] {
+  margin-left: 1.25rem;
+}
+
+/* P2: CSS Custom Highlight API paint rules for @jul-editor/core's codeBlock
+   syntax highlighter (view/highlight.ts registers Ranges under these exact
+   `jul-editor-<token>` names -- see its own HIGHLIGHT_TOKENS doc comment). This
+   is the ONE place such a rule belongs: packages/core/packages/react stay
+   headless (no CSS at all), a host app owns ::highlight() styling entirely.
+   ::highlight() is unsupported by a browser with no CSS.highlights (the
+   feature-detection in view/highlight.ts already no-ops there), so this is
+   pure progressive enhancement. */
+::highlight(jul-editor-keyword) {
+  color: #a855f7;
+}
+::highlight(jul-editor-string) {
+  color: #16a34a;
+}
+::highlight(jul-editor-comment) {
+  color: #9ca3af;
+}
+::highlight(jul-editor-number) {
+  color: #2563eb;
+}
+::highlight(jul-editor-title) {
+  color: #0891b2;
+}
+::highlight(jul-editor-function) {
+  color: #0891b2;
+}
+::highlight(jul-editor-attr) {
+  color: #d97706;
+}
+::highlight(jul-editor-built_in) {
+  color: #dc2626;
+}
+::highlight(jul-editor-type) {
+  color: #ca8a04;
+}
+::highlight(jul-editor-literal) {
+  color: #2563eb;
+}
+::highlight(jul-editor-meta) {
+  color: #9ca3af;
+}
+::highlight(jul-editor-variable) {
+  color: #db2777;
+}
+::highlight(jul-editor-punctuation) {
+  color: #6b7280;
+}
+
+.jul-editor-react-demo [data-jul-editor-code-chrome] {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.25rem;
+}
+
+.jul-editor-react-demo [data-jul-editor-code-chrome] button {
+  cursor: pointer;
+}

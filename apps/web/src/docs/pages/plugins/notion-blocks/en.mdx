@@ -1,0 +1,48 @@
+Four block plugins give a Notion-like workspace feel: callout, toggle, table of contents, and columns. Each has its own subpath and a ready-made bundle you spread into `Editor.Plugin`. The bundles carry block specs, renderers, slash items, input rules, and Turn into entries.
+
+```tsx
+import { calloutPlugin } from "@jul-editor/plugins/callout";
+import { togglePlugin } from "@jul-editor/plugins/toggle";
+import { tocPlugin } from "@jul-editor/plugins/toc";
+import { columnsPlugin } from "@jul-editor/plugins/columns";
+import { COLUMNS_CSS } from "@jul-editor/plugins/columns";
+
+<Editor defaultValue={doc}>
+  <Editor.Plugin {...calloutPlugin} />
+  <Editor.Plugin {...togglePlugin} />
+  <Editor.Plugin {...tocPlugin} />
+  <Editor.Plugin {...columnsPlugin} />
+  <Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+The main entry also re-exports these four bundles. Columns are pure structure, so include `COLUMNS_CSS` (or your own rules) for the layout.
+
+## Callout
+
+A text block with an emoji icon and a color: `default`, `info`, `success`, `warning`, or `danger`. It holds inline content and free children. Type `!> ` at the start of a line to create one, or use `/callout` and the color variants. Markdown uses GitHub alerts (`> [!NOTE]`), and a custom icon rides on the marker line. HTML is `<aside data-jul-editor-type="callout">`. `quoteToCallout` converts a quote.
+
+## Toggle
+
+A collapsible block with a title and children. The `open` state is an ordinary prop, so it is undoable and shared. Pass `openStore` to `ToggleView` to keep it per viewer instead (`createMemoryOpenStore()`). `>> ` creates a toggle and `>>## ` a heading toggle (levels 1 to 3), and `/toggle` and the heading variants are in the slash menu. Markdown and HTML use `<details>` and `<summary>`.
+
+## Table of contents
+
+A void block that lists the headings, live while editing. `minLevel` and `maxLevel` filter the levels, and clicking an entry scrolls to the heading and expands toggles around it. In read-only pages wrap the content in `<TocDocProvider value={doc}>`. A floating outline is available as `TocSidebar`:
+
+```tsx
+import { TocSidebar } from "@jul-editor/plugins/toc";
+
+<TocSidebar editor={editor} scrollContainer={scrollEl} minHeadings={2} />
+```
+
+Use `extractOutline` for your own list. `[TOC]` in Markdown becomes a toc block.
+
+## Columns
+
+`columns` holds 2 to 5 `column` children, and each column holds any blocks. `/2 columns` and `/3 columns` create them, and `addColumn`, `removeColumn`, and `unwrapColumns` edit an existing layout. Markdown flattens columns and reports a lossy conversion.
+
+## Limits
+
+- Callout, toggle, and toc round trip through Markdown only in the forms shown above. Other Markdown flavors may show them as a quote, raw HTML, or text.
+- `COLUMNS_CSS` stacks columns below 640px. Override it if you want a different breakpoint.

@@ -1,0 +1,36 @@
+태그와 멘션은 꾸며진 문자열이 아니라 구조화된 인라인 내용입니다. 태그는 `kind: "tag"`인 멘션이고 사람과 글 참조는 각각의 kind를 사용합니다. 앱은 참조 종류에 따라 일관되게 표시·검색·직렬화할 수 있습니다.
+
+## 태그 삽입
+
+아래 에디터에서 `#`을 입력하고 추천 항목을 고르세요. 에디터는 태그 ID와 label을 저장하고 이어 쓸 수 있도록 뒤에 공백을 넣습니다. Markdown 출력에는 왕복 변환을 위한 `jul-editor:tag` 대상이 남습니다.
+
+<Demo example="tags" />
+
+```tsx
+import { Editor, type TagItem } from "@jul-editor/react";
+
+const tags: TagItem[] = [
+  { id: "research", label: "research" },
+  { id: "design", label: "design" },
+];
+
+<Editor defaultValue={doc}>
+  <Editor.Content />
+  <Editor.TagMenu onSearch={(query) =>
+    tags.filter((tag) => tag.label.includes(query.toLowerCase()))
+  } />
+</Editor>
+```
+
+## 사람이나 글 멘션
+
+`Editor.MentionMenu`는 `onSearch(query, kind)`를 호출합니다. `user` 또는 `post`에 맞는 `MentionItem`을 반환하고 화면 label이 바뀌어도 ID는 유지하세요. 메뉴의 키보드 속성을 전달하면서 목록 UI는 직접 그릴 수 있습니다.
+
+```tsx
+<Editor.MentionMenu onSearch={async (query, kind) =>
+  peopleAndPosts.filter((item) => item.kind === kind &&
+    item.label.toLowerCase().includes(query.toLowerCase()))
+} />
+```
+
+관련 문서: 태그·멘션 목록 꾸미기는 [메뉴](/docs/core/menus)를 보세요.

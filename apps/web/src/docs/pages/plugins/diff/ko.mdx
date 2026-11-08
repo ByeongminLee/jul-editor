@@ -1,0 +1,26 @@
+고정된 블록 ID를 기준으로 두 `Doc`을 비교합니다. `DiffView`는 추가·삭제·수정·이동을 표시하고 `useDiff`는 건수를 제공합니다. 기준 문서를 저장해 두고 사용자가 변경 사항을 확인할 때 비교 화면을 보여 주세요.
+
+비교 알고리즘과 React UI는 모두 `@jul-editor/plugins/diff`에 있어 core와 React 패키지에는 diff 코드가 들어 있지 않습니다. `@jul-editor/plugins`를 설치해 사용하세요.
+
+## 변경 사항 표시
+
+아래 예제는 설치 안내의 두 버전을 비교합니다. 문단 하나는 수정되고 문단 하나는 추가되었습니다. `mode="changes"`는 변경 위주로, `mode="full"`은 바뀌지 않은 문맥도 보여 줍니다.
+
+<Demo example="diff" />
+
+```tsx
+import type { Doc } from "@jul-editor/core";
+import { DiffView, useDiff } from "@jul-editor/plugins/diff";
+
+function Changes({ before, after }: { before: Doc; after: Doc }) {
+  const { stats } = useDiff(before, after);
+  return <>
+    <p>{stats.inserted} added · {stats.modified} modified</p>
+    <DiffView before={before} after={after} mode="changes" />
+  </>;
+}
+```
+
+비교 화면의 커스텀 void 렌더러는 `block`과 `readOnly=true`를 받으며 editor나 `updateProps`는 받지 않습니다. 차트·카드에는 읽기 전용 렌더러를 제공하고 앱에서 `data-diff` 상태를 스타일링하세요.
+
+관련 문서: 고정 블록 ID는 [문서 모델](/docs/core/document-model)을 보세요.

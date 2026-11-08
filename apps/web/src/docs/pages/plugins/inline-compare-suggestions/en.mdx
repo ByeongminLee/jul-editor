@@ -1,0 +1,57 @@
+The diff plugin has two more views besides the block comparison. `InlineDiffView` shows a single document with insertions and deletions drawn in place. `SuggestionView` adds Accept and Reject buttons to every change. `useEditorSuggestions` goes one step further and draws the same review inside a live editor. All of it lives in `@jul-editor/plugins/diff` and stays DOM-free until a component renders.
+
+## Compare in one document
+
+`InlineDiffView` takes two `Doc` values and marks word-level insertions, deletions, and format changes. `DiffCompare` wraps both layouts with a toggle (`defaultLayout="block" | "inline"`), and `DiffStyles` injects the default CSS (`DIFF_CSS`) once.
+
+```tsx
+import { DiffCompare, DiffStyles, InlineDiffView } from "@jul-editor/plugins/diff";
+
+<DiffStyles />
+<DiffCompare before={before} after={after} defaultLayout="inline" />
+<InlineDiffView before={before} after={after} />
+```
+
+Use `attribute={(change) => ({ id, name, color })}` to label who made a change (shown as `data-diff-author*` and a `title`). Keep that function referentially stable.
+
+## Review suggestions
+
+`SuggestionView` compares `base` with `proposed`, renders each change with Accept / Reject / Undo, and reports the resolution through `onResult`. Pending changes count as rejected, so the result is always a valid document.
+
+```tsx
+import { SuggestionView } from "@jul-editor/plugins/diff";
+
+<SuggestionView
+  base={current}
+  proposed={agentDraft}
+  onResult={(doc) => save(doc)}
+  labels={{ /* partial overrides of DEFAULT_SUGGESTION_LABELS */ }}
+/>
+```
+
+Build your own UI with `useSuggestions({ base, proposed })`. It returns `diff`, `decisions`, `pending`, `result`, and `decide`, `undo`, `acceptAll`, `rejectAll`, `reset`. The model functions `computeInlineDiff`, `applyDecisions`, and `decideAll` run without React, for example on a server.
+
+## Suggestions inside the editor
+
+`useEditorSuggestions(editor, proposed)` decorates the live editor: insertions and deletions appear in the text, with Accept and Reject widgets next to each change. A decision becomes one undoable transaction, applied through `reconcileDoc`, so history and the selection survive. Pass `null` as `proposed` to leave suggestion mode.
+
+```tsx
+import { SUGGESTION_CSS, useEditorSuggestions } from "@jul-editor/plugins/diff";
+import { useEditor } from "@jul-editor/react";
+
+function Review({ proposed }: { proposed: Doc | null }) {
+  const editor = useEditor();
+  const s = useEditorSuggestions(editor, proposed, { controls: true });
+  return <p>{s.changes.length} pending <button onClick={s.acceptAll}>Accept all</button></p>;
+}
+```
+
+Set `controls: false` to hide the widgets and draw a list from `s.changes` yourself. `perspective: "proposed"` keeps the suggestion as the live document and shows the original as the diff. Include `SUGGESTION_CSS` or style the `jul-editor-suggest-ins`, `-del`, and `-fmt` classes.
+
+## Limits
+
+- Changes are matched by stable block ID. A document that regenerates IDs shows as a full rewrite.
+- The text diff is word-level and runs in the main thread, so very large documents should be compared on a server.
+- Custom void blocks render through `renderers` in read-only form, like the block diff.
+
+Related: [Diff](/docs/plugins/diff).

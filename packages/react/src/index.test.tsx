@@ -1,0 +1,303 @@
+import type { Doc } from "@jul-editor/core";
+import { cleanup, render, screen } from "@testing-library/react";
+import { act, useState } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Editor, useEditor, VERSION } from "./";
+import type { VoidRendererProps } from "./";
+
+afterEach(() => {
+  cleanup();
+  delete (globalThis as { __testEditor?: unknown }).__testEditor;
+});
+
+function makeDoc(text: string): Doc {
+  return { version: 1, blocks: [{ id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text }] }] };
+}
+
+function Probe() {
+  const editor = useEditor();
+  (globalThis as { __testEditor?: unknown }).__testEditor = editor;
+  return null;
+}
+
+function testEditor(): NonNullable<ReturnType<typeof useEditor>> {
+  return (globalThis as { __testEditor?: ReturnType<typeof useEditor> }).__testEditor!;
+}
+
+describe("@jul-editor/react", () => {
+  it("exposes a VERSION string (kept for the playground's existing demo page)", () => {
+    expect(VERSION).toBe("0.1.0");
+  });
+
+  it("mounts Editor.Content and reflects the initial doc through useEditor()", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")}>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    expect(testEditor().getDoc().blocks[0]?.content?.[0]).toMatchObject({ text: "hello" });
+  });
+
+  it("re-passing the exact object last emitted via onChange does not reset selection (anti feedback-loop)", () => {
+    function ControlledHarness() {
+      const [value, setValue] = useState<Doc>(() => makeDoc("hello"));
+      return (
+        <Editor value={value} onChange={setValue}>
+          <Editor.Content />
+          <Probe />
+        </Editor>
+      );
+    }
+    render(<ControlledHarness />);
+    const editor = testEditor();
+
+    act(() => {
+      editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 1 }, focus: { blockId: "p1", offset: 1 } }));
+    });
+    act(() => {
+      // Fires onChange(newDoc); the harness's setValue(newDoc) re-renders with
+      // the *exact* object this Editor itself just produced.
+      editor.update((tx) => tx.insertText({ blockId: "p1", offset: 1 }, "X"));
+    });
+
+    expect(editor.getState().selection).not.toBeNull();
+    expect(editor.getDoc().blocks[0]?.content?.[0]).toMatchObject({ text: "hXello" });
+  });
+
+  it("ignores an older onChange value that arrives after a newer edit", () => {
+    const emitted: Doc[] = [];
+    function Harness({ value }: { value: Doc }) {
+      return <Editor value={value} onChange={(doc) => emitted.push(doc)}><Editor.Content /><Probe /></Editor>;
+    }
+    const { rerender } = render(<Harness value={makeDoc("hello")} />);
+    const editor = testEditor();
+
+    act(() => editor.update((tx) => tx.insertText({ blockId: "p1", offset: 5 }, "A").setSelection({ type: "text", anchor: { blockId: "p1", offset: 6 }, focus: { blockId: "p1", offset: 6 } })));
+    act(() => editor.update((tx) => tx.insertText({ blockId: "p1", offset: 6 }, "B").setSelection({ type: "text", anchor: { blockId: "p1", offset: 7 }, focus: { blockId: "p1", offset: 7 } })));
+    expect(emitted).toHaveLength(2);
+
+    act(() => rerender(<Harness value={emitted[0]!} />));
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "helloAB" }]);
+    expect(editor.getState().selection).toEqual({ type: "text", anchor: { blockId: "p1", offset: 7 }, focus: { blockId: "p1", offset: 7 } });
+  });
+
+  it("accepts an older document as an intentional reset after the latest value catches up", () => {
+    const emitted: Doc[] = [];
+    function Harness({ value }: { value: Doc }) {
+      return <Editor value={value} onChange={(doc) => emitted.push(doc)}><Editor.Content /><Probe /></Editor>;
+    }
+    const { rerender } = render(<Harness value={makeDoc("hello")} />);
+    const editor = testEditor();
+    act(() => editor.update((tx) => tx.insertText({ blockId: "p1", offset: 5 }, "A")));
+    act(() => editor.update((tx) => tx.insertText({ blockId: "p1", offset: 6 }, "B")));
+
+    act(() => rerender(<Harness value={emitted[1]!} />));
+    act(() => rerender(<Harness value={emitted[0]!} />));
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "helloA" }]);
+  });
+
+  it("keeps the current controlled value pending while a newer edit awaits its echo", () => {
+    const emitted: Doc[] = [];
+    function Harness({ value }: { value: Doc }) {
+      return <Editor value={value} onChange={(doc) => emitted.push(doc)}><Editor.Content /><Probe /></Editor>;
+    }
+    const { rerender } = render(<Harness value={makeDoc("hello")} />);
+    const editor = testEditor();
+    act(() => editor.update((tx) => tx.insertText({ blockId: "p1", offset: 5 }, "A")));
+    act(() => rerender(<Harness value={emitted[0]!} />)); // parent caught up to A
+
+    act(() => editor.update((tx) => tx.insertText({ blockId: "p1", offset: 6 }, "B")));
+    act(() => rerender(<Harness value={emitted[0]!} />)); // same prop during B's pending round trip
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "helloAB" }]);
+  });
+
+  it("passing a brand-new value object resets the doc and clears selection", () => {
+    function Harness({ value }: { value: Doc }) {
+      return (
+        <Editor value={value}>
+          <Editor.Content />
+          <Probe />
+        </Editor>
+      );
+    }
+    const doc1 = makeDoc("a");
+    const { rerender } = render(<Harness value={doc1} />);
+    const editor = testEditor();
+
+    act(() => {
+      editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 1 }, focus: { blockId: "p1", offset: 1 } }));
+    });
+    expect(editor.getState().selection).not.toBeNull();
+
+    const doc2 = makeDoc("b");
+    act(() => rerender(<Harness value={doc2} />));
+
+    expect(editor.getState().selection).toBeNull();
+    expect(editor.getDoc().blocks[0]?.content?.[0]).toMatchObject({ text: "b" });
+  });
+
+  it("Editor.Toolbar renders role=toolbar with an aria-label and roving tabindex", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")}>
+        <Editor.Toolbar>
+          <Editor.Bold />
+          <Editor.Italic />
+        </Editor.Toolbar>
+        <Editor.Content />
+      </Editor>,
+    );
+    const toolbar = screen.getByRole("toolbar");
+    expect(toolbar.getAttribute("aria-label")).toBeTruthy();
+    const buttons = screen.getAllByRole("button");
+    expect(buttons[0]?.getAttribute("tabindex")).toBe("0");
+    expect(buttons[1]?.getAttribute("tabindex")).toBe("-1");
+  });
+
+  it("clicking Editor.Bold over a selection sets the bold mark in the model", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")}>
+        <Editor.Toolbar>
+          <Editor.Bold />
+        </Editor.Toolbar>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    const editor = testEditor();
+    act(() => {
+      editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 5 } }));
+    });
+
+    act(() => screen.getByRole("button", { name: "Bold" }).click());
+
+    const content = editor.getDoc().blocks[0]?.content;
+    expect(content?.[0]).toMatchObject({ marks: [{ type: "bold" }] });
+  });
+
+  // Locale/labels flow into the toolbar atoms' visible text AND
+  // aria-label default (both from the same resolved Labels key), and into
+  // the toolbar's own default aria-label ("Formatting"/"서식").
+  it("<Editor locale=\"ko\"> localizes toolbar atoms' default text/aria-label and the toolbar's own aria-label", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")} locale="ko">
+        <Editor.Toolbar>
+          <Editor.Bold />
+          <Editor.Heading level={2} />
+        </Editor.Toolbar>
+        <Editor.Content />
+      </Editor>,
+    );
+    expect(screen.getByRole("toolbar").getAttribute("aria-label")).toBe("서식");
+    const bold = screen.getByRole("button", { name: "굵게" });
+    expect(bold.textContent).toBe("굵게");
+    expect(screen.getByRole("button", { name: "제목 2" })).toBeDefined();
+  });
+
+  it("<Editor labels={{toolbarBold: '...'}}> overrides just that key on top of the (en) default preset", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")} labels={{ toolbarBold: "Strong" }}>
+        <Editor.Toolbar>
+          <Editor.Bold />
+          <Editor.Italic />
+        </Editor.Toolbar>
+        <Editor.Content />
+      </Editor>,
+    );
+    expect(screen.getByRole("button", { name: "Strong" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Italic" })).toBeDefined(); // untouched
+  });
+
+  it("passing an explicit aria-label/children on a toolbar atom overrides the localized default", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")} locale="ko">
+        <Editor.Toolbar>
+          <Editor.Bold aria-label="my-bold" />
+        </Editor.Toolbar>
+        <Editor.Content />
+      </Editor>,
+    );
+    expect(screen.getByRole("button", { name: "my-bold" })).toBeDefined();
+  });
+
+  it("void renderers mount via a portal, receive live props, and an error in one is contained by its own ErrorBoundary", () => {
+    function Boom(): never {
+      throw new Error("boom");
+    }
+    function Pic({ block, selected, updateProps }: VoidRendererProps) {
+      return (
+        <button data-testid="void-btn" data-selected={selected} onClick={() => updateProps({ alt: "changed" })}>
+          {String(block.props.alt)}
+        </button>
+      );
+    }
+    const doc: Doc = {
+      version: 1,
+      blocks: [
+        { id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "hi" }] },
+        { id: "v1", type: "image", props: { src: "x.png", alt: "pic" } },
+        { id: "v2", type: "diagram", props: { code: "x" } },
+      ],
+    };
+    render(
+      <Editor defaultValue={doc} renderers={{ image: Pic, diagram: Boom as unknown as typeof Pic }}>
+        <Editor.Content />
+      </Editor>,
+    );
+
+    const button = screen.getByTestId("void-btn");
+    expect(button.textContent).toBe("pic");
+    expect(button.getAttribute("data-selected")).toBe("false");
+
+    act(() => button.click());
+    expect(screen.getByTestId("void-btn").textContent).toBe("changed");
+  });
+
+  // BUG (found while building a consumer demo of <Editor onUpload>): the
+  // prop was captured into a ref for hooks/context but never actually
+  // reached the underlying `createEditor({ onUpload })` call in
+  // EditorContent's mount effect, so a pasted/dropped image File was always
+  // silently ignored no matter what `onUpload` was passed -- see Editor.tsx.
+  // jsdom has neither ClipboardEvent nor DataTransfer -- a plain, cancelable
+  // Event with `.clipboardData` monkey-patched on drives the same code path
+  // (packages/core/src/view/clipboard.test.ts's own `fakePasteEvent`).
+  it("<Editor onUpload> is actually wired: pasting an image File uploads it and fills in the image block's src", async () => {
+    const onUpload = vi.fn(async (file: File) => `https://cdn.example/${file.name}`);
+    render(
+      <Editor defaultValue={makeDoc("hello")} onUpload={onUpload}>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    const editor = testEditor();
+    act(() => {
+      const at = { blockId: "p1", offset: 0 };
+      editor.update((tx) => tx.setSelection({ type: "text", anchor: at, focus: at }));
+    });
+
+    const root = document.querySelector("[data-jul-editor-root]")!;
+    const file = new File(["x"], "photo.png", { type: "image/png" });
+    const ev = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, "clipboardData", { value: { getData: () => "", files: [file] } });
+    await act(async () => {
+      root.dispatchEvent(ev);
+      await Promise.resolve(); // let the mocked onUpload's promise settle
+    });
+
+    expect(onUpload).toHaveBeenCalledWith(file, expect.objectContaining({kind: "image"}));
+    const image = editor.getDoc().blocks.find((b) => b.type === "image");
+    expect(image?.props.src).toBe("https://cdn.example/photo.png");
+  });
+  it("exposes deferred upload and structured asset results through React", async () => {
+    const onUpload = vi.fn(async () => ({src: "/assets/photo.png", assetId: "photo-1"}));
+    render(<Editor defaultValue={makeDoc("hello")} uploadMode="deferred" onUpload={onUpload}><Editor.Content/><Probe/></Editor>);
+    const editor = testEditor();
+    let ids: string[] = [];
+    act(() => { ids = editor.insertFiles([new File(["photo"], "photo.png", {type: "image/png"})]); });
+    expect(onUpload).not.toHaveBeenCalled();
+    expect(editor.getPendingUploads()).toHaveLength(1);
+    await act(async () => { expect(await editor.uploadPending()).toEqual({uploaded: ids, failed: []}); });
+    expect(editor.getDoc().blocks.find(block => block.id === ids[0])?.props).toMatchObject({src: "/assets/photo.png", assetId: "photo-1"});
+  });
+
+});

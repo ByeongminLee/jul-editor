@@ -1,0 +1,29 @@
+편집 동작은 `Editor.Content` 주변에 필요한 만큼 조합합니다. 앱은 블록 핸들·추가 버튼·떠 있는 컨트롤의 위치를 정하고, 에디터는 명령과 좌표를 제공합니다.
+
+## 블록 이동과 삽입
+
+`Editor.DragHandle`은 활성 블록 ID와 위치를 반환합니다. 그 블록 옆에 핸들을 놓고 버튼에 `getHandleProps()`를 전달하세요. 포인터로 드래그하거나 키보드에서 Space, 방향키, Space 순서로 이동할 수 있습니다. `useBlockActions(blockId).insertBelow()`는 메뉴를 열지 않고 문단을 추가합니다.
+
+```tsx
+import { Editor, useBlockActions } from "@jul-editor/react";
+
+function AddBelow({ blockId }: { blockId: string }) {
+  const actions = useBlockActions(blockId);
+  return <button type="button" onClick={actions.insertBelow}>Add below</button>;
+}
+
+<Editor.DragHandle>{({ blockId, rect, getHandleProps }) =>
+  blockId && rect && <div style={{ position: "fixed", top: rect.top, left: rect.left - 38 }}>
+    <button {...getHandleProps()} aria-label="Move block">⋮⋮</button>
+    <AddBelow blockId={blockId} />
+  </div>
+}</Editor.DragHandle>
+```
+
+## 선택 영역 컨트롤
+
+`Editor.BubbleMenu`는 텍스트를 선택했을 때 나타납니다. 그 안에 Bold나 Link 같은 툴바 버튼을 넣을 수 있습니다. 에디터 밖으로 초점이 이동하거나 블록이 화면 밖으로 스크롤되면 떠 있는 컨트롤을 숨겨 초점 동작을 예측 가능하게 유지하세요.
+
+<Demo example="composition" />
+
+관련 문서: [메뉴](/docs/core/menus), [컨트롤 맞춤 설정](/docs/core/customize-controls).

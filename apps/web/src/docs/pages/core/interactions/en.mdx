@@ -1,0 +1,29 @@
+Editing interactions are separate pieces you compose around `Editor.Content`. The app decides where to place block handles, add buttons, and floating controls; the editor supplies the actions and coordinates.
+
+## Move and insert blocks
+
+`Editor.DragHandle` returns the active block ID and its rectangle. Position a handle beside that block and spread `getHandleProps()` onto the button. Pointer users drag it; keyboard users press Space, move with arrow keys, and press Space again to drop. `useBlockActions(blockId).insertBelow()` adds a paragraph without opening a menu.
+
+```tsx
+import { Editor, useBlockActions } from "@jul-editor/react";
+
+function AddBelow({ blockId }: { blockId: string }) {
+  const actions = useBlockActions(blockId);
+  return <button type="button" onClick={actions.insertBelow}>Add below</button>;
+}
+
+<Editor.DragHandle>{({ blockId, rect, getHandleProps }) =>
+  blockId && rect && <div style={{ position: "fixed", top: rect.top, left: rect.left - 38 }}>
+    <button {...getHandleProps()} aria-label="Move block">⋮⋮</button>
+    <AddBelow blockId={blockId} />
+  </div>
+}</Editor.DragHandle>
+```
+
+## Selection controls
+
+`Editor.BubbleMenu` appears for a text selection. Toolbar atoms such as Bold or Link can be rendered inside it. Keep focus behavior predictable: hide floating controls when focus leaves the editor or the block scrolls out of view.
+
+<Demo example="composition" />
+
+Related: [Menus](/docs/core/menus) and [Customize controls](/docs/core/customize-controls).

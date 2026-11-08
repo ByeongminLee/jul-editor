@@ -1,0 +1,32 @@
+코드 블록도 편집 가능한 문서 블록입니다. 구문 강조는 편집 텍스트를 다시 쓰지 않고 범위를 표시합니다. 코드가 필요한 에디터에만 강조기를 등록하고 언어 선택기에 보여 줄 언어를 고르세요.
+
+## 렌더러와 강조기 등록
+
+기본 확장 패키지는 lowlight를 사용합니다. 언어 목록을 줄이거나 다른 강조기·코드 블록 렌더러를 연결할 수 있습니다. 브라우저에 CSS Custom Highlight API가 없어도 코드 편집은 계속됩니다.
+
+파일 트리·탭·줄 번호·추가/삭제 표시는 별도 [코드 워크스페이스](/docs/plugins/code-workspace) 플러그인을 사용하세요. 기본 코드 블록은 편집 가능한 단일 코드 조각으로 유지됩니다.
+
+<Demo example="code-blocks" />
+
+```tsx
+import { useEffect } from "react";
+import { Editor, createCodeBlockRenderer, useEditor } from "@jul-editor/react";
+import { createLowlightHighlighter, pluginCodeLanguages } from "@jul-editor/plugins/code";
+
+const CodeView = createCodeBlockRenderer({ languages: pluginCodeLanguages });
+function HighlightSetup() {
+  const editor = useEditor();
+  useEffect(() => editor?.registerHighlighter(createLowlightHighlighter()), [editor]);
+  return null;
+}
+
+<Editor defaultValue={doc} renderers={{ codeBlock: CodeView }}>
+  <HighlightSetup /><Editor.Content /><Editor.SlashMenu />
+</Editor>
+```
+
+```css
+::highlight(jul-editor-keyword) { color: #c99fe6; }
+::highlight(jul-editor-string) { color: #a0c793; }
+::highlight(jul-editor-comment) { color: #8f959d; }
+```

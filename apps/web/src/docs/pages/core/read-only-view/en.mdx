@@ -1,0 +1,73 @@
+`Editor.View` renders a saved `Doc` without creating an editor instance. It has no contenteditable surface, caret, toolbar, or upload actions. Pass the same host CSS class and block renderer keys used while editing; images, tables, marks, charts, and custom blocks keep their presentation.
+
+## Edit once, display anywhere
+
+Edit the document below, then switch to View. The same `Doc` is rendered without inputs. The chart and the `customCard` block each use a renderer registered under their block type.
+
+<Demo example="view" />
+
+## Register the same block keys
+
+`renderers` maps each stored `block.type` to a React component. For a custom block, pass its `BlockSpec` through `blocks` so the view knows its content and children rules. A view renderer receives `{ block, readOnly: true, locale, children }`; check `readOnly` before showing any controls. Built-in images, embeds, attachments, text marks, lists, and document tables have safe read-only fallbacks.
+
+```tsx
+import { coreBlocks, coreInlines, coreMarks, createRegistry, fromJSON,
+  defineBlock } from "@jul-editor/core";
+import { Editor, type ViewRendererProps } from "@jul-editor/react";
+import { ChartView } from "@jul-editor/plugins/chart";
+import { codeWorkspaceBlock, CodeWorkspaceView }
+  from "@jul-editor/plugins/code-workspace";
+
+const customCardBlock = defineBlock({
+  type: "customCard", content: "none", children: "none",
+  props: { title: "", detail: "" },
+});
+
+function CustomCard({ block }: ViewRendererProps) {
+  return <aside className="custom-card">
+    <strong>{String(block.props.title ?? "")}</strong>
+    <p>{String(block.props.detail ?? "")}</p>
+  </aside>;
+}
+
+const registry = createRegistry({
+  blocks: [...coreBlocks, customCardBlock, codeWorkspaceBlock],
+  inlines: coreInlines, marks: coreMarks,
+});
+const savedJson = JSON.stringify({ version: 1, blocks: [
+  { id: "title", type: "heading", props: { level: 2 },
+    content: [{ type: "text", text: "Quarterly brief" }] },
+  { id: "card", type: "customCard",
+    props: { title: "Design review", detail: "The approved layout is ready." } },
+  { id: "chart", type: "chart", props: { kind: "bar",
+    source: { type: "inline", csv: "month,visitors\nJan,120\nFeb,160" },
+    x: "month", y: "visitors" } },
+  { id: "files", type: "codeWorkspace", props: { title: "Source files",
+    files: [{ path: "src/index.ts", language: "ts", code: "export const ready = true;" }] } },
+] });
+const savedDoc = fromJSON(savedJson, registry).doc;
+
+export function SavedDocument() {
+  return <Editor.View
+    doc={savedDoc}
+    blocks={[customCardBlock, codeWorkspaceBlock]}
+    renderers={{
+      customCard: CustomCard,
+      chart: ChartView,
+      codeWorkspace: CodeWorkspaceView,
+    }}
+    locale="ko"
+    className="editor-content"
+  />;
+}
+```
+
+This example includes the saved JSON and custom block definition so you can copy it as-is. In an app, replace `savedJson` with the value from your database or API. Inline chart data works without a provider; URL and view-ID sources need the same data resolver provider used by the editor. Code Workspace keeps file navigation and tabs while hiding mutation controls. Replace any renderer by key for a different read-only layout.
+
+<Note>
+
+Use the same CSS selectors for `.editor-content [data-jul-editor-block]` in edit and view modes. Optional visual plugins must be imported only for the block types a page displays.
+
+</Note>
+
+Related: [React composition](/docs/core/composition) for the editing side, and [Document model](/docs/core/document-model) for saving a `Doc`.

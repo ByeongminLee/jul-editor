@@ -1,0 +1,54 @@
+`@jul-editor/plugins/links`는 void 블록 두 개, `bookmark`(링크 카드)와 `iframe`(프레임 임베드), 그리고 Notion 스타일 붙여넣기 메뉴를 추가합니다. 패키지에는 네트워크 코드가 없습니다. 메타데이터 조회와 iframe 허용 출처는 호스트가 결정해 넘깁니다.
+
+```tsx
+import { BookmarkView, IframeView, LinkContextProvider, createLinkBlocks, linkSlashItems,
+  installUrlPaste } from "@jul-editor/plugins/links";
+
+const iframePolicy = { allowedOrigins: ["https://example.com", "https://*.example.com"] };
+const blocks = createLinkBlocks(iframePolicy); // 모듈 범위
+
+<LinkContextProvider value={{ fetchMetadata, iframePolicy }}>
+  <Editor defaultValue={doc}>
+    <Editor.Plugin blocks={blocks} renderers={{ bookmark: BookmarkView, iframe: IframeView }} slashItems={linkSlashItems} />
+    <Editor.Content /><Editor.SlashMenu />
+  </Editor>
+</LinkContextProvider>
+```
+
+`linkSlashItems`는 북마크, 임베드, Figma, GitHub 항목을 추가합니다. 메인 엔트리의 `pluginRenderers`와 `pluginSlashItems`에도 `bookmark`, `iframe`이 이미 연결되어 있지만 블록 스펙은 직접 등록해야 합니다.
+
+## fetchMetadata 어댑터
+
+```ts
+type FetchMetadata = (url: string, opts: { signal: AbortSignal }) => Promise<LinkMetadata>;
+// LinkMetadata: { title?, description?, image?, favicon?, siteName? }
+
+const fetchMetadata: FetchMetadata = async (url, { signal }) => {
+  const res = await fetch("/api/link-preview?url=" + encodeURIComponent(url), { signal });
+  if (!res.ok) throw new Error("preview failed");
+  return res.json();
+};
+```
+
+CORS와 SSRF 방어는 서버나 프록시에 두세요. 예외를 던지면 오류 상태가 표시되며, 이때도 URL만으로 만든 카드는 그대로 보입니다. 어댑터가 없으면 `parseLink`가 GitHub, Figma, YouTube, Vimeo, Loom, Notion, Google Docs, Linear, CodePen, Google Maps의 제목과 부제를 URL에서 만들어 내며 요청은 하지 않습니다. 조회한 값은 블록 props에 캐시되어 저장된 문서는 다시 조회하지 않습니다. 요청 중복은 `cacheFetchMetadata`로 줄이고, 데모에는 `createStaticMetadata(map)`을 쓸 수 있습니다. 이미지와 파비콘 URL은 http, https만 허용하도록 정리됩니다.
+
+## iframe 허용 목록
+
+`IframePolicy`는 기본 거부입니다. 내장 제공자(YouTube, Vimeo, Figma, Loom, CodePen, Google Maps, Gist)는 임베드 URL로 변환됩니다. 그 밖의 사이트는 `allowedOrigins`에 출처가 있을 때만 로드되며, 정확한 출처(`https://example.com`) 또는 하위 도메인(`https://*.example.com`, 최상위 도메인 제외)으로 적습니다. https만 허용합니다. 샌드박스 기본값은 `DEFAULT_IFRAME_SANDBOX`입니다. 샌드박스에 `allow-same-origin`이 있는 동안에는 앱 자신의 출처를 허용 목록에 넣지 마세요. iframe 블록은 페이지 URL을 저장하고 렌더와 내보내기 때 같은 정책으로 `src`를 계산하므로, HTML 내보내기도 렌더될 때만 iframe을 출력합니다.
+
+## 붙여넣기 메뉴
+
+```ts
+const off = installUrlPaste({
+  defaultChoice: "menu", // "link" | "bookmark" | "embed" | "mention" | "menu" | "native"
+  fetchMetadata,
+  onMenu: (req) => showMenu(req.options, (choice) => req.choose(choice), req.dismiss),
+});
+```
+
+URL만 붙여넣으면 먼저 일반 링크가 들어가고 기본 선택이 적용됩니다. 변환은 두 번째 히스토리 단계이므로 한 번 실행 취소하면 링크로 돌아갑니다. 붙여넣은 텍스트가 사라졌다면 `choose`는 `false`를 돌려줍니다. `onMenu`가 없으면 `"menu"`는 코어 기본 동작으로 넘어갑니다. 인터셉터는 모듈 단위로 한 번 등록되어 페이지의 모든 편집기에 적용되며, 반환된 함수를 호출하면 제거됩니다.
+
+## 한계
+
+- Markdown에는 카드 문법이 없어 북마크와 iframe은 일반 링크 줄로 직렬화되며 손실 변환으로 보고됩니다. HTML은 완전히 왕복됩니다.
+- `/figma`, `/github`는 빈 블록을 넣습니다. URL은 `updateProps`나 직접 만든 입력 UI로 지정하세요.

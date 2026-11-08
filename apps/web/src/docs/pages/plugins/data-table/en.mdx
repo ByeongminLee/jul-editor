@@ -1,0 +1,31 @@
+`dataTable` displays a dataset rather than editing each value as a document cell. Inline CSV/JSON works without a server. A URL source reads a CSV/JSON file through an opt-in fetch resolver; a view ID delegates loading and access checks to your application.
+
+## Resolve inline and remote data
+
+Provide a stable resolver through `ResolveDataProvider`. The bundled view caps displayed rows and reports the remaining count; replace the renderer when your product needs pagination or virtualization.
+
+<Demo example="data-table" />
+
+```tsx
+import { Editor } from "@jul-editor/react";
+import { DataTableView, dataTableSlashItem, ResolveDataProvider,
+  createFetchResolveData, type ResolveData } from "@jul-editor/plugins/table";
+import { parseCSV } from "@jul-editor/plugins/data";
+
+const fetchData = createFetchResolveData();
+const resolveData: ResolveData = async (source) => {
+  if (source.type !== "view") return fetchData(source);
+  const response = await fetch("/api/datasets/" + encodeURIComponent(source.viewId));
+  if (!response.ok) throw new Error("Dataset request failed");
+  return parseCSV(await response.text());
+};
+
+<ResolveDataProvider value={resolveData}>
+  <Editor defaultValue={doc}>
+    <Editor.Plugin renderers={{ dataTable: DataTableView }} slashItems={[dataTableSlashItem]} />
+    <Editor.Content /><Editor.SlashMenu />
+  </Editor>
+</ResolveDataProvider>
+```
+
+For editable prose tables, see [Tables and media](/docs/core/tables-media). CSV/JSON helpers live in `@jul-editor/plugins/data` and do not require React.
