@@ -1,12 +1,39 @@
+import { copyFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import mdx from "@mdx-js/rollup";
 import remarkGfm from "remark-gfm";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
+
+// BASE_PATH serves the site from a sub-path, e.g. BASE_PATH=/jul-editor/ for GitHub Pages.
+const base = process.env.BASE_PATH || "/";
+
+// GitHub Pages has no SPA rewrites. Each known route gets its own copy of index.html so
+// deep links load with a 200, and 404.html catches anything else (still loading the app).
+function siteRoutes(): string[] {
+  const nav = readFileSync(fileURLToPath(new URL("./src/docs/nav.ts", import.meta.url)), "utf8");
+  const docs = [...nav.matchAll(/path: "(\/docs\/[^"]+)"/g)].map((m) => m[1]!);
+  return ["/playground", "/showcase", "/about", "/docs", ...docs];
+}
+
+const spaFallback: Plugin = {
+  name: "spa-pages-fallback",
+  apply: "build",
+  writeBundle(options) {
+    if (base === "/" || !options.dir) return;
+    const index = `${options.dir}/index.html`;
+    copyFileSync(index, `${options.dir}/404.html`);
+    for (const route of siteRoutes()) {
+      mkdirSync(`${options.dir}${route}`, { recursive: true });
+      copyFileSync(index, `${options.dir}${route}/index.html`);
+    }
+  },
+};
 
 // Source aliases keep this site in sync with the workspace during development.
 export default defineConfig({
-  plugins: [{ ...mdx({ remarkPlugins: [remarkGfm] }), enforce: "pre" }, react({ include: /\.(jsx|js|mdx|tsx|ts)$/ })],
+  base,
+  plugins: [spaFallback, { ...mdx({ remarkPlugins: [remarkGfm] }), enforce: "pre" }, react({ include: /\.(jsx|js|mdx|tsx|ts)$/ })],
   server: { port: 5190 },
   resolve: {
     alias: [

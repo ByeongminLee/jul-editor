@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Optional JulEditor plugins: chart, diagram, data table, code, code workspace and document diff.",
   "license": "MIT",
-  "homepage": "https://github.com/ByeongminLee/jul-editor#readme",
+  "homepage": "https://byeongminlee.github.io/jul-editor/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ByeongminLee/jul-editor.git",

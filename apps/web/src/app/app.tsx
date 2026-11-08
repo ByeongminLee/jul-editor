@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { SiteFooter } from "./site-footer.js";
 import { SiteHeader, siteLinks } from "./site-header.js";
 import { SiteProvider, useSiteSettings } from "./site-settings.js";
+import { stripBase, withBase } from "../lib/base.js";
 
 const Home = lazy(() => import("../pages/home.js"));
 const Playground = lazy(() => import("../pages/playground.js"));
@@ -10,18 +11,18 @@ const Docs = lazy(() => import("../pages/docs.js"));
 const About = lazy(() => import("../pages/about.js"));
 
 // Keep old bookmarks useful without keeping a duplicate demo page.
-if (window.location.pathname === "/demo") {
-  window.history.replaceState(null, "", `/showcase${window.location.search}${window.location.hash}`);
+if (stripBase(window.location.pathname) === "/demo") {
+  window.history.replaceState(null, "", `${withBase("/showcase")}${window.location.search}${window.location.hash}`);
 }
 
 function Shell() {
   const { locale, t } = useSiteSettings();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [path, setPath] = useState(() => window.location.pathname);
+  const [path, setPath] = useState(() => stripBase(window.location.pathname));
   const page = path === "/playground" ? <Playground /> : path === "/showcase" ? <Showcase /> : path === "/about" ? <About /> : path.startsWith("/docs") ? <Docs path={path} /> : <Home />;
 
   useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname);
+    const onPopState = () => setPath(stripBase(window.location.pathname));
     const onLinkClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target;
@@ -31,8 +32,8 @@ function Shell() {
       if (next.origin !== window.location.origin || (next.pathname === window.location.pathname && next.search === window.location.search && next.hash)) return;
       event.preventDefault();
       if (next.href === window.location.href) { window.scrollTo(0, 0); return; }
-      window.history.pushState(null, "", next.pathname + next.search + next.hash);
-      setPath(next.pathname);
+      window.history.pushState(null, "", withBase(next.pathname) + next.search + next.hash);
+      setPath(stripBase(next.pathname));
       setMenuOpen(false);
       window.scrollTo(0, 0);
     };

@@ -13,11 +13,10 @@ pnpm add @jul-editor/core
 ## Usage
 
 ```ts
-import { coreRegistry, fromJSON } from "@jul-editor/core";
 import { toMarkdown, fromMarkdown } from "@jul-editor/core/serde";
 
-const doc = fromMarkdown("# Hello\n\nWorld", coreRegistry);
-console.log(toMarkdown(doc, coreRegistry));
+const { doc } = fromMarkdown("# Hello\n\nWorld");
+console.log(toMarkdown(doc).markdown);
 ```
 
 ## Docs

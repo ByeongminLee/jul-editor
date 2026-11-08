@@ -4,6 +4,7 @@ import { useSiteSettings } from "../app/site-settings.js";
 import { groups, pages, resolveDocsPath, type DocPage, type Locale } from "../docs/nav.js";
 import { mdxComponents } from "../docs/mdx-components.js";
 import { lazyMdx, prefetchMdx, resolveMdx, type MdxSources } from "../docs/localized-mdx.js";
+import { withBase } from "../lib/base.js";
 import "../styles/docs-live.css";
 import "../styles/docs.css";
 
@@ -67,7 +68,7 @@ export default function Docs({ path }: { path: string }) {
   useEffect(() => { prefetchDoc(page.path, otherLocale); }, [page.path, otherLocale]);
 
   useEffect(() => {
-    if (window.location.pathname !== page.path) window.history.replaceState(null, "", page.path);
+    if (window.location.pathname !== withBase(page.path)) window.history.replaceState(null, "", withBase(page.path));
     document.title = `${headingTitle} | JulEditor`;
   }, [page.path, headingTitle]);
 
