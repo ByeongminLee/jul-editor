@@ -1,6 +1,6 @@
 패키지는 앱이 실제로 import하는 기능에 맞춰 나뉩니다. 코어에는 React 의존성이 없습니다. React 패키지는 컨트롤과 훅을 제공하고, 플러그인은 별도 경로로 가져옵니다. 텍스트만 쓰는 에디터는 차트·다이어그램·구문 강조를 불러올 필요가 없습니다.
 
-## 현재 워크스페이스 경로
+## import 경로
 
 | Import | 역할 |
 | --- | --- |
@@ -30,8 +30,8 @@ import { ChartView, chartSlashItem } from "@jul-editor/plugins/chart";
 
 <Note>
 
-현재 워크스페이스의 `@jul-editor/core`, `@jul-editor/react`, `@jul-editor/plugins`는 비공개 패키지로 npm에서 설치할 수 없습니다. 차트·다이어그램·표·코드·코드 워크스페이스·데이터는 plugins의 하위 경로로 제공하며, 공개 배포 시 별도 플러그인 패키지로 나눌 계획입니다.
+`@jul-editor/core`, `@jul-editor/react`, `@jul-editor/plugins`는 npm에 배포되어 있습니다. 차트·다이어그램·표·코드·코드 워크스페이스·데이터는 `@jul-editor/plugins`의 하위 경로라서, 번들러는 import한 것만 포함합니다.
 
 </Note>
 
-다음 단계: 저장소 실행은 [설치](/docs/installation), 에디터 구성은 [React 조합](/docs/core/composition)을 보세요.
+다음 단계: 패키지 설치는 [설치](/docs/installation), 에디터 구성은 [React 조합](/docs/core/composition)을 보세요.

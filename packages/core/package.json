@@ -3,7 +3,16 @@
   "version": "0.1.0",
   "description": "Framework-agnostic core of JulEditor: document model, editing engine and Markdown/HTML serialization.",
   "license": "MIT",
-  "author": "JulEditor contributors",
+  "homepage": "https://github.com/ByeongminLee/jul-editor#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByeongminLee/jul-editor.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/ByeongminLee/jul-editor/issues"
+  },
+  "author": "Byeongmin Lee",
   "keywords": [
     "editor",
     "rich-text",

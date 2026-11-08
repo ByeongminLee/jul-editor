@@ -8,7 +8,7 @@ Framework-agnostic core of JulEditor: block document model, editing store with t
 pnpm add @jul-editor/core
 ```
 
-The workspace packages are not published to npm yet; inside this repository use `"@jul-editor/core": "workspace:*"`.
+`npm install @jul-editor/core` and `yarn add @jul-editor/core` work as well. The package has no React or Node runtime dependency.
 
 ## Usage
 
@@ -22,7 +22,7 @@ console.log(toMarkdown(doc, coreRegistry));
 
 ## Docs
 
-See the [repository README](../../README.md) and the developer docs in `apps/web` (`/docs`).
+See the [repository README](https://github.com/ByeongminLee/jul-editor#readme). Guides and live examples are in the docs site, which you can run from the repository (`pnpm --filter web dev`, then open `/docs`).
 
 ## Extension points for block and inline plugins
 

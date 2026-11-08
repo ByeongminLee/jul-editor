@@ -1,4 +1,4 @@
-JulEditor는 pnpm 워크스페이스에서 개발합니다. 예제 사이트와 플레이그라운드는 소스에서 실행하며 npm 배포는 준비 중입니다. 워크스페이스는 `@jul-editor/core`, `@jul-editor/react`, `@jul-editor/plugins`(차트·다이어그램·표·코드·코드 워크스페이스·데이터·문서 비교) 세 패키지로 구성됩니다. 무거운 렌더러는 선택형 peer 의존성이라 쓰는 것만 설치하면 됩니다.
+JulEditor는 npm 패키지 세 개로 배포됩니다. `@jul-editor/core`, `@jul-editor/react`, `@jul-editor/plugins`(차트·다이어그램·표·코드·코드 워크스페이스·데이터·문서 비교)이며 React 18과 19를 지원합니다. 무거운 렌더러는 선택형 peer 의존성이라 쓰는 것만 설치하면 됩니다.
 
 ## 설치
 
@@ -11,12 +11,14 @@ pnpm add mermaid    # 다이어그램
 pnpm add lowlight   # 코드 하이라이트
 ```
 
-peer가 없으면 해당 플러그인은 오류 대신 안내 문구나 하이라이트 없는 코드로 표시됩니다.
+npm이나 yarn도 똑같이 쓸 수 있습니다(`npm install @jul-editor/core @jul-editor/react`). peer가 없으면 해당 플러그인은 오류 대신 안내 문구나 하이라이트 없는 코드로 표시됩니다.
 
-## 사이트 실행
+## 소스에서 문서 사이트 실행
+
+예제를 로컬에서 돌려 보거나 기여하려면 저장소를 받으세요.
 
 ```sh
-git clone <repository-url> jul-editor
+git clone https://github.com/ByeongminLee/jul-editor.git
 cd jul-editor
 pnpm install
 pnpm --filter web dev
@@ -26,7 +28,7 @@ Vite는 `http://127.0.0.1:5190`에서 사이트를 엽니다. Vite가 워크스�
 
 ## 변경 사항 확인
 
-빌드 전에 타입 검사를 실행하세요. 웹 Playwright 테스트는 자체 로컬 서버를 시작하므로 `dev`를 계속 켜 둘 필요가 없습니다.
+기여할 때는 빌드 전에 타입 검사를 실행하세요. 웹 Playwright 테스트는 자체 로컬 서버를 시작하므로 `dev`를 계속 켜 둘 필요가 없습니다.
 
 ```sh
 pnpm typecheck
@@ -36,8 +38,8 @@ pnpm e2e:web
 
 <Note>
 
-현재 저장소는 Node.js 24 이상을 요구합니다. 설치 전 루트 `package.json`의 지원 버전을 확인하세요.
+배포된 패키지는 Node.js 20 이상에서 동작합니다. 저장소에서 개발하려면 Node.js 24 이상과 pnpm 12가 필요합니다.
 
 </Note>
 
-다음 단계: 현재 워크스페이스의 import 경로는 [패키지](/docs/packages)에서 확인하세요.
+다음 단계: 모든 import 경로는 [패키지](/docs/packages)에서 확인하세요.

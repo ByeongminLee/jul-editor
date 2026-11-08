@@ -1,4 +1,4 @@
-JulEditor is developed as a pnpm workspace. The example site and playground run from source; npm publication is planned. The workspace has three packages: `@jul-editor/core`, `@jul-editor/react`, and `@jul-editor/plugins` (chart, diagram, table, code, code workspace, data, and diff). Heavy renderers are optional peer dependencies, so you install only what you use.
+JulEditor ships as three npm packages: `@jul-editor/core`, `@jul-editor/react`, and `@jul-editor/plugins` (chart, diagram, table, code, code workspace, data, and diff). It supports React 18 and 19. Heavy renderers are optional peer dependencies, so you install only what you use.
 
 ## Install
 
@@ -11,12 +11,14 @@ pnpm add mermaid    # diagram
 pnpm add lowlight   # code highlighting
 ```
 
-A plugin whose peer is missing falls back to a plain status message or unhighlighted code instead of throwing.
+npm and yarn work the same way (`npm install @jul-editor/core @jul-editor/react`). A plugin whose peer is missing falls back to a plain status message or unhighlighted code instead of throwing.
 
-## Run the site
+## Run the docs site from source
+
+To try the examples locally or contribute, clone the repository.
 
 ```sh
-git clone <repository-url> jul-editor
+git clone https://github.com/ByeongminLee/jul-editor.git
 cd jul-editor
 pnpm install
 pnpm --filter web dev
@@ -26,7 +28,7 @@ Vite serves the site at `http://127.0.0.1:5190`. You can edit the package source
 
 ## Check a change
 
-Run type checking before building. The web Playwright suite starts its own local server, so you do not need to leave `dev` running for it.
+When contributing, run type checking before building. The web Playwright suite starts its own local server, so you do not need to leave `dev` running for it.
 
 ```sh
 pnpm typecheck
@@ -36,8 +38,8 @@ pnpm e2e:web
 
 <Note>
 
-The repository currently requires Node.js 24 or newer. Check the root `package.json` for the maintained engine range before installing.
+The published packages work with Node.js 20 or newer. Developing in the repository requires Node.js 24 or newer and pnpm 12.
 
 </Note>
 
-Next: [Packages](/docs/packages) lists the import paths available in this workspace.
+Next: [Packages](/docs/packages) lists every import path.

@@ -175,7 +175,7 @@ test("Copy page includes inline guide notes after MDX loads", async ({ page, con
   await expect(copy).toBeEnabled();
   await copy.click();
   let copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("These @jul-editor/* imports resolve inside this workspace.");
+  expect(copied).toContain("Install with pnpm add @jul-editor/core @jul-editor/react to use these imports in your app.");
   expect(copied).toContain("Next, follow Installation");
 
   await page.goto("/docs/plugins/charts");

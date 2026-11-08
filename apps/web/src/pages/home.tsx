@@ -5,7 +5,7 @@ import { introDoc, mediaExampleBlocks } from "../lib/sample.js";
 import { useSiteSettings } from "../app/site-settings.js";
 import { UnifiedWorkspace } from "../components/workspace/unified-workspace.js";
 
-const localInstall = "cd jul-editor\npnpm install\npnpm --filter web dev";
+const npmInstall = "pnpm add @jul-editor/core @jul-editor/react";
 
 function koreanIntroDoc(): Doc {
   return { version: 1, blocks: [
@@ -39,9 +39,9 @@ export default function Home() {
         <h1>{t("An editor that fits", "제품에 맞는 에디터를")}<br /><span>{t("your product.", "직접 만드세요.")}</span></h1>
         <p>{t("Named after jul (줄), the Korean word for a line of text, JulEditor lets writing grow one line at a time. Its document core, React controls, and optional plugins let you edit, inspect source, and compare changes in one workspace.", "JulEditor는 ‘한 줄, 두 줄’ 할 때의 줄에서 이름을 땄습니다. 글을 한 줄씩 쌓고 다듬을 수 있도록 문서 코어, React UI, 선택형 플러그인을 한 작업 공간에 담았습니다.")}</p>
         <div className="hero-actions"><a className="button button-primary" href="/playground">{t("Try the editor", "에디터 사용해 보기")} <ArrowRight size={17} /></a><a className="button button-outline" href="/docs/getting-started">{t("Get started", "시작하기")} <ArrowUpRight size={16} /></a></div>
-        <div className="install-box" aria-label={t("Run the site locally", "사이트 로컬 실행 명령")}>
-          <div className="install-box-head"><span><span className="install-prompt">$</span> {t("Run this repository locally", "저장소 로컬 실행")}</span><span className="install-status">{t("npm packages not published yet", "npm 패키지 배포 전")}</span></div>
-          <div className="install-box-code"><Code title="bash" locale={locale}>{localInstall}</Code></div>
+        <div className="install-box" aria-label={t("Install from npm", "npm 설치 명령")}>
+          <div className="install-box-head"><span><span className="install-prompt">$</span> {t("Install from npm", "npm으로 설치")}</span><span className="install-status">{t("React 18 · 19", "React 18 · 19")}</span></div>
+          <div className="install-box-code"><Code title="bash" locale={locale}>{npmInstall}</Code></div>
         </div>
       </div>
     </section>

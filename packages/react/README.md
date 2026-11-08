@@ -8,7 +8,7 @@ React bindings for JulEditor: the compound `<Editor>` component, hooks, toolbar,
 pnpm add @jul-editor/react @jul-editor/core react react-dom
 ```
 
-The workspace packages are not published to npm yet; inside this repository use `"@jul-editor/react": "workspace:*"`.
+Supports React 18 and 19. `@jul-editor/core` and `react-dom` are peer dependencies, so install them alongside.
 
 ## Usage
 
@@ -30,7 +30,7 @@ Optional blocks (chart, diagram, data table, code highlighting, Code Workspace, 
 
 ## Docs
 
-See the [repository README](../../README.md) and the developer docs in `apps/web` (`/docs`).
+See the [repository README](https://github.com/ByeongminLee/jul-editor#readme). Guides and live examples are in the docs site, which you can run from the repository (`pnpm --filter web dev`, then open `/docs`).
 
 ## Plugin menu items
 

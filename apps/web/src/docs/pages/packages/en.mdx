@@ -1,6 +1,6 @@
 The package boundary follows what an application actually imports. The core has no React dependency. The React package supplies controls and hooks. Plugins are separate entry points, so a text-only editor does not need chart, diagram, or highlighting code.
 
-## Workspace imports today
+## Import paths
 
 | Import | Responsibility |
 | --- | --- |
@@ -30,8 +30,8 @@ import { ChartView, chartSlashItem } from "@jul-editor/plugins/chart";
 
 <Note>
 
-The workspace packages `@jul-editor/core`, `@jul-editor/react`, and `@jul-editor/plugins` are private and not installable from npm yet. Chart, diagram, table, code, Code Workspace, and data are currently plugins subpaths; separate public plugin packages are planned.
+`@jul-editor/core`, `@jul-editor/react`, and `@jul-editor/plugins` are published on npm. Chart, diagram, table, code, Code Workspace, and data are subpaths of `@jul-editor/plugins`, so a bundler includes only the ones you import.
 
 </Note>
 
-Next: [Installation](/docs/installation) to run the repository, or [React composition](/docs/core/composition) to build an editor.
+Next: [Installation](/docs/installation) to add the packages, or [React composition](/docs/core/composition) to build an editor.

@@ -18,7 +18,15 @@ Optional JulEditor plugins, imported per subpath so an app only pays for what it
 pnpm add @jul-editor/plugins @jul-editor/core @jul-editor/react react
 ```
 
-The workspace packages are not published to npm yet; inside this repository use `"@jul-editor/plugins": "workspace:*"`.
+Heavy renderers are optional peer dependencies. Install only the ones for the plugins you use:
+
+```sh
+pnpm add recharts   # @jul-editor/plugins/chart
+pnpm add mermaid    # @jul-editor/plugins/diagram
+pnpm add lowlight   # @jul-editor/plugins/code
+```
+
+If a peer is missing, that plugin shows a short notice or unhighlighted code instead of throwing.
 
 ## Usage
 
@@ -37,7 +45,7 @@ import { diffDocs, DiffView } from "@jul-editor/plugins/diff";
 
 ## Docs
 
-See the [repository README](../../README.md) and the developer docs in `apps/web` (`/docs`).
+See the [repository README](https://github.com/ByeongminLee/jul-editor#readme). Guides and live examples are in the docs site, which you can run from the repository (`pnpm --filter web dev`, then open `/docs`).
 
 ## Suggestion mode inside the live editor (`@jul-editor/plugins/diff`)
 

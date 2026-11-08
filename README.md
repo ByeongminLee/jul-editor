@@ -2,6 +2,38 @@
 
 A headless block editor for the web, with React components and optional plugins. [한국어](docs/README.ko.md)
 
+## Install
+
+```sh
+pnpm add @jul-editor/core @jul-editor/react
+```
+
+React 18 and 19 are supported. Optional blocks live in `@jul-editor/plugins`; install its renderers only for the plugins you use (`recharts` for charts, `mermaid` for diagrams, `lowlight` for code highlighting).
+
+## Quick start
+
+```tsx
+import { Editor } from "@jul-editor/react";
+
+export function App() {
+  return (
+    <Editor onChange={(doc) => console.log(doc)}>
+      <Editor.Toolbar />
+      <Editor.Content />
+      <Editor.SlashMenu />
+    </Editor>
+  );
+}
+```
+
+## Packages
+
+| Package | Description |
+| --- | --- |
+| [`@jul-editor/core`](https://www.npmjs.com/package/@jul-editor/core) | Document model, transactions, history, and Markdown/HTML serialization. No React. |
+| [`@jul-editor/react`](https://www.npmjs.com/package/@jul-editor/react) | Compound `<Editor>` components, hooks, toolbar, and menus. Headless, no CSS. |
+| [`@jul-editor/plugins`](https://www.npmjs.com/package/@jul-editor/plugins) | Chart, diagram, data table, code highlighting, code workspace, and document diff. |
+
 ## Features
 
 - **Block editing** — Rich text, headings, lists, tables, images, embeds, and drag handles.

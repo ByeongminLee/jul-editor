@@ -3,7 +3,16 @@
   "version": "0.1.0",
   "description": "React bindings for JulEditor: Editor components, hooks and a read-only document view.",
   "license": "MIT",
-  "author": "JulEditor contributors",
+  "homepage": "https://github.com/ByeongminLee/jul-editor#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByeongminLee/jul-editor.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/ByeongminLee/jul-editor/issues"
+  },
+  "author": "Byeongmin Lee",
   "keywords": [
     "editor",
     "rich-text",

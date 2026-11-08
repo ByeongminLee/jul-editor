@@ -3,7 +3,16 @@
   "version": "0.1.0",
   "description": "Optional JulEditor plugins: chart, diagram, data table, code, code workspace and document diff.",
   "license": "MIT",
-  "author": "JulEditor contributors",
+  "homepage": "https://github.com/ByeongminLee/jul-editor#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByeongminLee/jul-editor.git",
+    "directory": "packages/plugins"
+  },
+  "bugs": {
+    "url": "https://github.com/ByeongminLee/jul-editor/issues"
+  },
+  "author": "Byeongmin Lee",
   "keywords": [
     "editor",
     "react",
