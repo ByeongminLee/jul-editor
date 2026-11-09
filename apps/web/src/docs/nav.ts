@@ -12,6 +12,7 @@ export const groups: { en: string; ko: string; pages: DocPage[] }[] = [
     { path: "/docs/getting-started", id: "getting-started", en: "Getting started", ko: "시작하기" },
     { path: "/docs/installation", id: "installation", en: "Installation", ko: "설치" },
     { path: "/docs/packages", id: "packages", en: "Packages", ko: "패키지" },
+    { path: "/docs/ai-skill", id: "ai-skill", en: "AI agent skill", ko: "AI 에이전트 스킬" },
   ] },
   { en: "Core", ko: "코어", pages: [
     { path: "/docs/core/composition", id: "composition", en: "React composition", ko: "React 조합" },

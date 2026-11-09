@@ -1,0 +1,14 @@
+{
+  "name": "jul-editor",
+  "description": "JulEditor skills for AI coding agents",
+  "owner": {
+    "name": "Byeongmin Lee"
+  },
+  "plugins": [
+    {
+      "name": "jul-editor",
+      "source": "./plugins/jul-editor",
+      "description": "Install and use JulEditor, a headless block editor for React."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "jul-editor",
+  "version": "0.1.0",
+  "description": "Skill for building with JulEditor: install, compose the React editor, save documents, convert Markdown/HTML, add plugins, and style it.",
+  "author": { "name": "Byeongmin Lee" },
+  "homepage": "https://byeongminlee.github.io/jul-editor/",
+  "repository": "https://github.com/ByeongminLee/jul-editor",
+  "license": "MIT",
+  "keywords": ["editor", "rich-text", "react", "jul-editor"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "JulEditor",
+        "shortDescription": "Install and use JulEditor, a headless block editor for React.",
+        "developerName": "Byeongmin Lee",
+        "category": "Coding"
+      }
+    }
+  }
+}

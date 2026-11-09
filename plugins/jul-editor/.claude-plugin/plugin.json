@@ -1,0 +1,10 @@
+{
+  "name": "jul-editor",
+  "description": "Skill for building with JulEditor: install, compose the React editor, save documents, convert Markdown/HTML, add plugins, and style it.",
+  "version": "0.1.0",
+  "author": { "name": "Byeongmin Lee" },
+  "homepage": "https://byeongminlee.github.io/jul-editor/",
+  "repository": "https://github.com/ByeongminLee/jul-editor",
+  "license": "MIT",
+  "keywords": ["editor", "rich-text", "react", "jul-editor"]
+}

@@ -18,7 +18,12 @@ import { Editor } from "@jul-editor/react";
 export function App() {
   return (
     <Editor onChange={(doc) => console.log(doc)}>
-      <Editor.Toolbar />
+      <Editor.Toolbar aria-label="Formatting">
+        <Editor.Bold />
+        <Editor.Italic />
+        <Editor.Heading level={2} />
+        <Editor.BulletList />
+      </Editor.Toolbar>
       <Editor.Content />
       <Editor.SlashMenu />
     </Editor>
