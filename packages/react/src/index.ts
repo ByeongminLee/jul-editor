@@ -38,7 +38,7 @@ export {
   EditorUndo,
 } from "./toolbar.js";
 export type { EditorToolbarProps, HeadingButtonProps, ToolbarButtonProps } from "./toolbar.js";
-export { useActiveMarks, useBlockType, useCommands, useEditor, useEditorState } from "./hooks.js";
+export { useActiveMarks, useBlockType, useCanApplyMarks, useCommands, useEditor, useEditorState } from "./hooks.js";
 export { createAutosave, isDraftStale, restoreDraft, useAutosave } from "./autosave.js";
 export type { AutosaveHandle, AutosaveOptions, AutosaveStatus, DraftRecord, UseAutosaveResult } from "./autosave.js";
 export { renderInlineChars, renderPlainContent, toInlineChars } from "./inline-content.js";

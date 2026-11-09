@@ -6,12 +6,14 @@ import type { SuggestionMenuClassNames } from "./types.js";
 import type { ReactNode } from "react";
 import { useCallback, useContext, useMemo } from "react";
 import { isVoidBlockSpec } from "@jul-editor/core";
+import type { SuggestionOpenContext } from "@jul-editor/core";
 import { LabelsContext, useEditorContext } from "../context.js";
+import { useEditor } from "../hooks.js";
 import { useSuggestion } from "./use-suggestion.js";
 import type { UseSuggestionResult } from "./use-suggestion.js";
-import { collectSlashItems, filterSlashItems, mergeSlashItems } from "./slash-items.js";
+import { collectSlashItems, filterSlashItems, localizeSlashItems, mergeSlashItems } from "./slash-items.js";
 import type { SlashItem } from "./slash-items.js";
-import { selectSlashItem } from "./slash-select.js";
+import { canInsertSlashItem, selectSlashItem } from "./slash-select.js";
 
 export interface SlashMenuRenderArgs {
   items: SlashItem[];
@@ -43,18 +45,30 @@ export function SlashMenu({ className, extraItems, items: configureItems, childr
   const ctx = useEditorContext("Editor.SlashMenu");
   const registry = ctx.registry;
   const labels = useContext(LabelsContext);
+  const editor = useEditor();
 
   const allItems = useMemo(() => {
-    const defaults = mergeSlashItems(collectSlashItems(registry, labels), [...ctx.pluginSlashItems, ...(extraItems ?? [])]);
+    const defaults = localizeSlashItems(mergeSlashItems(collectSlashItems(registry, labels), [...ctx.pluginSlashItems, ...(extraItems ?? [])]), labels);
     return typeof configureItems === "function" ? configureItems(defaults) : configureItems ?? defaults;
   }, [registry, labels, ctx.pluginSlashItems, extraItems, configureItems]);
-  const items = useCallback((query: string) => filterSlashItems(allItems, query).filter((item) => {
+  const renderable = useCallback((item: SlashItem) => {
     const spec = registry.blocks.get(item.type);
     return !!spec && (item.type === "divider" || !isVoidBlockSpec(spec) || Boolean(ctx.renderersRef.current[item.type]));
-  }), [allItems, registry, ctx.renderersRef]);
+  }, [registry, ctx.renderersRef]);
+  // Only items that can land where the caret is (a table cell admits none).
+  const fits = useCallback((item: SlashItem) => {
+    const state = editor?.getState();
+    const blockId = state?.selection?.type === "text" ? state.selection.anchor.blockId : null;
+    return !state || !blockId || canInsertSlashItem(item, state, blockId, registry);
+  }, [editor, registry]);
+  const items = useCallback((query: string) => filterSlashItems(allItems, query).filter((item) => renderable(item) && fits(item)), [allItems, renderable, fits]);
+  const allow = useCallback(
+    ({ state, blockId }: SuggestionOpenContext) => allItems.some((item) => renderable(item) && canInsertSlashItem(item, state, blockId, registry)),
+    [allItems, renderable, registry],
+  );
   const onSelect = useCallback((item: SlashItem, sctx: Parameters<typeof selectSlashItem>[1]) => selectSlashItem(item, sctx, registry), [registry]);
 
-  const suggestion = useSuggestion<SlashItem>({ char: "/", startOfLine: true, items, onSelect });
+  const suggestion = useSuggestion<SlashItem>({ char: "/", startOfLine: true, items, onSelect, allow });
 
   if (!suggestion.open) return null;
 

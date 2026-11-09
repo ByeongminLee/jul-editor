@@ -149,3 +149,44 @@ test("docx editor on a phone: toolbar scrolls, sheet scales to fit", async ({ pa
   await root.screenshot({ path: `${SHOTS}/docx-mobile.png` });
   await page.screenshot({ path: `${SHOTS}/docx-mobile-page.png` });
 });
+
+const DOT_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAT0lEQVR4nO3PQQ0AIBDAsFPHF/8C8IEIHg3JkgnoZq/zdcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY8dgHBoNCmXb2NNwAAAABJRU5ErkJggg==", "base64");
+const loadedImages = (root: ReturnType<Page["locator"]>) => root.locator(".editor-content img").evaluateAll((imgs) => imgs.filter((img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0).length);
+
+test("docx editor: an inserted image shows, and image + page break survive export and re-import", async ({ page }) => {
+  await page.setViewportSize({ width: 1360, height: 900 });
+  const root = await openDocx(page);
+  await expect(root.locator(".editor-content [data-jul-page-break]")).toHaveCount(1);
+  await root.locator(".editor-content [data-type=paragraph]").first().click();
+  await root.getByTestId("docx-image-input").setInputFiles({ name: "dot.png", mimeType: "image/png", buffer: DOT_PNG });
+  await expect(root.locator(".editor-content img")).toHaveCount(1);
+  // the picture actually renders (not a broken <img> whose src was stripped)
+  await expect.poll(() => loadedImages(root)).toBe(1);
+
+  const download = page.waitForEvent("download");
+  await root.getByRole("button", { name: "Export" }).click();
+  const path = await (await download).path();
+  await expect(root.locator(".docx-status")).toContainText("valid .docx zip");
+  await expect(root.locator(".docx-status")).not.toContainText("simplified");
+  expect(readFileSync(path!).toString("latin1")).toMatch(/word\/media\/[^"]+\.png/);
+
+  await root.getByTestId("docx-import-input").setInputFiles(path!);
+  await expect(root.locator(".docx-status")).toContainText("with 1 image");
+  await expect(root.locator(".editor-content [data-jul-page-break]")).toHaveCount(1);
+  await expect.poll(() => loadedImages(root)).toBe(1);
+  await root.screenshot({ path: `${SHOTS}/docx-image-roundtrip.png` });
+});
+
+test("docx editor: opening one toolbar menu closes the other", async ({ page }) => {
+  await page.setViewportSize({ width: 1360, height: 900 });
+  const root = await openDocx(page);
+  await root.locator(".editor-content [data-jul-editor-block]").first().click();
+  const color = root.getByRole("button", { name: "Text color" });
+  const align = root.getByRole("button", { name: "Alignment" });
+  await color.click();
+  await expect(color).toHaveAttribute("aria-expanded", "true");
+  await align.click();
+  await expect(align).toHaveAttribute("aria-expanded", "true");
+  await expect(color).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("[data-docx-menu-panel]")).toHaveCount(1);
+});

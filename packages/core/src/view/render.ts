@@ -218,14 +218,31 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   const oldInlines = els.lastContent;
   const domText = domPlainText(content);
   const modelText = plainTextOf(inlines);
-  // same PLAIN TEXT isn't "the DOM already matches" -- a mark-only
-  // change (toggleMark, undo/redo of one) never touches a single character,
-  // so domText === modelText trivially even though the run structure (which
-  // marks wrap which characters) changed. Require the run shape to match too
-  // before trusting this shortcut; otherwise fall through to the sameShape
-  // in-place patch (or a full rebuild) below, same as a run-count change.
-  const sameRunShape = !!oldInlines && oldInlines.length === inlines.length && oldInlines.every((o, i) => runKey(o) === runKey(inlines[i]!));
-  if (domText === modelText && sameRunShape) {
+  // Every shortcut below writes through (or trusts) `els.runNodes`, so first
+  // check they still ARE the DOM: one live node per old run, and together they
+  // account for all of the content's text. A composition (skipDom above only
+  // records lastContent) can leave them stale -- in an empty block the browser
+  // swaps the placeholder <br> for its own, never-registered text node -- and
+  // a stray browser-created text node can sit next to them. Untrusted -> rebuild.
+  const runNodes = els.runNodes;
+  const trusted =
+    !!oldInlines &&
+    runNodes.length === oldInlines.length &&
+    runNodes.every((n) => !!n && content.contains(n)) &&
+    runNodes.map((n) => (n.nodeType === Node.TEXT_NODE ? (n as Text).data : (n.textContent ?? ""))).join("") === domText;
+  if (!trusted) {
+    rebuildContent(els, inlines);
+    els.lastContent = inlines;
+    return;
+  }
+  // Same PLAIN TEXT plus the same run keys still isn't "the DOM already
+  // matches": a toggleMark that only MOVES a run boundary (bold extended over
+  // the text before it, undo/redo of that) keeps both identical while
+  // changing which characters each run holds. Compare each run's own DOM text
+  // against the new model run too.
+  const sameRunShape = oldInlines.length === inlines.length && oldInlines.every((o, i) => runKey(o) === runKey(inlines[i]!));
+  const runTextMatches = sameRunShape && inlines.every((inl, i) => !isText(inl) || (runNodes[i] as Text).data === inl.text);
+  if (domText === modelText && runTextMatches) {
     els.lastContent = inlines; // DOM already matches (typical absorb-echo case)
     return;
   }
@@ -239,11 +256,12 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   // '\n' instead of after it.
   const sameEndsWithNewline = !!oldInlines && plainTextOf(oldInlines).endsWith("\n") === modelText.endsWith("\n");
   const sameShape = sameRunShape && sameEndsWithNewline;
-  if (sameShape && els.runNodes) {
+  if (sameShape) {
+    // in place: each run's own (trusted, see above) node gets its new text --
+    // also correct for a boundary-only shift, since every run keeps its marks.
     for (let i = 0; i < inlines.length; i++) {
       const inl = inlines[i]!;
-      const node = els.runNodes[i];
-      if (!node) continue;
+      const node = runNodes[i]!;
       if (isText(inl) && node.nodeType === Node.TEXT_NODE) {
         if ((node as Text).data !== inl.text) (node as Text).data = inl.text;
       } else if (inl.type === "mention" && node instanceof HTMLElement) {
@@ -257,7 +275,7 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   // run COUNT changed (the only reason sameShape just failed, given
   // sameEndsWithNewline held) -- try the cheaper group-level reconciliation
   // before paying for a full rebuild.
-  if (sameEndsWithNewline && oldInlines && reconcileRunGroups(els, oldInlines, inlines)) {
+  if (sameEndsWithNewline && reconcileRunGroups(els, oldInlines, inlines)) {
     els.lastContent = inlines;
     return;
   }

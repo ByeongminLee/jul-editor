@@ -35,10 +35,18 @@ export interface ClipboardEncodeResult {
   "application/x-jul-editor+json": string;
 }
 
+// Mention / tag chips serialize to `[@label](jul-editor:<kind>/<id>)` so markdown round-trips them, but
+// that internal scheme is noise in a plain-text paste (chat, email): there the chip reads as its label.
+// Pasting back into an editor uses the jul-editor json payload, so nothing is lost.
+const INTERNAL_LINK = /\[((?:\\.|[^\]\\])*)\]\(jul-editor:[^)\s]*\)/g;
+function chipsAsLabels(markdown: string): string {
+  return markdown.replace(INTERNAL_LINK, (_, label: string) => label.replace(/\\(.)/g, "$1"));
+}
+
 export function encodeClipboard(fragment: Doc, opts: { registry?: Registry } = {}): ClipboardEncodeResult {
   const registry = opts.registry ?? coreRegistry;
   return {
-    "text/plain": toMarkdown(fragment, { registry }).markdown,
+    "text/plain": chipsAsLabels(toMarkdown(fragment, { registry }).markdown),
     "text/html": toHTML(fragment, { registry }),
     "application/x-jul-editor+json": toJSON(fragment),
   };

@@ -38,11 +38,13 @@ function Menu(props: { label: string; icon: ReactNode; className?: string; press
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const btn = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => {
       if (e.type === "keydown" && (e as KeyboardEvent).key !== "Escape") return;
-      if (e.type === "pointerdown" && (e.target as Element).closest?.("[data-docx-menu-panel], [data-docx-menu-button]")) return;
+      // Only clicks inside this menu keep it open: opening another toolbar menu closes this one.
+      if (e.type === "pointerdown" && e.target instanceof Node && (btn.current?.contains(e.target) || panel.current?.contains(e.target))) return;
       setOpen(false);
     };
     document.addEventListener("pointerdown", close);
@@ -62,7 +64,7 @@ function Menu(props: { label: string; icon: ReactNode; className?: string; press
         if (!open) props.onOpen?.();
         setOpen(!open);
       }}>{props.icon}</button>
-    {open && <div className="docx-menu" role="menu" data-docx-menu-panel="" data-jul-editor-keep-selection="" style={pos}>{props.children(() => setOpen(false))}</div>}
+    {open && <div ref={panel} className="docx-menu" role="menu" data-docx-menu-panel="" data-jul-editor-keep-selection="" style={pos}>{props.children(() => setOpen(false))}</div>}
   </>;
 }
 
@@ -153,10 +155,10 @@ export function DocxToolbar(p: DocxToolbarProps) {
   const imageInput = useRef<HTMLInputElement>(null);
   const CurrentAlign = ALIGNS.find((a) => a.value === align)?.Icon ?? AlignLeft;
 
+  // The editor's own file path: the image block previews the file at once and keeps it as a pending
+  // upload (core never stores data: or blob: URLs in the document). Export reads the pending bytes.
   function insertImage(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => editor?.commands.insertBlock({ id: newId(), type: "image", props: { src: String(reader.result), alt: file.name, align: "center" } });
-    reader.readAsDataURL(file);
+    editor?.insertFiles([file]);
   }
 
   return <Editor.Toolbar className="docx-toolbar" aria-label={t("Document formatting", "문서 서식")}>

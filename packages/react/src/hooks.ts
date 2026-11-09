@@ -22,18 +22,22 @@ export function useEditorState<T>(selector: (state: EditorState) => T, isEqual: 
   selectorRef.current = selector;
   const isEqualRef = useRef(isEqual);
   isEqualRef.current = isEqual;
-  const cacheRef = useRef<{ input: EditorState; output: T } | null>(null);
+  const cacheRef = useRef<{ input: EditorState; version: number; output: T } | null>(null);
 
+  // Keyed on the shim's version too: a stored-mark change (Bold toggled at a
+  // collapsed caret) notifies without a new EditorState, and selectors that
+  // read `editor.getActiveMarks()` must still see it.
   const getSnapshot = useCallback(() => {
     const state = ctx.store.getSnapshot();
+    const version = ctx.store.getVersion();
     const cache = cacheRef.current;
-    if (cache && cache.input === state) return cache.output;
+    if (cache && cache.input === state && cache.version === version) return cache.output;
     const output = selectorRef.current(state);
     if (cache && isEqualRef.current(cache.output, output)) {
-      cacheRef.current = { input: state, output: cache.output };
+      cacheRef.current = { input: state, version, output: cache.output };
       return cache.output;
     }
-    cacheRef.current = { input: state, output };
+    cacheRef.current = { input: state, version, output };
     return output;
   }, [ctx]);
 
@@ -92,6 +96,18 @@ function selectActiveMarks(editor: CoreEditor | null): ReadonlySet<string> {
   if (!editor) return EMPTY_MARKS;
   const marks = editor.getActiveMarks();
   return marks.length === 0 ? EMPTY_MARKS : new Set(marks.map((m) => m.type));
+}
+
+/** Whether mark buttons (Bold, Italic, Link ...) have text to format right now: false inside a codeBlock
+ * or with a block selection, true for text and for a table cells rectangle. Before the editor has any
+ * selection (never focused) it is true, so a toolbar does not look dead on first render. */
+export function useCanApplyMarks(): boolean {
+  const ctx = useEditorContext("useCanApplyMarks");
+  return useEditorState((state) => {
+    const editor = ctx.store.getEditor();
+    if (!editor || !state.selection || typeof editor.canApplyMarks !== "function") return true;
+    return editor.canApplyMarks();
+  });
 }
 
 export function useActiveMarks(): ReadonlySet<string> {

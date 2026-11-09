@@ -38,6 +38,37 @@ it("opens files in IDE tabs and edits code directly with a preset theme", () => 
   expect((view.current().files as unknown as CodeWorkspaceFile[])[1]?.code).toBe("const b = 3;");
 });
 
+it("Tab in the code textarea indents the code instead of moving focus away", () => {
+  const view = workspace();
+  fireEvent.click(view.getByRole("button", { name: "src/B.ts" }));
+  const code = view.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+  fireEvent.change(code, { target: { value: "ab" } });
+  code.focus();
+  code.setSelectionRange(1, 1);
+  const notCancelled = fireEvent.keyDown(code, { key: "Tab" });
+  expect(notCancelled).toBe(false); // default (focus move) prevented
+  expect((view.current().files as unknown as CodeWorkspaceFile[])[1]?.code).toBe("a  b");
+  const after = view.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+  expect(after.selectionStart).toBe(3);
+  fireEvent.keyDown(after, { key: "Tab", shiftKey: true });
+  expect((view.current().files as unknown as CodeWorkspaceFile[])[1]?.code).toBe("a  b"); // nothing at line start to remove
+});
+
+it("Home and End move the caret to the line start and end instead of scrolling the page", () => {
+  const view = workspace();
+  fireEvent.click(view.getByRole("button", { name: "src/B.ts" }));
+  const code = view.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+  fireEvent.change(code, { target: { value: "one\ntwo three\nfour" } });
+  code.focus();
+  code.setSelectionRange(8, 8); // inside "two three"
+  expect(fireEvent.keyDown(code, { key: "Home" })).toBe(false);
+  expect([code.selectionStart, code.selectionEnd]).toEqual([4, 4]);
+  expect(fireEvent.keyDown(code, { key: "End" })).toBe(false);
+  expect([code.selectionStart, code.selectionEnd]).toEqual([13, 13]);
+  fireEvent.keyDown(code, { key: "Home", shiftKey: true });
+  expect([code.selectionStart, code.selectionEnd]).toEqual([4, 13]);
+});
+
 it("creates a folder then a file inline, infers language, and persists a pinned tab", () => {
   const view = workspace();
   fireEvent.click(view.getByRole("button", { name: "New folder" }));

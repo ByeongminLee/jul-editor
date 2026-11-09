@@ -95,7 +95,7 @@ test("focusing the move handle keeps the selected chart, and the keyboard move r
   const handle = page.getByRole("button", { name: "Move block" });
   await chart.click();
   await expect(controls.first()).toBeVisible();
-  await chart.evaluate((el) => { el.scrollIntoView({ block: "start" }); window.scrollBy(0, -120); }); // Playwright's own scroll parks the top edge under the sticky site header, which then intercepts the hover; keep the block top (the hover point) clear of it
+  await chart.evaluate((el) => { el.scrollIntoView({ block: "start", behavior: "instant" }); window.scrollBy({ top: -120, behavior: "instant" }); }); // instant: the site sets scroll-behavior: smooth, and a smooth scrollBy cancels the smooth scrollIntoView mid-way, leaving the block off screen. Playwright's own scroll parks the top edge under the sticky site header, which then intercepts the hover; keep the block top (the hover point) clear of it
   // the handle shows once the pointer has been over the block; re-issue the hover (leaving the block first so a real mousemove fires) if a re-render swallowed the first one
   await expect(async () => { await chart.hover({ position: { x: 12, y: 12 } }); await expect(handle).toBeVisible({ timeout: 1500 }); }).toPass();
   const before = await order();
@@ -124,7 +124,7 @@ for (const target of ["page h1", "header link"] as const) {
     const handle = page.getByRole("button", { name: "Move block" });
     await chart.click();
     await expect(controls.first()).toBeVisible();
-    await chart.evaluate((el) => { el.scrollIntoView({ block: "start" }); window.scrollBy(0, -120); }); // Playwright's own scroll parks the top edge under the sticky site header, which then intercepts the hover; keep the block top (the hover point) clear of it
+    await chart.evaluate((el) => { el.scrollIntoView({ block: "start", behavior: "instant" }); window.scrollBy({ top: -120, behavior: "instant" }); }); // instant: the site sets scroll-behavior: smooth, and a smooth scrollBy cancels the smooth scrollIntoView mid-way, leaving the block off screen. Playwright's own scroll parks the top edge under the sticky site header, which then intercepts the hover; keep the block top (the hover point) clear of it
     // The handle appears on a pointer move over the block; re-issue the hover (leaving the block first so a real mousemove fires) if a re-render swallowed the first one.
     await expect(async () => { await chart.hover({ position: { x: 12, y: 12 } }); await expect(handle).toBeVisible({ timeout: 1500 }); }).toPass();
     await handle.focus();

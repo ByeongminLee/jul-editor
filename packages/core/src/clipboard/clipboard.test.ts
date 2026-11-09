@@ -52,6 +52,24 @@ describe("encodeClipboard", () => {
   });
 });
 
+describe("encodeClipboard: mention and tag chips", () => {
+  it("writes chips as their label in text/plain, not as jul-editor: links", () => {
+    const doc: Doc = { version: 1, blocks: [{ id: "p", type: "paragraph", props: {}, content: [
+      { type: "text", text: "an " },
+      { type: "mention", attrs: { kind: "tag", id: "idea", label: "idea" } },
+      { type: "text", text: " tag and mention " },
+      { type: "mention", attrs: { kind: "user", id: "mina", label: "Mina" } },
+      { type: "text", text: " and " },
+      { type: "mention", attrs: { kind: "user", id: "u1", label: "weird]label" } },
+    ] as Inline[] }] };
+    const out = encodeClipboard(doc);
+    expect(out["text/plain"]).toBe("an #idea tag and mention @Mina and @weird]label");
+    expect(out["text/plain"]).not.toContain("jul-editor:");
+    // the json payload still carries the chips for pasting back into an editor
+    expect(out["application/x-jul-editor+json"]).toContain("\"mention\"");
+  });
+});
+
 describe("decodeClipboard: priority order", () => {
   it("prefers application/x-jul-editor+json over html and plain text", () => {
     const data = fakeTransfer({

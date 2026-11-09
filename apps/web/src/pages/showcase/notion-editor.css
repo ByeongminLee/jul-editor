@@ -193,4 +193,10 @@
 @media (prefers-reduced-motion: reduce) { .showcase-notion .nt-scroll { scroll-behavior: auto; } }
 .showcase-notion .nt-content .nt-embed-idle { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 18px; border: 1px dashed var(--nt-line); border-radius: 8px; font-size: 13px; }
 .showcase-notion .nt-content .nt-embed-idle span { color: var(--nt-muted, inherit); opacity: .75; }
+/* empty bookmark / embed (slash insert): the inline URL field */
+.showcase-notion .nt-content [data-jul-editor-plugin][data-state="empty"] { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--nt-line); border-radius: 8px; }
+.showcase-notion .nt-content [data-jul-editor-plugin][data-state="empty"]:hover { background: transparent; }
+.showcase-notion .nt-content [data-slot="url-input"] { width: 100%; padding: 6px 8px; border: 1px solid var(--nt-line); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 14px; }
+.showcase-notion .nt-content [data-slot="url-input"]:focus { outline: 2px solid color-mix(in srgb, currentColor 30%, transparent); outline-offset: 0; }
+.showcase-notion .nt-content [data-slot="url-error"] { color: var(--nt-c-red, #e5484d); font-size: 12px; }
 .showcase-notion .nt-content .nt-embed-idle button { padding: 5px 12px; border: 1px solid var(--nt-line); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }

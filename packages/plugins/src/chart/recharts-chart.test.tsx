@@ -113,7 +113,8 @@ describe("chart kinds", () => {
     const props = { kind: "bar" as const, range: null, x: "", y: "", columns: [], yColumns: [], updateProps: (patch: unknown) => updates.push(patch) };
     const csv = ChartEditor({ ...props, source: { type: "inline", csv: "month,sales\nJan,120" } });
     (control(csv, "jul-editor-chart-format-json").props as { onClick?: () => void }).onClick?.();
-    expect(updates.pop()).toEqual({ source: { type: "inline", format: "json", json: "[]", csv: "month,sales\nJan,120" } });
+    // the current CSV rows are converted, not replaced by an empty array
+    expect(updates.pop()).toEqual({ source: { type: "inline", format: "json", json: JSON.stringify([{ month: "Jan", sales: 120 }], null, 2), csv: "month,sales\nJan,120" } });
 
     const json = ChartEditor({ ...props, source: { type: "inline", format: "json", json: "[]", csv: "month,sales\nJan,120" }, locale: "ko" });
     expect(control(json, "jul-editor-chart-json").props["aria-label"]).toBe("차트 JSON 데이터");
@@ -127,7 +128,11 @@ describe("chart kinds", () => {
     const updates: unknown[] = [];
     const props = { kind: "bar" as const, range: null, x: "", y: "", columns: [], yColumns: [], updateProps: (patch: unknown) => updates.push(patch) };
     const inline = ChartEditor({ ...props, source: { type: "inline", csv: "x\n1" } });
-    control(inline, "jul-editor-chart-source").props.onChange?.({ target: { value: "url" } });
+    // The source select is its own stateful component (it remembers each type's last source); its
+    // switching is covered by chart-editor-source.test.tsx, here only its wiring.
+    const sourceSelect = elements(inline).find((element) => typeof (element.props as { onSelect?: unknown }).onSelect === "function")!;
+    expect(sourceSelect.props["aria-label"]).toBe("Data source");
+    (sourceSelect.props as unknown as { onSelect: (next: unknown) => void }).onSelect({ type: "url", format: "csv", url: "" });
     expect(updates.pop()).toEqual({ source: { type: "url", format: "csv", url: "" } });
 
     const url = ChartEditor({ ...props, source: { type: "url", format: "json", url: "https://cdn.example/chart.json" }, locale: "ko" });

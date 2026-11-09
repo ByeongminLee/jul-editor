@@ -6,6 +6,7 @@ import type { HighlightRange, Json } from "@jul-editor/core";
 import { createLowlightHighlighter } from "../code/highlighter.js";
 import type { PluginViewProps } from "../view-props.js";
 import { lineChange, readCodeWorkspaceFiles, setLineChange, setMarkedLines, type CodeWorkspaceFile } from "./block.js";
+import { indentCodeText } from "./code-indent.js";
 import { inferLanguage, moveWorkspaceEntry, parseLineRanges, remapWorkspacePath, validWorkspacePath } from "./workspace-paths.js";
 
 const DRAG_TYPE = "application/x-jul-editor-workspace-path";
@@ -155,6 +156,18 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
   const focusPathRef = useRef<string | null>(null);
   const previewRef = useRef<HTMLPreElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const codeRef = useRef<HTMLTextAreaElement>(null);
+  // the selection a Tab/Shift-Tab indent should leave behind once the
+  // controlled textarea re-renders with the new value (React resets the
+  // caret to the end when `value` changes under it).
+  const pendingCodeSelection = useRef<{ value: string; start: number; end: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = pendingCodeSelection.current;
+    const textarea = codeRef.current;
+    if (!pending || !textarea || textarea.value !== pending.value) return;
+    pendingCodeSelection.current = null;
+    textarea.setSelectionRange(pending.start, pending.end);
+  });
   const [highlight, setHighlight] = useState<{ code: string; language: string; ranges: HighlightRange[] } | null>(null);
   useLayoutEffect(() => {
     if (creating || renaming) return;
@@ -396,7 +409,34 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
               })}</code>
             </pre>
             {editable && <textarea className={[classes.code, classes.input].filter(Boolean).join(" ") || undefined} aria-label={locale === "ko" ? "코드" : "Code"} value={activeFile.code} spellCheck={false} wrap="off"
+              ref={codeRef}
               onChange={(event) => updateFile({ code: event.target.value })}
+              onKeyDown={(event) => {
+                // Home / End move the caret to the line's start / end, as in a code editor. Left to the
+                // browser, macOS treats them as "scroll to the top / bottom", and inside the editable
+                // document that scrolls the whole page while the caret stays put.
+                if ((event.key === "Home" || event.key === "End") && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const textarea = event.currentTarget;
+                  const caret = textarea.selectionDirection === "backward" ? textarea.selectionStart : textarea.selectionEnd;
+                  const next = event.key === "Home" ? textarea.value.lastIndexOf("\n", caret - 1) + 1 : ((end) => (end < 0 ? textarea.value.length : end))(textarea.value.indexOf("\n", caret));
+                  if (event.shiftKey) {
+                    const fixed = textarea.selectionDirection === "backward" ? textarea.selectionEnd : textarea.selectionStart;
+                    textarea.setSelectionRange(Math.min(fixed, next), Math.max(fixed, next), next < fixed ? "backward" : "forward");
+                  } else textarea.setSelectionRange(next, next);
+                  return;
+                }
+                // Tab indents the code instead of moving focus out of the editor (the browser default).
+                if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const textarea = event.currentTarget;
+                const result = indentCodeText(textarea.value, textarea.selectionStart, textarea.selectionEnd, event.shiftKey ? -1 : 1);
+                if (!result) return;
+                pendingCodeSelection.current = result;
+                updateFile({ code: result.value });
+              }}
               onScroll={(event) => { if (previewRef.current) { previewRef.current.scrollTop = event.currentTarget.scrollTop; previewRef.current.scrollLeft = event.currentTarget.scrollLeft; } if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop; }}
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%", boxSizing: "border-box", resize: "none", padding: 10, border: 0, background: "transparent", color: "transparent", WebkitTextFillColor: "transparent", caretColor: "var(--jul-editor-code-accent)", font: classes.code || classes.input ? undefined : "inherit", lineHeight: "20px", whiteSpace: "pre", overflow: "auto" }} />}
           </div>

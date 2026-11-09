@@ -3,8 +3,9 @@
 import type { Doc } from "@jul-editor/core";
 import { ChartView } from "@jul-editor/plugins/chart";
 import { createLowlightHighlighter, pluginCodeLanguages } from "@jul-editor/plugins/code";
-import { createCodeBlockRenderer, defaultRenderers, Editor, useBlockActions, useEditor } from "@jul-editor/react";
+import { createCodeBlockRenderer, defaultRenderers, Editor, useBlockActions, useCanApplyMarks, useEditor } from "@jul-editor/react";
 import { useEffect } from "react";
+import { useBubblePlacement } from "../../components/workspace/bubble-placement.js";
 
 const codeBlock = createCodeBlockRenderer({ languages: pluginCodeLanguages });
 
@@ -55,12 +56,19 @@ function SlashCommands({ locale }: { locale: "en" | "ko" }) {
   }</Editor.SlashMenu>;
 }
 
-function BubbleTools({ locale }: { locale: "en" | "ko" }) {
-  return <Editor.BubbleMenu>{({ rect }) => <div className="bubble-tools" data-jul-editor-keep-selection="" style={{ left: Math.min(rect.left, window.innerWidth - 120), top: Math.max(8, rect.top - 45) }}>
+function BubbleBar({ rect, locale }: { rect: DOMRect; locale: "en" | "ko" }) {
+  const { ref, style } = useBubblePlacement(rect);
+  return <div ref={ref} className="bubble-tools" data-jul-editor-keep-selection="" style={style}>
     <Editor.Bold aria-label={locale === "ko" ? "굵게" : "Bold"} title={locale === "ko" ? "굵게" : "Bold"}>B</Editor.Bold>
     <Editor.Italic aria-label={locale === "ko" ? "기울임" : "Italic"} title={locale === "ko" ? "기울임" : "Italic"}>I</Editor.Italic>
     <Editor.Underline aria-label={locale === "ko" ? "밑줄" : "Underline"} title={locale === "ko" ? "밑줄" : "Underline"}>U</Editor.Underline>
-  </div>}</Editor.BubbleMenu>;
+  </div>;
+}
+
+function BubbleTools({ locale }: { locale: "en" | "ko" }) {
+  // the bubble only holds mark buttons: inside a code block there is nothing for them to format
+  if (!useCanApplyMarks()) return null;
+  return <Editor.BubbleMenu>{({ rect }) => <BubbleBar rect={rect} locale={locale} />}</Editor.BubbleMenu>;
 }
 
 export function ShowcaseEditor({ value, onChange, theme, mode, locale = "en" }: ShowcaseEditorProps) {

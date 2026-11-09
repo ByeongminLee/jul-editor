@@ -17,7 +17,10 @@ async function ensureMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
   if (!mermaidInitialized) {
-    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", maxTextSize: 50000 });
+    // suppressErrorRendering: on a failed render mermaid otherwise draws its
+    // "Syntax error in text" graphic into a temporary `#d<id>` container on
+    // document.body and throws before removing it; the error is shown in-block.
+    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", maxTextSize: 50000, suppressErrorRendering: true });
     mermaidInitialized = true;
   }
   return mermaid;
@@ -56,14 +59,18 @@ export function DiagramView({ block, selected, updateProps, readOnly, locale = "
         setError(null);
         return;
       }
+      const renderId = `jul-editor-diagram-${reactId}-${seq}`;
       ensureMermaid()
-        .then((mermaid) => mermaid.render(`jul-editor-diagram-${reactId}-${seq}`, code))
+        .then((mermaid) => mermaid.render(renderId, code))
         .then(({ svg: rendered }) => {
           if (seq !== seqRef.current) return;
           setSvg(rendered);
           setError(null);
         })
         .catch((err: unknown) => {
+          // Belt and braces: never leave mermaid's temporary render container behind.
+          document.getElementById(`d${renderId}`)?.remove();
+          document.getElementById(renderId)?.remove();
           if (seq !== seqRef.current) return;
           setSvg(null);
           setError(err instanceof Error ? err.message : String(err));

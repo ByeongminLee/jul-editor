@@ -266,7 +266,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .editor-content [data-type=bulletListItem]::before, .editor-content [data-type=orderedListItem]::before, .editor-content [data-type=todoListItem]::before { position: absolute; left: 1px; top: 0; color: #6679a0; }
 .editor-content [data-type=bulletListItem]::before { content: "•"; }
 .editor-content [data-type=orderedListItem]::before { content: attr(data-jul-editor-index) "."; }
-.editor-content [data-type=todoListItem]::before { content: "☐"; }
+.editor-content [data-type=todoListItem]::before { content: "☐"; cursor: pointer; }
+.editor-content [data-type=todoListItem][data-jul-editor-checked="true"]::before { content: "☑"; }
+.editor-content [data-type=todoListItem][data-jul-editor-checked="true"] > [data-jul-editor-content] { color: #8592a6; text-decoration: line-through; }
 .editor-content [data-jul-editor-children] { margin-left: 24px; }
 .editor-content [data-type=codeBlock] { margin: 14px 0; padding: 14px; border: 1px solid #dfe6ec; border-radius: 8px; background: #f6f8fa; color: #43566c; font: 12px/1.6 ui-monospace, monospace; overflow-x: auto; }
 .editor-content [data-type=codeBlock][data-jul-editor-block] { display: flex; flex-direction: column-reverse; }
@@ -316,6 +318,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .link-popover input { flex: 1; min-width: 0; padding: 6px 7px; border: 1px solid #dbe5eb; border-radius: 5px; font-size: 11px; }
 .link-popover .small-button, .link-popover .icon-button { border: 0; border-radius: 5px; background: #eef1fb; color: #465bb0; padding: 6px 8px; font-size: 11px; }
 .link-popover .icon-button { display: grid; place-items: center; padding: 5px; }
+.link-popover[data-placed] { position: fixed; top: auto; left: auto; }
 
 @media (max-width: 1100px) {
   .hero { grid-template-columns: 1fr 1.1fr; gap: 16px; }
@@ -399,3 +402,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Not-found page (unknown site and docs URLs) */
+.not-found { display: grid; justify-items: start; gap: 14px; max-width: 620px; margin: 0 auto; padding: 96px 16px; }
+.mdx-doc-main .not-found { margin: 0; padding: 40px 0; }
+.not-found-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 700; letter-spacing: .08em; color: var(--blue); }
+.not-found h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); line-height: 1.15; }
+.not-found p { margin: 0; color: var(--muted); }
+.not-found-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }

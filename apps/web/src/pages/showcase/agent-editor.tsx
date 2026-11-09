@@ -8,7 +8,7 @@
 import type { Doc, Selection } from "@jul-editor/core";
 import { CALLOUT_CSS, calloutPlugin } from "@jul-editor/plugins/callout";
 import { ChartView } from "@jul-editor/plugins/chart";
-import { computeInlineDiff, DiffCompare, DiffStyles, SUGGESTION_CSS, SuggestionView, useEditorSuggestions } from "@jul-editor/plugins/diff";
+import { computeInlineDiff, DiffCompare, DiffStyles, type DiffCompareProps, SUGGESTION_CSS, SuggestionView, useEditorSuggestions } from "@jul-editor/plugins/diff";
 import { defaultRenderers, Editor, useEditor } from "@jul-editor/react";
 import { Check, Loader2, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -19,6 +19,9 @@ import "./agent-editor.css";
 
 export interface AgentEditorProps {
   locale?: AgentLocale;
+  /** Documents kept by the host page, so edits survive unmounting (e.g. switching showcase cases). */
+  drafts?: Partial<Record<AgentLocale, Doc>>;
+  onDraftChange?: (locale: AgentLocale, doc: Doc) => void;
 }
 
 type ViewMode = "editor" | "review" | "compare";
@@ -44,6 +47,11 @@ const PRESET_LABELS: Record<PresetId, [string, string]> = {
   summarize: ["Summarize", "요약하기"],
 };
 
+// Void blocks in the read-only Review / Diff views (ChartView renders read-only from props alone).
+const DIFF_RENDERERS = { chart: ChartView } as unknown as NonNullable<DiffCompareProps["renderers"]>;
+
+const sameBlocks = (a: Doc, b: Doc): boolean => a === b || JSON.stringify(a.blocks) === JSON.stringify(b.blocks);
+
 // One shared mock agent. Swap this for your own AgentAdapter to talk to a real model.
 const agent: AgentAdapter = createMockAgent({ translations: agentTranslations() });
 
@@ -62,6 +70,13 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
   const lastSelection = useRef<Selection | null>(null);
   const [scopeLabel, setScopeLabel] = useState<{ whole: boolean; blocks: number }>({ whole: true, blocks: 0 });
   const reviewResult = useRef<Doc | null>(null);
+  // Review / Diff compare against the editor's own document (editor.getDoc(), the same source the
+  // proposal was built from), not the `doc` prop: the editor normalizes its model (a trailing empty
+  // paragraph, for one), and diffing the raw prop against the proposal shows that as a phantom change.
+  const [reviewBase, setReviewBase] = useState<Doc | null>(null);
+  // Review / Diff render the document's own blocks: the editor registry (callout, chart ...) and
+  // the read-only chart renderer.
+  const registry = editor?.getRegistry();
 
   // Remember the last real selection: clicking the panel moves focus away from the editor.
   useEffect(() => {
@@ -83,10 +98,14 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
   // changes are in `doc` already, rejected ones were dropped from the proposal) must carry over.
   const remaining = s.remainingProposal;
   const switchView = (next: ViewMode): void => {
-    if (view === "editor" && next !== "editor" && remaining) setProposed(remaining);
+    if (view === "editor" && next !== "editor") {
+      if (remaining) setProposed(remaining);
+      if (editor) setReviewBase(editor.getDoc());
+    }
     setView(next);
   };
-  const diff = useMemo(() => (proposed ? computeInlineDiff(doc, proposed) : null), [doc, proposed]);
+  const base = reviewBase ?? doc;
+  const diff = useMemo(() => (proposed ? computeInlineDiff(base, proposed, registry ? { registry } : undefined) : null), [base, proposed, registry]);
   const pending = view === "editor" ? s.changes.length : (diff?.changes.length ?? 0);
 
   // Close the live proposal turn: accepted = changes now present in `result` relative to the doc the run
@@ -97,7 +116,7 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
     setTurns((all) => {
       const last = all[all.length - 1];
       if (!last || last.status !== "proposal" || last.outcome) return all;
-      const accepted = Math.min(last.total, computeInlineDiff(base, result).changes.length);
+      const accepted = Math.min(last.total, computeInlineDiff(base, result, registry ? { registry } : undefined).changes.length);
       return [...all.slice(0, -1), { ...last, outcome: { accepted, rejected: last.total - accepted } }];
     });
   };
@@ -112,18 +131,42 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
   // Everything decided in the editor: leave suggestion mode.
   // The count restarts from 0 whenever the view or the proposal changes (the controller is rebuilt then).
   const prev = useRef(0);
+  // The editor doc and the undecided proposal just before the latest decision. When the last change is
+  // accepted, suggestion mode ends; an Undo that brings the doc back to this state reopens the review.
+  const beforeDecision = useRef<{ doc: Doc; proposal: Doc } | null>(null);
+  const settled = useRef<{ before: { doc: Doc; proposal: Doc }; after: Doc } | null>(null);
   useEffect(() => { prev.current = 0; }, [view, proposed]);
   useEffect(() => {
     if (view === "editor" && prev.current > 0 && s.changes.length === 0) {
       if (editor) settle(editor.getDoc());
+      // A last Reject leaves the doc as it was: there is no edit for Undo to take back.
+      settled.current = editor && beforeDecision.current && !sameBlocks(editor.getDoc(), beforeDecision.current.doc) ? { before: beforeDecision.current, after: editor.getDoc() } : null;
       setProposed(null);
     }
     prev.current = s.changes.length;
   }, [s.changes.length, view]);
+  useEffect(() => {
+    if (!editor) return;
+    if (view === "editor" && proposed && s.changes.length > 0 && remaining) {
+      beforeDecision.current = { doc: editor.getDoc(), proposal: remaining };
+      return;
+    }
+    const back = settled.current;
+    if (proposed || !back) return;
+    const now = editor.getDoc();
+    if (sameBlocks(now, back.after) || !sameBlocks(now, back.before.doc)) return;
+    settled.current = null;
+    setTurns((all) => {
+      const last = all[all.length - 1];
+      return last?.status === "proposal" && last.outcome ? [...all.slice(0, -1), { ...last, outcome: undefined }] : all;
+    });
+    setProposed(back.before.proposal);
+  }, [doc, s.changes.length, view, proposed, editor]);
 
   async function run(instruction: string, preset?: PresetId): Promise<void> {
     if (!editor || busy || !instruction.trim()) return;
     if (proposed) settle(editor.getDoc());
+    settled.current = null;
     const base = editor.getDoc();
     baseRef.current = base;
     const scope = scopeFromSelection(base, lastSelection.current);
@@ -135,7 +178,7 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
     setTurns((all) => [...all, { id: ++turnId.current, label: instruction.trim(), scope: scopeText, status: "thinking", total: 0 }]);
     try {
       const result = await agent.propose({ instruction, preset, doc: base, scope, locale }, { signal: ctl.signal, onProgress: setBusy });
-      const changes = computeInlineDiff(base, result).changes.length;
+      const changes = computeInlineDiff(base, result, { registry: editor.getRegistry() }).changes.length;
       if (changes === 0) patchLast({ status: "empty" });
       else { patchLast({ status: "proposal", total: changes }); setProposed(result); }
       setText("");
@@ -170,12 +213,12 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
             <div className="agent-review" data-testid="agent-review">
               {view === "review"
                 ? <>
-                    <SuggestionView base={doc} proposed={proposed} onResult={(d) => { reviewResult.current = d; }} labels={{ accept: t("Accept", "수락"), reject: t("Reject", "거절"), undo: t("Undo", "되돌리기"), acceptAll: t("Accept all", "모두 수락"), rejectAll: t("Reject all", "모두 거절"), pending: (n) => t(`${n} pending`, `대기 ${n}건`), noChanges: t("No suggested changes", "제안된 변경이 없습니다") }} />
+                    <SuggestionView base={base} proposed={proposed} registry={registry} renderers={DIFF_RENDERERS} onResult={(d) => { reviewResult.current = d; }} labels={{ accept: t("Accept", "수락"), reject: t("Reject", "거절"), undo: t("Undo", "되돌리기"), acceptAll: t("Accept all", "모두 수락"), rejectAll: t("Reject all", "모두 거절"), pending: (n) => t(`${n} pending`, `대기 ${n}건`), noChanges: t("No suggested changes", "제안된 변경이 없습니다") }} />
                     <div className="agent-review-foot">
-                      <button type="button" className="agent-btn agent-btn--primary" data-testid="agent-apply" onClick={() => { const applied = reviewResult.current ?? doc; settle(applied); onApply(applied); reviewResult.current = null; setProposed(null); setView("editor"); }}>{t("Apply result to document", "결과를 문서에 적용")}</button>
+                      <button type="button" className="agent-btn agent-btn--primary" data-testid="agent-apply" onClick={() => { const applied = reviewResult.current ?? base; settle(applied); onApply(applied); reviewResult.current = null; setProposed(null); setView("editor"); }}>{t("Apply result to document", "결과를 문서에 적용")}</button>
                     </div>
                   </>
-                : <DiffCompare before={doc} after={proposed} defaultLayout="inline" labels={{ block: t("Block", "블록"), inline: t("Inline", "인라인") }} />}
+                : <DiffCompare before={base} after={proposed} registry={registry} renderers={DIFF_RENDERERS} defaultLayout="inline" labels={{ block: t("Block", "블록"), inline: t("Inline", "인라인") }} />}
             </div>
           )}
         </div>
@@ -265,12 +308,12 @@ function AgentWorkspace({ locale, doc, zoom, onZoom, onApply }: { locale: AgentL
   );
 }
 
-export function AgentEditor({ locale = "en" }: AgentEditorProps) {
+export function AgentEditor({ locale = "en", drafts, onDraftChange }: AgentEditorProps) {
   // One document per locale so edits survive switching the site language back and forth.
-  const [docs, setDocs] = useState<Record<AgentLocale, Doc>>(() => ({ en: agentSampleDoc("en"), ko: agentSampleDoc("ko") }));
+  const [docs, setDocs] = useState<Record<AgentLocale, Doc>>(() => ({ en: drafts?.en ?? agentSampleDoc("en"), ko: drafts?.ko ?? agentSampleDoc("ko") }));
   const [zoom, setZoom] = useState(100);
   const doc = docs[locale];
-  const setDoc = (next: Doc): void => setDocs((d) => ({ ...d, [locale]: next }));
+  const setDoc = (next: Doc): void => { setDocs((d) => ({ ...d, [locale]: next })); onDraftChange?.(locale, next); };
   return (
     <div className="showcase-agent">
       <Editor key={locale} value={doc} onChange={setDoc} locale={locale} renderers={{ ...defaultRenderers, chart: ChartView }} className="editor-instance">

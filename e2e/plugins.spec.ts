@@ -147,6 +147,25 @@ test.describe("diagram block", () => {
     expect((p2.content ?? []).map((c) => c.text ?? "").join("")).toBe("still editable");
   });
 
+  test("diagram: a mermaid parse error leaves no stray error graphic in document.body", async ({ page }) => {
+    await page.evaluate(() => window.__julEditorPlugins!.selectBlock("x-diagram"));
+    const code = page.getByTestId("jul-editor-diagram-code");
+    await expect(code).toBeVisible();
+    await code.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.type("flowchart LR\n  A -->");
+    await expect(page.getByTestId("jul-editor-diagram-error")).toBeVisible({ timeout: 2000 });
+    // mermaid renders into a temporary `#d<id>` container appended to body; on a
+    // failed render it must not be left behind (nor its "Syntax error" bomb SVG).
+    const stray = await page.evaluate(() =>
+      Array.from(document.body.children)
+        .filter((el) => el.id.startsWith("d") && el.querySelector("svg"))
+        .map((el) => el.id),
+    );
+    expect(stray).toEqual([]);
+    expect(await page.locator("svg[aria-roledescription='error']").count()).toBe(0);
+  });
+
   test("diagram: a %%{init}%% directive cannot raise mermaid's securityLevel above 'strict' (no script tag, no javascript: href)", async ({
     page,
   }) => {

@@ -1,7 +1,7 @@
 import { coreRegistry, createRegistry, defineBlock, newId } from "@jul-editor/core";
 import { describe, expect, it } from "vitest";
 import { KO_LABELS } from "../labels.js";
-import { collectSlashItems, filterSlashItems, mergeSlashItems } from "./slash-items.js";
+import { collectSlashItems, filterSlashItems, localizeSlashItems, mergeSlashItems } from "./slash-items.js";
 import type { SlashItem } from "./slash-items.js";
 
 describe("slashItems", () => {
@@ -91,5 +91,17 @@ describe("slashItems", () => {
     expect(filterSlashItems(ko, "quo").map((i) => i.id)).toEqual(["quote"]);
     // ...and a Korean query still finds it under the English-titled default list.
     expect(filterSlashItems(items, "인용").map((i) => i.id)).toEqual(["quote"]);
+  });
+
+  it("a plugin item's labelKey localizes its title", () => {
+    const plugin: SlashItem = { id: "chart", type: "chart", title: "Chart", keywords: ["chart"], labelKey: "slashChart", create: () => ({ id: newId(), type: "chart", props: {} }) };
+    const merged = localizeSlashItems(mergeSlashItems(collectSlashItems(coreRegistry, KO_LABELS), [plugin]), KO_LABELS);
+    const chart = merged.find((item) => item.type === "chart")!;
+    expect(chart.title).toBe(KO_LABELS.slashChart);
+    expect(chart.create).toBe(plugin.create);
+    const workspace = localizeSlashItems([{ id: "codeWorkspace", type: "codeWorkspace", title: "Code Workspace", keywords: [], labelKey: "slashCodeWorkspace" }], KO_LABELS);
+    expect(workspace[0]!.title).toBe("코드 워크스페이스");
+    // An unknown key leaves the title alone.
+    expect(localizeSlashItems([{ ...plugin, labelKey: "nope" }], KO_LABELS)[0]!.title).toBe("Chart");
   });
 });

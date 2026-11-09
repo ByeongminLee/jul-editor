@@ -82,6 +82,22 @@ describe("useColorPicker", () => {
     expect(content).toEqual([{ type: "text", text: "hello" }]);
   });
 
+  it("works on a backward (right-to-left) selection too", () => {
+    render(
+      <Editor defaultValue={doc()}>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    act(() => testEditor().update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 4 }, focus: { blockId: "p1", offset: 1 } })));
+    act(() => testPicker().setHighlight("yellow"));
+    expect(testEditor().getDoc().blocks[0]!.content!).toEqual([
+      { type: "text", text: "h" },
+      { type: "text", text: "ell", marks: [{ type: "highlight", attrs: { color: "yellow" } }] },
+      { type: "text", text: "o" },
+    ]);
+  });
+
   it("remembers recently used colors (most-recent-first, deduped) across remounts", () => {
     render(
       <Editor defaultValue={doc()}>

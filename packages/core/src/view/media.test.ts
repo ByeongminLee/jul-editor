@@ -125,3 +125,27 @@ describe("media lifecycle", () => {
   });
 
 });
+
+describe("attachUpload", () => {
+  it("stages a file for an image block that is already in the doc (a fromHTML data: image after setDoc)", async () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:imported-preview");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const upload = vi.fn().mockResolvedValue({src: "https://cdn.example/imported.png"});
+    const editor = mount({uploadMode: "deferred", onUpload: upload});
+    editor.setDoc({version: 1, blocks: [{id: "img", type: "image", props: {src: "", alt: "chart"}}]});
+    expect(editor.attachUpload("img", picture())).toBe(true);
+    expect(editor.getUploadState("img")).toEqual({status: "queued"});
+    expect(editor.getUploadPreview("img")).toBe("blob:imported-preview");
+    expect(JSON.stringify(editor.getDoc())).not.toMatch(/blob:/);
+    expect(editor.getPendingUploads().map((p) => p.blockId)).toEqual(["img"]);
+    expect(await editor.uploadPending()).toEqual({uploaded: ["img"], failed: []});
+    expect(editor.getState().store.records.get("img")!.props).toMatchObject({src: "https://cdn.example/imported.png", alt: "chart"});
+  });
+  it("refuses a missing block and an editor with no upload path", () => {
+    expect(mount({uploadMode: "deferred"}).attachUpload("nope", picture())).toBe(false);
+    const editor = mount();
+    editor.setDoc({version: 1, blocks: [{id: "img", type: "image", props: {src: ""}}]});
+    expect(editor.attachUpload("img", picture())).toBe(false);
+    expect(editor.getUploadState("img")).toBeUndefined();
+  });
+});

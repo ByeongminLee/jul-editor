@@ -95,6 +95,13 @@ async function insertTable(page: Page): Promise<string> {
   return findTable(await getDoc(page)).id;
 }
 
+/** The empty paragraph slash-inserting a table leaves right after it (the
+ * '/table' line itself, r-p2, is replaced by the table). */
+async function paragraphAfter(page: Page, blockId: string): Promise<string> {
+  const doc = await getDoc(page);
+  return doc.blocks[doc.blocks.findIndex((b) => b.id === blockId) + 1]!.id;
+}
+
 function cellLocator(page: Page, cellId: string) {
   return page.locator(`[data-jul-editor-block][data-id="${cellId}"] > [data-jul-editor-content]`);
 }
@@ -363,7 +370,8 @@ test("table: markdown export of an edited table round-trips as valid GFM (fromMa
   const { text: markdown } = await copySelection(page);
   expect(markdown).toContain("| --- |"); // a real GFM header-separator row
 
-  await page.evaluate(() => window.__julEditorReact!.setCaret("r-p2", 0)); // a fresh, unrelated caret spot to paste the copied markdown into
+  const pasteAt = await paragraphAfter(page, tableId);
+  await page.evaluate((id) => window.__julEditorReact!.setCaret(id, 0), pasteAt); // a fresh, unrelated caret spot to paste the copied markdown into
   await pasteText(page, markdown);
 
   const doc = await getDoc(page);
@@ -596,7 +604,8 @@ test("table: copying a merged region and pasting into another table preserves it
   const { json } = await copySelection(page);
 
   // A second, independent table to paste into.
-  await page.evaluate(() => window.__julEditorReact!.setCaret("r-p2", 0));
+  const secondAt = await paragraphAfter(page, sourceId);
+  await page.evaluate((id) => window.__julEditorReact!.setCaret(id, 0), secondAt);
   await page.keyboard.type("/table");
   const menu = page.getByTestId("slash-menu");
   await expect(menu).toBeVisible();

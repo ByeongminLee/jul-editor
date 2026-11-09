@@ -3,56 +3,102 @@ import {
   Editor,
   useActiveMarks,
   useBlockActions,
+  useCanApplyMarks,
+  useEditor,
   useLinkEditor,
   type EditorProps,
+  type SlashMenuRenderArgs,
   type VoidRendererProps,
 } from "@jul-editor/react";
 import { Bold, Code2, GripVertical, Heading1, Heading2, Italic, Link2, List, ListOrdered, Plus, Quote, Redo2, Table2, Underline, Undo2, X } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useBubblePlacement } from "./bubble-placement.js";
+import { useMenuPlacement } from "./menu-placement.js";
 import { useSiteSettings } from "../../app/site-settings.js";
+
+/** Hands focus back to the editor at its model selection without scrolling the page. */
+function refocusEditor(editor: ReturnType<typeof useEditor>): void {
+  if (!editor) return;
+  const root = editor.getRoot();
+  if (root.contains(document.activeElement)) return;
+  root.focus({ preventScroll: true });
+  const selection = editor.getState().selection;
+  if (selection) editor.update((tx) => tx.setSelection(selection));
+}
+
+function LinkPopover({ link }: { link: ReturnType<typeof useLinkEditor> }) {
+  const { t } = useSiteSettings();
+  const editor = useEditor();
+  const [href, setHref] = useState(link.href);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Fixed next to the selection rect the popover opened from (flips above when there is no room
+  // below); without a rect (toolbar button with no selection) it falls back to the toolbar anchor.
+  const { ref, style } = useMenuPlacement<HTMLFormElement>(link.rect, { width: 400, height: 46 });
+  useEffect(() => setHref(link.href), [link.href]);
+  // Not autoFocus: that scrolls the page to wherever the popover renders.
+  useEffect(() => { inputRef.current?.focus({ preventScroll: true }); }, []);
+  const done = (action: () => void) => {
+    action();
+    refocusEditor(editor);
+  };
+  const removable = link.href !== "";
+  return <form ref={ref} className="link-popover" data-placed={style ? "" : undefined} data-jul-editor-keep-selection="" style={style}
+    onSubmit={(event) => { event.preventDefault(); done(() => link.apply(href)); }}
+    onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); done(link.close); } }}>
+    <label htmlFor="jul-editor-link-url">{t("Link URL", "링크 주소")}</label>
+    <input ref={inputRef} id="jul-editor-link-url" placeholder="https://example.com" value={href} onChange={(event) => setHref(event.target.value)} />
+    <button className="small-button" type="submit">{t("Apply", "적용")}</button>
+    {removable && <button className="small-button" type="button" aria-label={t("Remove link", "링크 제거")} onClick={() => done(link.remove)}>{t("Remove", "제거")}</button>}
+    <button className="icon-button" type="button" aria-label={t("Close link editor", "링크 에디터 닫기")} onClick={() => done(link.close)}><X size={16} /></button>
+  </form>;
+}
 
 function LinkControl() {
   const { t } = useSiteSettings();
   const link = useLinkEditor();
   const active = useActiveMarks().has("link");
-  const [href, setHref] = useState("");
-  useEffect(() => setHref(link.href), [link.href, link.open]);
   return <>
     <button type="button" className="tool-button" aria-label={t("Link", "링크")} title={t("Link · ⌘K", "링크 · ⌘K")} aria-pressed={active} onClick={link.openEditor}><Link2 size={16} /></button>
-    {link.open && <form className="link-popover" onSubmit={(event) => { event.preventDefault(); link.apply(href); }}>
-      <label htmlFor="jul-editor-link-url">{t("Link URL", "링크 주소")}</label>
-      <input id="jul-editor-link-url" autoFocus placeholder="https://example.com" value={href} onChange={(event) => setHref(event.target.value)} />
-      <button className="small-button" type="submit">{t("Apply", "적용")}</button>
-      <button className="icon-button" type="button" aria-label={t("Close link editor", "링크 에디터 닫기")} onClick={link.close}><X size={16} /></button>
-    </form>}
+    {link.open && <LinkPopover link={link} />}
   </>;
 }
 
-function SlashCommands() {
+function SlashMenuList({ items, activeIndex, rect, getListboxProps, getOptionProps }: SlashMenuRenderArgs) {
   const { t } = useSiteSettings();
-  return <Editor.SlashMenu>
-    {({ items, activeIndex, rect, getListboxProps, getOptionProps }) => <div
-      {...getListboxProps()}
-      aria-label={t("Block commands", "블록 명령")}
-      className="slash-menu"
-      style={rect ? { left: Math.min(rect.left, window.innerWidth - 270), top: Math.min(rect.bottom + 8, window.innerHeight - 300) } : undefined}
-    >
-      <div className="slash-menu-label">{t("INSERT A BLOCK", "블록 삽입")}</div>
-      {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>
-        <span className="slash-option-symbol">{item.type === "chart" ? "▥" : item.type === "diagram" ? "◇" : item.type === "table" ? "▦" : item.type === "heading" ? "H" : "＋"}</span>
-        <span>{item.title}</span>
-      </div>) : <div className="slash-empty">{t("No matching blocks", "일치하는 블록이 없습니다")}</div>}
-    </div>}
-  </Editor.SlashMenu>;
+  const { ref, style } = useMenuPlacement(rect);
+  return <div
+    {...getListboxProps()}
+    ref={ref}
+    aria-label={t("Block commands", "블록 명령")}
+    className="slash-menu"
+    style={style}
+  >
+    <div className="slash-menu-label">{t("INSERT A BLOCK", "블록 삽입")}</div>
+    {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>
+      <span className="slash-option-symbol">{item.type === "chart" ? "▥" : item.type === "diagram" ? "◇" : item.type === "table" ? "▦" : item.type === "heading" ? "H" : "＋"}</span>
+      <span>{item.title}</span>
+    </div>) : <div className="slash-empty">{t("No matching blocks", "일치하는 블록이 없습니다")}</div>}
+  </div>;
 }
 
-function BubbleTools() {
+function SlashCommands() {
+  return <Editor.SlashMenu>{(args) => <SlashMenuList {...args} />}</Editor.SlashMenu>;
+}
+
+function BubbleBar({ rect }: { rect: DOMRect }) {
   const { t } = useSiteSettings();
-  return <Editor.BubbleMenu>{({ rect }) => <div className="bubble-tools" data-jul-editor-keep-selection="" style={{ left: Math.min(rect.left, window.innerWidth - 175), top: Math.max(8, rect.top - 48) }}>
+  const { ref, style } = useBubblePlacement(rect);
+  return <div ref={ref} className="bubble-tools" data-jul-editor-keep-selection="" style={style}>
     <Editor.Bold aria-label={t("Bold", "굵게")} title={t("Bold", "굵게")}><Bold size={15} /></Editor.Bold>
     <Editor.Italic aria-label={t("Italic", "기울임")} title={t("Italic", "기울임")}><Italic size={15} /></Editor.Italic>
     <Editor.Underline aria-label={t("Underline", "밑줄")} title={t("Underline", "밑줄")}><Underline size={15} /></Editor.Underline>
-  </div>}</Editor.BubbleMenu>;
+  </div>;
+}
+
+function BubbleTools() {
+  // the bubble only holds mark buttons: inside a code block there is nothing for them to format
+  if (!useCanApplyMarks()) return null;
+  return <Editor.BubbleMenu>{({ rect }) => <BubbleBar rect={rect} />}</Editor.BubbleMenu>;
 }
 
 function BlockTools({ blockId, top, left }: { blockId: string; top: number; left: number }) {

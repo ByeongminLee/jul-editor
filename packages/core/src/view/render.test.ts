@@ -211,6 +211,49 @@ describe("renderAll", () => {
     expect(content.querySelector("strong")).toBe(boldEl); // same element, not rebuilt
     expect(content.querySelector("strong")!.firstChild).toBe(boldTextNode); // same text node
   });
+
+  // A toggleMark that only MOVES run boundaries (bold extended over the plain
+  // text before it) keeps the plain text and the run count/marks sequence
+  // identical; patchContent used to take its "DOM already matches" shortcut
+  // and never re-render, so Bold looked like it did nothing until the next
+  // keystroke made the formatting suddenly "grow".
+  it("re-renders a mark change that only shifts run boundaries (same text, same run keys)", () => {
+    const root = document.createElement("div");
+    const mk = (a: string, b: string) =>
+      fromDoc(doc([{ id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: a }, { type: "text", text: b, marks: [{ type: "bold" }] }] }]), coreRegistry);
+    const c = ctx();
+    renderAll(root, mk("This sample uses ", "JulEditor"), c);
+    const content = root.querySelector(`[${CONTENT_ATTR}]`)!;
+    expect(content.innerHTML).toBe("This sample uses <strong>JulEditor</strong>");
+    renderAll(root, mk("T", "his sample uses JulEditor"), c);
+    expect(content.innerHTML).toBe("T<strong>his sample uses JulEditor</strong>");
+    // and back (undo)
+    renderAll(root, mk("This sample uses ", "JulEditor"), c);
+    expect(content.innerHTML).toBe("This sample uses <strong>JulEditor</strong>");
+  });
+
+  // IME composition in an EMPTY block: the browser replaces the placeholder
+  // <br> with its own text node, which `runNodes` never learned about. The
+  // next (non-composing) render must not trust the stale runNodes.
+  it("after composing in an empty block, later renders resync the DOM", () => {
+    const root = document.createElement("div");
+    let composing = false;
+    const c = ctx({ isComposing: () => composing });
+    const mk = (t: string) => fromDoc(doc([para("p1", t)]), coreRegistry);
+    renderAll(root, mk(""), c);
+    const content = root.querySelector(`[${CONTENT_ATTR}]`)!;
+    // browser composes: placeholder <br> replaced by its own text node
+    composing = true;
+    content.replaceChildren(document.createTextNode("\uD55C"));
+    renderAll(root, mk("\uD55C"), c);
+    composing = false;
+    renderAll(root, mk("\uD55C"), c); // composition end commit (same text)
+    renderAll(root, mk("\uD55Ca"), c);
+    expect(content.textContent).toBe("\uD55Ca");
+    renderAll(root, mk("\uD55Cab"), c);
+    expect(content.textContent).toBe("\uD55Cab");
+    expect(content.childNodes.length).toBe(1);
+  });
 });
 
 describe("EMPTY_ATTR / placeholder / applyFocusedAttr", () => {

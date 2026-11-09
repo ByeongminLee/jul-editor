@@ -183,11 +183,12 @@ test("structure: table Tab moves to the next cell (wrapping rows), Shift-Tab bac
   await insertTestTable(page);
   await page.evaluate(() => window.__julEditor!.setCaret("r1c1", 0));
 
+  // Tab lands at the END of the next cell, same as Shift-Tab (typing appends instead of prefixing).
   await page.keyboard.press("Tab");
-  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 0 }, focus: { blockId: "r1c2", offset: 0 } });
+  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 1 }, focus: { blockId: "r1c2", offset: 1 } });
 
   await page.keyboard.press("Tab");
-  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r2c1", offset: 0 }, focus: { blockId: "r2c1", offset: 0 } });
+  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r2c1", offset: 1 }, focus: { blockId: "r2c1", offset: 1 } });
 
   await page.keyboard.press("Shift+Tab");
   expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 1 }, focus: { blockId: "r1c2", offset: 1 } });
@@ -242,6 +243,28 @@ test("structure: Mod-Enter exits a codeBlock into a new paragraph after it", asy
   expect(textOf(after, "cb")).toBe("let x = 1;"); // unchanged
   const sel = (await getSelection(page)) as { type: string; anchor: { blockId: string } };
   expect(sel.anchor.blockId).toBe(nextId);
+});
+
+test("structure: Tab inside a codeBlock indents the code, never the block; Shift-Tab undoes it", async ({ page }) => {
+  await insertTestCodeBlock(page);
+  await page.evaluate(() => window.__julEditor!.setCaret("cb", 0));
+  await page.keyboard.press("Tab");
+  let after = await getDoc(page);
+  expect(childIds(after, null)).toContain("cb"); // still a root block (not nested under its previous sibling)
+  expect(textOf(after, "cb")).toBe("  let x = 1;");
+  await page.keyboard.press("Shift+Tab");
+  after = await getDoc(page);
+  expect(childIds(after, null)).toContain("cb");
+  expect(textOf(after, "cb")).toBe("let x = 1;");
+});
+
+test("structure: a word typed after ``` stays code unless it names a language", async ({ page }) => {
+  await page.evaluate(() => window.__julEditor!.setCaret("pEnd", 0));
+  await page.keyboard.type("```", { delay: 10 });
+  await page.keyboard.type("const x = 1", { delay: 10 });
+  const after = await getDoc(page);
+  expect(blockType(after, "pEnd")).toBe("codeBlock");
+  expect(textOf(after, "pEnd")).toBe("const x = 1");
 });
 
 // ---- todo Mod-Enter -----------------------------------------------------------
@@ -338,7 +361,7 @@ test("structure: block-level keymap runs before ANY registered keymap, regardles
 
   const log = await page.evaluate(() => (window as unknown as { __log: string[] }).__log);
   expect(log).toEqual([]); // tableCell's own block-level Tab handler wins, the registered one never runs
-  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 0 }, focus: { blockId: "r1c2", offset: 0 } });
+  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 1 }, focus: { blockId: "r1c2", offset: 1 } });
 });
 
 // ---- suggestion controller: Korean composition updates the open query -------

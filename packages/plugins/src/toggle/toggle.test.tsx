@@ -152,7 +152,7 @@ describe("toggle collapse (real editor)", () => {
     m.editor.update((tx) => tx.setSelection(caretAt("k", 1)));
     setToggleOpen(m.editor, "t", false);
     expect(m.editor.getState().store.records.get("t")!.props.open).toBeUndefined();
-    expect(m.editor.getState().selection).toMatchObject({ anchor: { blockId: "t" } });
+    expect(m.editor.getState().selection).toMatchObject({ anchor: { blockId: "t", offset: 5 }, focus: { blockId: "t", offset: 5 } }); // end of "title"
     setToggleOpen(m.editor, "t", true);
     expect(m.editor.getState().store.records.get("t")!.props.open).toBe(true);
     m.editor.commands.undo();

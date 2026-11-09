@@ -8,7 +8,7 @@
 // priority via the exact same `registerKeymap` mechanism (no special path).
 
 import { isText } from "../model/canonical.js";
-import { sanitizeUrl } from "../model/url.js";
+import { normalizeLinkHref, sanitizeUrl } from "../model/url.js";
 import type { Registry } from "../model/schema.js";
 import type { Json, Mark } from "../model/types.js";
 import { canAdmit, containerInfo, siblingsOf } from "../store/store.js";
@@ -106,7 +106,7 @@ function handleIndent(ctx: KeymapCtx, dir: 1 | -1): boolean {
 }
 
 function handleToggleMark(markType: string, attrs?: Record<string, Json>): KeymapFn {
-  return (ctx) => toggleMarkOrStore(ctx.state, ctx.marksRef, ctx.dispatch, markType, attrs);
+  return (ctx) => toggleMarkOrStore(ctx.state, ctx.marksRef, ctx.dispatch, markType, attrs, ctx.registry);
 }
 
 function handleLink(ctx: KeymapCtx): boolean {
@@ -125,7 +125,7 @@ function handleLink(ctx: KeymapCtx): boolean {
   })();
   void ctx.onLinkRequest(currentHref).then((href) => {
     if (href === null) return; // cancelled
-    const cleaned = sanitizeUrl(href, "link"); // every model write of a link href goes through sanitizeUrl
+    const cleaned = sanitizeUrl(normalizeLinkHref(href), "link"); // every model write of a link href goes through sanitizeUrl
     if (cleaned === null) return; // rejected scheme -- silently drop, same as fromMarkdown/fromHTML's link handling
     commit(ctx, (tx) => tx.toggleMark(sel, "link", { href: cleaned }));
   });

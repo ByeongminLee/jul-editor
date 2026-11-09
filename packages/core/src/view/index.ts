@@ -6,6 +6,7 @@
 
 import { createEmitter } from "../store/emitter.js";
 import { attachClipboard } from "./clipboard.js";
+import { isInsideVoid } from "./dom.js";
 import type { ComposeRef } from "./ime.js";
 import type { Extensions, Interaction } from "./interaction.js";
 import { attachInteraction } from "./interaction.js";
@@ -40,7 +41,7 @@ export type { Keymap, KeymapCtx, KeymapEntry, KeymapFn } from "./keymap.js";
 export { currentBlockInputRules, runInputRules } from "./input-rules.js";
 export type { InputRuleCtx, InputRuleEntry } from "./input-rules.js";
 export { createSuggestionController } from "./suggestion.js";
-export type { SuggestionConfig, SuggestionController, SuggestionHandle, SuggestionRange, SuggestionState } from "./suggestion.js";
+export type { SuggestionConfig, SuggestionController, SuggestionHandle, SuggestionOpenContext, SuggestionRange, SuggestionState } from "./suggestion.js";
 export { activeMarks, consumeInsertMarks, createMarksRef, marksAtPoint, textSelectionBlockIds, toggleMarkOrStore } from "./marks.js";
 export type { MarksRef } from "./marks.js";
 export { createEditor } from "./editor.js";
@@ -109,6 +110,10 @@ export function createView(options: CreateViewOptions): View {
     const sel = currentState.selection;
     applyFocusedAttr(renderCtx, sel?.type === "text" && sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset ? sel.anchor.blockId : null);
     if (compose.active) return; // never touch DOM selection while composing
+    if (currentState.selection?.type === "block") {
+      clearNativeHighlight();
+      return;
+    }
     if (currentState.selection?.type !== "text") return;
     if (opts.requireFocus) {
       const doc = root.ownerDocument;
@@ -130,6 +135,21 @@ export function createView(options: CreateViewOptions): View {
     // call moves inside writeDOMSelection's own `beforeWrite` seam, firing
     // only immediately before a real native selection write actually happens.
     writeDOMSelection(root, currentState.selection, () => interaction?.suppressOwnWrite());
+  }
+
+  // A 'block' selection has no DOM correlate, but the native selection it replaced (a partial text
+  // range before Mod-a, a drag that ran onto a void) would otherwise stay painted next to the block
+  // outlines. Collapse it to its focus, keeping focus (and the keyboard/clipboard target) in the
+  // root. A drag still in progress is left alone: the browser is extending it.
+  function clearNativeHighlight(): void {
+    if (interaction?.isPointerSelecting()) return;
+    const domSel = root.ownerDocument.defaultView?.getSelection?.() ?? null;
+    if (!domSel || domSel.rangeCount === 0 || domSel.isCollapsed || !domSel.focusNode) return;
+    if (!root.contains(domSel.anchorNode) || !root.contains(domSel.focusNode)) return;
+    interaction?.suppressOwnWrite();
+    // Never park the caret inside a void's non-editable UI (a drag that ended on a chart's labels).
+    if (isInsideVoid(domSel.focusNode) && !isInsideVoid(domSel.anchorNode)) domSel.collapse(domSel.anchorNode!, domSel.anchorOffset);
+    else domSel.collapse(domSel.focusNode, domSel.focusOffset);
   }
 
   function runDispatch(build: Parameters<CreateViewOptions["dispatch"]>[0]) {
@@ -234,6 +254,7 @@ export function createView(options: CreateViewOptions): View {
     getUploadState: (blockId) => clipboard.uploadRegistry.get(blockId),
     retryUpload: (blockId) => clipboard.retryUpload(blockId),
     insertFiles: (files) => clipboard.insertFiles(files),
+    attachUpload: (blockId, file) => clipboard.attachUpload(blockId, file),
     getUploadPreview: (id) => clipboard.uploadRegistry.getPreview(id),
     getPendingUploads: () => clipboard.getPendingUploads(),
     uploadPending: () => clipboard.uploadPending(),

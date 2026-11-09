@@ -141,6 +141,7 @@ export const codeWorkspaceBlock = defineBlock({
 export const codeWorkspaceSlashItem: SlashItem = {
   type: "codeWorkspace",
   title: "Code Workspace",
+  labelKey: "slashCodeWorkspace",
   keywords: ["code", "files", "project", "workspace", "코드", "파일"],
   create: () => ({ id: newId(), type: "codeWorkspace", props: { files: [{ path: "src/index.ts", language: "ts", code: "" }] } }),
 };

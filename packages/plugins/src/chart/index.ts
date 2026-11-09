@@ -14,6 +14,7 @@ export type { DataSource, ResolveData } from "../data/resolve-data.js";
 export const chartSlashItem: SlashItem = {
   type: "chart",
   title: "Chart",
+  labelKey: "slashChart",
   keywords: ["chart", "graph", "bar", "line", "pie", "radar", "radial", "차트", "그래프"],
   create: () => ({ id: newId(), type: "chart", props: { source: { type: "inline", csv: "Month,Visitors\nJan,120\nFeb,160\nMar,140\nApr,220" } } }),
 };

@@ -47,6 +47,26 @@ describe("splitBlock", () => {
     expect(next.records.get(backId)!.childIds).toEqual(["c1"]);
     expect(next.records.get("c1")!.parentId).toBe(backId);
   });
+
+  it("a checked to-do never hands `checked` to the new item (end, middle and offset 0)", () => {
+    const todo = (id: string, text: string): Block => ({ id, type: "todoListItem", props: { checked: true }, content: [{ type: "text", text }] });
+    for (const offset of [0, 2, 4]) {
+      const store = storeFrom([todo("t1", "done")]);
+      const next = commitAll(store, buildSplitBlockOps(store, { blockId: "t1", offset }));
+      const newId = next.rootIds.find((id) => id !== "t1")!;
+      expect(next.records.get("t1")!.props.checked).toBe(true);
+      expect(next.records.get(newId)!.props.checked ?? false).toBe(false);
+    }
+  });
+
+  it("opts.type gives the back block a different type with default props", () => {
+    const store = storeFrom([{ id: "h1", type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Title" }] }]);
+    const next = commitAll(store, buildSplitBlockOps(store, { blockId: "h1", offset: 5 }, { type: "paragraph" }));
+    expect(next.records.get("h1")!.type).toBe("heading");
+    const back = next.records.get(next.rootIds[1]!)!;
+    expect(back.type).toBe("paragraph");
+    expect(back.props.level).toBeUndefined();
+  });
 });
 
 describe("mergeBackward (front id survives)", () => {
@@ -316,6 +336,67 @@ describe("toggleMark", () => {
     const sel: Selection = { type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 5 } };
     const result = createTransaction({ store, selection: null }, r).toggleMark(sel, "italic", undefined).commit();
     expect(result.state.store.records.get("p1")!.content).toEqual([{ type: "text", text: "hello", marks: [{ type: "italic" }] }]);
+  });
+});
+
+describe("toggleMark: cells rectangles and code blocks", () => {
+  function grid() {
+    const cell = (id: string, text: string) => ({ id, type: "tableCell", props: {}, content: [{ type: "text" as const, text }] });
+    return storeFrom([
+      { id: "t1", type: "table", props: {}, children: [
+        { id: "r1", type: "tableRow", props: {}, children: [cell("a", "Docs"), cell("b", "120"), cell("x", "keep")] },
+        { id: "r2", type: "tableRow", props: {}, children: [cell("c", "API"), cell("d", "880"), cell("y", "keep")] },
+      ] },
+      { id: "code", type: "codeBlock", props: { language: "js" }, content: [{ type: "text", text: "const accent = 1;" }] },
+    ]);
+  }
+
+  it("formats every cell of a cells selection, and only those", () => {
+    const store = grid();
+    const sel: Selection = { type: "cells", tableId: "t1", anchor: [0, 0], focus: [1, 1] };
+    const next = commitAll(store, buildToggleMarkOps(store, sel, "bold", undefined, r));
+    for (const [id, text] of [["a", "Docs"], ["b", "120"], ["c", "API"], ["d", "880"]] as const) {
+      expect(next.records.get(id)!.content).toEqual([{ type: "text", text, marks: [{ type: "bold" }] }]);
+    }
+    expect(next.records.get("x")!.content).toEqual([{ type: "text", text: "keep" }]);
+    // a second toggle over the all-bold rectangle removes it again
+    const back = commitAll(next, buildToggleMarkOps(next, sel, "bold", undefined, r));
+    expect(back.records.get("d")!.content).toEqual([{ type: "text", text: "880" }]);
+  });
+
+  it("a cells selection formats through a transaction too", () => {
+    const store = grid();
+    const sel: Selection = { type: "cells", tableId: "t1", anchor: [1, 1], focus: [0, 0] };
+    const result = createTransaction({ store, selection: sel }, r).toggleMark(sel, "italic", undefined).commit();
+    expect(result.state.store.records.get("a")!.content).toEqual([{ type: "text", text: "Docs", marks: [{ type: "italic" }] }]);
+  });
+
+  it("a range inside a code block is left alone (code holds no marks)", () => {
+    const store = grid();
+    const sel: Selection = { type: "text", anchor: { blockId: "code", offset: 6 }, focus: { blockId: "code", offset: 12 } };
+    expect(buildToggleMarkOps(store, sel, "bold", undefined, r)).toEqual([]);
+  });
+});
+
+describe("backward (right-to-left) same-block selections", () => {
+  const back: Selection = { type: "text", anchor: { blockId: "p1", offset: 11 }, focus: { blockId: "p1", offset: 6 } };
+
+  it("toggleMark formats the range instead of duplicating it", () => {
+    const store = storeFrom([para("p1", "hello world!")]);
+    const next = commitAll(store, buildToggleMarkOps(store, back, "bold", undefined));
+    expect(next.records.get("p1")!.content).toEqual([
+      { type: "text", text: "hello " },
+      { type: "text", text: "world", marks: [{ type: "bold" }] },
+      { type: "text", text: "!" },
+    ]);
+  });
+
+  it("pasteFragment replaces the range in place and puts the caret after the pasted text", () => {
+    const store = storeFrom([para("p1", "hello world!")]);
+    const fragment = [{ id: "frag1", type: "paragraph", props: {}, content: [{ type: "text" as const, text: "X" }] }];
+    const result = createTransaction({ store, selection: null }, r).pasteFragment(back, fragment).commit();
+    expect(result.state.store.records.get("p1")!.content).toEqual([{ type: "text", text: "hello X!" }]);
+    expect(result.state.selection).toEqual({ type: "text", anchor: { blockId: "p1", offset: 7 }, focus: { blockId: "p1", offset: 7 } });
   });
 });
 

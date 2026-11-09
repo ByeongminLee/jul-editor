@@ -1,10 +1,11 @@
 import type { Block, Doc } from "@jul-editor/core";
 import { newId } from "@jul-editor/core";
-import { Editor, defaultRenderers, restoreDraft, useAutosave, useBlockActions, useCommands, useTableState } from "@jul-editor/react";
+import { Editor, defaultRenderers, restoreDraft, useAutosave, useBlockActions, useCanApplyMarks, useCommands, useTableState } from "@jul-editor/react";
 import { useEffect, useState } from "react";
 
 import { Code } from "../code-block.js";
 import { metricSpec, MetricView } from "./customization-canvas.js";
+import { useBubblePlacement } from "../workspace/bubble-placement.js";
 import "../../styles/docs-feature.css";
 
 type Locale = "en" | "ko";
@@ -78,12 +79,18 @@ function Menus({ locale }: { locale: Locale }) {
       <div className="slash-menu-label">{kindLabel} · {ko ? "Tab으로 전환" : "Tab to switch"}</div>
       {items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>@{item.label}</div>)}
     </div>}</Editor.MentionMenu>
-    <Editor.BubbleMenu>{({ rect }) => <div className="bubble-tools" data-jul-editor-keep-selection="" style={{ left: Math.max(8, rect.left), top: Math.max(8, rect.top - 42) }}>
-      <Editor.Bold aria-label={ko ? "굵게" : "Bold"}>B</Editor.Bold>
-      <Editor.Italic aria-label={ko ? "기울임" : "Italic"}>I</Editor.Italic>
-      <Editor.Underline aria-label={ko ? "밑줄" : "Underline"}>U</Editor.Underline>
-    </div>}</Editor.BubbleMenu>
+    <Editor.BubbleMenu>{({ rect }) => <FeatureBubble rect={rect} ko={ko} />}</Editor.BubbleMenu>
   </>;
+}
+
+function FeatureBubble({ rect, ko }: { rect: DOMRect; ko: boolean }) {
+  const { ref, style } = useBubblePlacement(rect);
+  if (!useCanApplyMarks()) return null;
+  return <div ref={ref} className="bubble-tools" data-jul-editor-keep-selection="" style={style}>
+    <Editor.Bold aria-label={ko ? "굵게" : "Bold"}>B</Editor.Bold>
+    <Editor.Italic aria-label={ko ? "기울임" : "Italic"}>I</Editor.Italic>
+    <Editor.Underline aria-label={ko ? "밑줄" : "Underline"}>U</Editor.Underline>
+  </div>;
 }
 
 function TablePosition({ locale }: { locale: Locale }) {

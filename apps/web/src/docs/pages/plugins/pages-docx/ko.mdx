@@ -28,17 +28,20 @@ const [zoom, setZoom] = useState(100);
 ```ts
 import * as docx from "docx";
 import mammoth from "mammoth";
+import { dataUrlToFile } from "@jul-editor/core";
 import { fromHTML } from "@jul-editor/core/serde";
 import { exportDocx, importDocx } from "@jul-editor/plugins/pages";
 
 const { file: blob, lossy } = await exportDocx(doc, settings, { docxLib: docx });
-const { doc: imported, settings: s, messages } = await importDocx(await file.arrayBuffer(), {
+const { doc: imported, settings: s, messages, images } = await importDocx(await file.arrayBuffer(), {
   mammothLib: mammoth,
-  fromHTML,
+  fromHTML: (html) => fromHTML(html, { registry }), // pageBreak가 들어 있는 레지스트리
 });
+editor.setDoc(imported);
+for (const { blockId, dataUrl } of images) editor.attachUpload(blockId, dataUrlToFile(dataUrl)!);
 ```
 
-`exportDocx`는 기본으로 Blob을 돌려주고(Node에서는 `output: "buffer"`), 품질이 낮아진 블록의 `lossy` 목록도 돌려줍니다. 이 모듈은 네트워크를 쓰지 않으므로 머리글 로고는 `resolveImage`로 넘기세요. `importDocx`는 mammoth의 HTML 결과를 `fromHTML`로 변환하며, `fromHTML`에는 DOM이나 연결된 파서가 필요합니다.
+`exportDocx`는 기본으로 Blob을 돌려주고(Node에서는 `output: "buffer"`), 품질이 낮아진 블록의 `lossy` 목록도 돌려줍니다. 이 모듈은 네트워크를 쓰지 않으므로 머리글 로고는 `resolveImage`로 넘기세요. `importDocx`는 mammoth의 HTML 결과를 `fromHTML`로 변환하며, `fromHTML`에는 DOM이나 연결된 파서가 필요합니다. 변환에 쓰는 레지스트리에 `pageBreak`가 있으면 페이지 나누기는 `pageBreak` 블록으로 돌아옵니다. 문서에 들어 있던 그림은 data URL로 오는데, 문서 모델은 data URL을 저장하지 않습니다. 그래서 그림마다 빈 이미지 블록과 함께 `images`로 돌려줍니다. `editor.attachUpload`로 넘기면 바로 미리 보이고 `onUpload`를 거쳐 업로드됩니다.
 
 ## 한계
 

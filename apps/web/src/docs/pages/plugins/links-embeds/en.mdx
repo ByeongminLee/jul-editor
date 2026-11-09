@@ -15,7 +15,7 @@ const blocks = createLinkBlocks(iframePolicy); // module scope
 </LinkContextProvider>
 ```
 
-`linkSlashItems` adds Bookmark, Embed, Figma, and GitHub entries. The main entry's `pluginRenderers` and `pluginSlashItems` already map `bookmark` and `iframe`, but you still register the block specs yourself.
+`linkSlashItems` adds Bookmark, Web embed, Figma, and GitHub entries. Each inserts an empty block whose view asks for the URL inline. The main entry's `pluginRenderers` and `pluginSlashItems` already map `bookmark` and `iframe`, but you still register the block specs yourself.
 
 ## The fetchMetadata adapter
 

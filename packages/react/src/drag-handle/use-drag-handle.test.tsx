@@ -479,4 +479,69 @@ describe("useDragHandle pointer drop", () => {
     act(() => fireEvent.pointerUp(handle, { pointerId: 1 }));
     expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p1", "code"]);
   });
+  it("returns focus to the editor after a pointer drop so Mod+Z undoes the move", async () => {
+    render(<Editor defaultValue={twoParas()}><Editor.Content /><Probe /></Editor>);
+    await act(async () => {
+      hoverOver("p1");
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    const editor = testEditor();
+    const root = document.querySelector("[data-jul-editor-root]") as HTMLElement;
+    const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+    handle.setPointerCapture = () => {};
+    handle.hasPointerCapture = () => true;
+    handle.releasePointerCapture = () => {};
+    editor.getBlockAtPoint = () => ({ id: "p2", rect: FAKE_RECT });
+
+    act(() => fireEvent.pointerDown(handle, { button: 0, pointerId: 1 }));
+    act(() => fireEvent.pointerMove(handle, { clientX: 2, clientY: 15 }));
+    act(() => fireEvent.pointerUp(handle, { pointerId: 1 }));
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p2", "p1"]);
+    expect(document.activeElement).toBe(root);
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["p1"] });
+  });
+
+  it("forwards Mod+Z / Mod+Shift+Z from a focused handle to editor history", async () => {
+    render(<Editor defaultValue={twoParas()}><Editor.Content /><Probe /></Editor>);
+    await act(async () => {
+      hoverOver("p1");
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    const editor = testEditor();
+    act(() => editor.moveBlockTo("p1", { targetId: "p2", placement: "after" }));
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p2", "p1"]);
+    const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+    handle.focus();
+    act(() => { fireEvent.keyDown(handle, { key: "z", ctrlKey: true, metaKey: true }); });
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p1", "p2"]);
+    act(() => { fireEvent.keyDown(handle, { key: "z", ctrlKey: true, metaKey: true, shiftKey: true }); });
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p2", "p1"]);
+  });
+
+  it("Escape cancels a pointer drag: the following pointerup does not move the block", async () => {
+    render(<Editor defaultValue={twoParas()}><Editor.Content /><Probe /></Editor>);
+    await act(async () => {
+      hoverOver("p1");
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    const editor = testEditor();
+    const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+    handle.setPointerCapture = () => {};
+    handle.hasPointerCapture = () => true;
+    handle.releasePointerCapture = () => {};
+    editor.getBlockAtPoint = () => ({ id: "p2", rect: FAKE_RECT });
+
+    act(() => fireEvent.pointerDown(handle, { button: 0, pointerId: 1 }));
+    act(() => fireEvent.pointerMove(handle, { clientX: 2, clientY: 15 }));
+    expect(testState().dropTarget).toEqual({ targetId: "p2", placement: "after" });
+    act(() => { fireEvent.keyDown(handle, { key: "Escape" }); });
+    expect(testState().dragging).toBe(false);
+    expect(testState().dropIndicatorRect).toBeNull();
+    expect(testState().announcement).toBe("Move cancelled.");
+    act(() => fireEvent.pointerMove(handle, { clientX: 2, clientY: 15 }));
+    act(() => fireEvent.pointerUp(handle, { pointerId: 1 }));
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p1", "p2"]);
+  });
 });

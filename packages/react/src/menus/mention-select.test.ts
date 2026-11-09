@@ -5,7 +5,8 @@ import { selectMentionItem } from "./mention-select.js";
 
 function fakeEditor(doc: Doc): { editor: CoreEditor; getDoc: () => Doc; getState: () => EditorState } {
   let state: EditorState = { store: fromDoc(doc, coreRegistry), selection: null };
-  const editor: Pick<CoreEditor, "getState" | "update"> = {
+  const editor: Pick<CoreEditor, "getState" | "update" | "getRegistry"> = {
+    getRegistry: () => coreRegistry,
     getState: () => state,
     update: (build: (tx: Transaction) => Transaction) => {
       const tx = createTransaction(state, coreRegistry);
@@ -33,5 +34,12 @@ describe("selectMentionItem", () => {
     ]);
     // mention counts as 1 unit -> caret sits at from(3) + 1(mention) + 1(space) = 5
     expect(getState().selection).toEqual({ type: "text", anchor: { blockId: "p1", offset: 5 }, focus: { blockId: "p1", offset: 5 } });
+  });
+
+  it("refuses a code block (a mention there would be dropped on export)", () => {
+    const doc: Doc = { version: 1, blocks: [{ id: "k", type: "codeBlock", props: {}, content: [{ type: "text", text: "@Mi" }] }] };
+    const { editor, getDoc } = fakeEditor(doc);
+    selectMentionItem({ id: "u1", label: "Mina", kind: "user" }, { editor, range: { blockId: "k", from: 0, to: 3 }, close: () => {} });
+    expect(getDoc().blocks[0]!.content).toEqual([{ type: "text", text: "@Mi" }]);
   });
 });

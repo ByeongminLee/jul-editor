@@ -6,7 +6,7 @@ import type { Registry } from "../model/schema.js";
 import { cellGridPosition, cellIdAt } from "../store/table.js";
 import { nearestIsolatingAncestor, siblingsOf, spannedTopBlocks } from "../store/store.js";
 import type { Point, Selection as StoreSelection, Store } from "../store/types.js";
-import { CELL_SELECTED_ATTR, CONTENT_ATTR, MENTION_ATTR, SELECTED_ATTR, VOID_ATTR, WIDGET_ATTR, closestBlockId, closestContentEl, findContentEl } from "./dom.js";
+import { BLOCK_ATTR, CELL_SELECTED_ATTR, CONTENT_ATTR, ID_ATTR, MENTION_ATTR, SELECTED_ATTR, VOID_ATTR, WIDGET_ATTR, closestBlockId, closestContentEl, findContentEl } from "./dom.js";
 import type { BlockEls } from "./render.js";
 
 function measureNode(n: Node): number {
@@ -63,6 +63,17 @@ function measureBefore(contentEl: HTMLElement, targetNode: Node, targetOffset: n
 }
 
 export function pointFromDOM(root: HTMLElement, node: Node, offset: number): Point | null {
+  // A boundary on a text block's own wrapper (a click on an empty block's padding can leave the caret
+  // at (wrapper, 0)) maps to the edge of that block's content div next to it.
+  if (node instanceof HTMLElement && node.hasAttribute(BLOCK_ATTR) && root.contains(node)) {
+    const content = node.querySelector<HTMLElement>(`:scope > [${CONTENT_ATTR}]`);
+    const blockId = node.getAttribute(ID_ATTR);
+    if (!content || !blockId) return null;
+    const index = Array.prototype.indexOf.call(node.childNodes, content) as number;
+    if (offset <= index) return { blockId, offset: 0 };
+    if (offset === index + 1) return { blockId, offset: measureNode(content) };
+    return null;
+  }
   const contentEl = closestContentEl(node, root);
   const blockId = closestBlockId(node, root);
   if (!contentEl || !blockId) return null;
@@ -112,30 +123,81 @@ export function domFromPoint(contentEl: HTMLElement, offset: number): { node: No
   return { node: contentEl, offset: brIndex >= 0 ? brIndex : topLevel.length };
 }
 
-/** Reads the live DOM selection as a model `text` Selection, or null when
- * either end doesn't resolve to a content div (e.g. selection is outside the
- * editor, or inside a void block). Only 'text' selections are supported here
- * -- 'block'/'cells' selection reconstruction is not supported here. */
-export function readDOMSelection(root: HTMLElement): StoreSelection | null {
+/** Options for readDOMSelection. */
+export interface ReadDOMSelectionOptions {
+  /** With the store, an end that lands on (or a drag that passes) a void block resolves to a 'block'
+   * selection that includes the void, instead of being clamped back to the nearest text. */
+  store?: Store;
+  /** The selection comes from a pointer gesture (a drag, a shift-click). A non-collapsed end at
+   * offset 0 of a later block (a drag into the gap below a block) highlights nothing there, so it is
+   * clamped back to the end of the previous text block. Keyboard extension keeps it verbatim. */
+  pointer?: boolean;
+  /** With the store, keeps `pointer` from clamping across an isolating boundary (a drag from one
+   * table cell to the start of the next one is a cell range, not text in the first cell). */
+  registry?: Registry;
+}
+
+/** Reads the live DOM selection as a model Selection, or null when either end doesn't resolve
+ * (e.g. selection is outside the editor, or entirely inside a void block). Returns a 'text'
+ * selection, or (only with `options.store`) a 'block' selection when one end reaches a void. */
+export function readDOMSelection(root: HTMLElement, options: ReadDOMSelectionOptions = {}): StoreSelection | null {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || !sel.anchorNode || !sel.focusNode) return null;
+  const { store } = options;
   let anchor = pointFromDOM(root, sel.anchorNode, sel.anchorOffset);
   let focus = pointFromDOM(root, sel.focusNode, sel.focusOffset);
-  // A triple click (or a drag/shift-select) that ends at the very start of the NEXT block leaves
-  // the DOM boundary on that block's wrapper. When that block is void (bookmark, image, divider,
-  // ...) it has no content div, so the point does not resolve and the whole selection used to be
-  // dropped (no BubbleMenu). Clamp the unresolved end to the nearest text position on the side the
-  // selection came from; an entirely unresolved selection (caret inside a void) stays null.
-  if (!anchor && focus) anchor = clampToText(root, sel.anchorNode, sel.anchorOffset, focus);
-  else if (anchor && !focus) focus = clampToText(root, sel.focusNode, sel.focusOffset, anchor);
+  // A drag (or a shift-select) that ends at the very start of the NEXT block, or on a void block
+  // (bookmark, image, chart, divider, ...), leaves the DOM boundary on a wrapper without a content
+  // div, so the point does not resolve. An end on a void (or past one) takes the void in as a block
+  // selection; otherwise clamp to the nearest text position on the side the selection came from.
+  // An entirely unresolved selection (caret inside a void) stays null.
+  if (!anchor && focus) {
+    const end = resolveDanglingEnd(root, sel.anchorNode, sel.anchorOffset, focus, store);
+    if (end && "voidId" in end) return { type: "block", ids: spannedTopBlocks(store!, end.voidId, focus.blockId) };
+    anchor = end?.point ?? null;
+  } else if (anchor && !focus) {
+    const end = resolveDanglingEnd(root, sel.focusNode, sel.focusOffset, anchor, store);
+    if (end && "voidId" in end) return { type: "block", ids: spannedTopBlocks(store!, anchor.blockId, end.voidId) };
+    focus = end?.point ?? null;
+  }
   if (!anchor || !focus) return null;
+  if (options.pointer && anchor.blockId !== focus.blockId) {
+    const anchorEl = findContentEl(root, anchor.blockId);
+    const focusEl = findContentEl(root, focus.blockId);
+    if (anchorEl && focusEl) {
+      const forward = !!(anchorEl.compareDocumentPosition(focusEl) & Node.DOCUMENT_POSITION_FOLLOWING);
+      const [first, last, lastEl] = forward ? [anchor, focus, focusEl] : [focus, anchor, anchorEl];
+      const iso = (id: string) => (store && options.registry ? nearestIsolatingAncestor(store, id, options.registry) : null);
+      if (last.offset === 0 && iso(last.blockId) === iso(first.blockId)) {
+        const end = resolveDanglingEnd(root, lastEl, 0, first, store);
+        if (end && "voidId" in end) return { type: "block", ids: forward ? spannedTopBlocks(store!, first.blockId, end.voidId) : spannedTopBlocks(store!, end.voidId, first.blockId) };
+        if (end) {
+          if (forward) focus = end.point;
+          else anchor = end.point;
+        }
+      }
+    }
+  }
   return { type: "text", anchor, focus };
 }
 
-/** Nearest text-block position for a DOM boundary that sits outside every content div: the end of the
- * last content div before it when `other` lies before the boundary, else the start of the first one
- * after it. Null when the boundary is outside `root` or no such block exists. */
-function clampToText(root: HTMLElement, node: Node, offset: number, other: Point): Point | null {
+/** The block wrapper of the void block that contains (node), if any. */
+function enclosingVoidWrapper(root: HTMLElement, node: Node): HTMLElement | null {
+  let el: Node | null = node;
+  while (el && el !== root) {
+    if (el instanceof HTMLElement && el.hasAttribute(BLOCK_ATTR)) {
+      return el.querySelector(`:scope > [${VOID_ATTR}]`) && !el.querySelector(`:scope > [${CONTENT_ATTR}]`) ? el : null;
+    }
+    el = el.parentNode;
+  }
+  return null;
+}
+
+/** Resolves a DOM boundary that sits outside every content div, given the selection's other
+ * (resolved) end: `{ voidId }` when (with a store) the boundary lies on a void block or past one
+ * that follows the other end -- the farthest such void -- else `{ point }`, the nearest text
+ * position before/after the boundary. Null when nothing resolves. */
+function resolveDanglingEnd(root: HTMLElement, node: Node, offset: number, other: Point, store: Store | undefined): { point: Point } | { voidId: string } | null {
   if (!root.contains(node)) return null;
   const at = document.createRange();
   try {
@@ -144,13 +206,52 @@ function clampToText(root: HTMLElement, node: Node, offset: number, other: Point
     return null;
   }
   at.collapse(true);
-  const contents = Array.from(root.querySelectorAll<HTMLElement>(`[${CONTENT_ATTR}]`)).filter((el) => !el.closest(`[${VOID_ATTR}]`));
   const otherEl = findContentEl(root, other.blockId);
   const otherBefore = !otherEl || at.comparePoint(otherEl, 0) < 0; // the resolved end precedes the boundary
+  const point = clampToText(root, at, otherBefore);
+  if (store && otherEl) {
+    const voidId = farthestVoid(root, at, node, otherEl, otherBefore, point);
+    if (voidId) return { voidId };
+  }
+  return point ? { point } : null;
+}
+
+/** The void block between `otherEl` and the boundary (or holding the boundary) farthest from
+ * `otherEl`, ignoring any void on the far side of the clamped text point (that text is then the
+ * nearer end). Null when there is none. */
+function farthestVoid(root: HTMLElement, at: Range, node: Node, otherEl: HTMLElement, otherBefore: boolean, point: Point | null): string | null {
+  const holder = enclosingVoidWrapper(root, node);
+  if (holder) return holder.getAttribute(ID_ATTR);
+  const pointEl = point ? findContentEl(root, point.blockId) : null;
+  let found: HTMLElement | null = null;
+  for (const v of Array.from(root.querySelectorAll<HTMLElement>(`[${VOID_ATTR}]`))) {
+    const wrapper = v.parentElement;
+    if (!wrapper?.hasAttribute(BLOCK_ATTR) || wrapper.querySelector(`:scope > [${CONTENT_ATTR}]`)) continue;
+    if (otherBefore) {
+      // after otherEl, before the boundary, and after the clamped text point
+      if (!(otherEl.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING) || otherEl.contains(wrapper)) continue;
+      if (at.comparePoint(wrapper, wrapper.childNodes.length) > 0) continue;
+      if (pointEl && !(pointEl.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+      found = wrapper; // keep the last one (farthest from otherEl)
+    } else {
+      if (!(otherEl.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_PRECEDING) || wrapper.contains(otherEl)) continue;
+      if (at.comparePoint(wrapper, 0) < 0) continue;
+      if (pointEl && !(pointEl.compareDocumentPosition(wrapper) & Node.DOCUMENT_POSITION_PRECEDING)) continue;
+      if (!found) found = wrapper; // the first one (farthest from otherEl)
+    }
+  }
+  return found?.getAttribute(ID_ATTR) ?? null;
+}
+
+/** Nearest text-block position for a collapsed boundary `at` that sits outside every content div:
+ * the end of the last content div ending before it when `otherBefore`, else the start of the first
+ * one after it. Null when no such block exists. */
+function clampToText(root: HTMLElement, at: Range, otherBefore: boolean): Point | null {
+  const contents = Array.from(root.querySelectorAll<HTMLElement>(`[${CONTENT_ATTR}]`)).filter((el) => !el.closest(`[${VOID_ATTR}]`));
   let target: HTMLElement | undefined;
   if (otherBefore) {
-    for (const el of contents) if (at.comparePoint(el, el.childNodes.length) <= 0) target = el;
-  } else target = contents.find((el) => at.comparePoint(el, 0) >= 0);
+    for (const el of contents) if (at.comparePoint(el, el.childNodes.length) < 0) target = el;
+  } else target = contents.find((el) => at.comparePoint(el, 0) > 0);
   if (!target) return null;
   const blockId = closestBlockId(target, root);
   if (!blockId) return null;

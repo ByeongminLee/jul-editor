@@ -121,6 +121,51 @@ describe("attachClipboard: paste", () => {
     view.destroy();
   });
 
+  it("paste into an EMPTY bullet replaces it when the fragment starts with a heading", () => {
+    const store = fromDoc(doc([bullet("b0", "x"), bullet("b1", "")]), coreRegistry);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "b1", offset: 0 }, focus: { blockId: "b1", offset: 0 } } };
+    const d = makeDispatch(state);
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const view = createView({ element: root, state, registry: coreRegistry, dispatch: d.dispatch });
+    root.dispatchEvent(fakePasteEvent(dataTransferOf({ "text/plain": "# MD Heading\n\n- item1" })));
+    const blocks = toDoc(d.getState().store).blocks;
+    expect(blocks.map((b) => b.type)).toEqual(["bulletListItem", "heading", "bulletListItem"]);
+    expect(blocks[1]!.content).toEqual([{ type: "text", text: "MD Heading" }]);
+    view.destroy();
+  });
+
+  it("paste into an empty bullet of a same-type (bullet) fragment still merges into it", () => {
+    const store = fromDoc(doc([bullet("b1", "")]), coreRegistry);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "b1", offset: 0 }, focus: { blockId: "b1", offset: 0 } } };
+    const d = makeDispatch(state);
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const view = createView({ element: root, state, registry: coreRegistry, dispatch: d.dispatch });
+    root.dispatchEvent(fakePasteEvent(dataTransferOf({ "text/plain": "- one\n- two" })));
+    const blocks = toDoc(d.getState().store).blocks;
+    expect(blocks[0]!.id).toBe("b1");
+    expect(blocks.map((b) => b.type)).toEqual(["bulletListItem", "bulletListItem"]);
+    view.destroy();
+  });
+
+  it("a paste with no model selection yet (value replaced, caret placed by a click) uses the live DOM caret", () => {
+    const store = fromDoc(doc([para("p0", "a"), para("p1", "")]), coreRegistry);
+    const state: EditorState = { store, selection: null };
+    const d = makeDispatch(state);
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const view = createView({ element: root, state, registry: coreRegistry, dispatch: d.dispatch });
+    const content = root.querySelector('[data-id="p1"] > [data-jul-editor-content]')!;
+    window.getSelection()!.collapse(content, 0);
+    const ev = fakePasteEvent(dataTransferOf({ "text/html": "<p><strong>bold</strong></p>" }));
+    root.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    const blocks = toDoc(d.getState().store).blocks;
+    expect(blocks[1]!.content).toEqual([{ type: "text", text: "bold", marks: [{ type: "bold" }] }]);
+    view.destroy();
+  });
+
   it("paste into a NON-empty paragraph keeps the merge behaviour", () => {
     const store = fromDoc(doc([para("p1", "ab")]), coreRegistry);
     const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "p1", offset: 1 }, focus: { blockId: "p1", offset: 1 } } };

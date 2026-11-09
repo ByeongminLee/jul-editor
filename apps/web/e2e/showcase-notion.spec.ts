@@ -224,3 +224,50 @@ test("mobile width: the page scrolls, comments open as a drawer", async ({ page 
   await root.getByRole("button", { name: "Close" }).click();
   await expect(root.locator(".nt-comments")).toBeHidden();
 });
+
+test("slash Bookmark and Web embed ask for a URL inline, and Embed is listed once", async ({ page }) => {
+  const root = await openNotion(page);
+  await caretAtEndOf(page, root, "nt-end");
+  await page.keyboard.type("/");
+  const menu = page.getByRole("listbox");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("option", { name: "Embed", exact: true })).toHaveCount(1);
+  await page.keyboard.type("bookmark");
+  await expect(menu.getByRole("option").first()).toHaveText("Bookmark");
+  await page.keyboard.press("Enter");
+  const field = root.getByRole("textbox", { name: "Bookmark URL" });
+  await expect(field).toBeFocused();
+  await page.keyboard.type("github.com/ueberdosis/tiptap");
+  await page.keyboard.press("Enter");
+  const card = root.locator('a[data-jul-editor-plugin="bookmark"][href="https://github.com/ueberdosis/tiptap"]');
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("ueberdosis/tiptap");
+  await expect(root.getByText("No URL")).toHaveCount(0);
+});
+
+test("slash Web embed asks for a URL inline, then shows the click-to-load placeholder", async ({ page }) => {
+  const root = await openNotion(page);
+  const menu = page.getByRole("listbox");
+  await caretAtEndOf(page, root, "nt-end");
+  await page.keyboard.type("/web");
+  await expect(menu.getByRole("option").first()).toHaveText("Web embed");
+  await page.keyboard.press("Enter");
+  const embedField = root.getByRole("textbox", { name: "Embed URL" });
+  await expect(embedField).toBeFocused();
+  await page.keyboard.type("https://codepen.io/team/pen/abc");
+  await page.keyboard.press("Enter");
+  await expect(root.locator(".nt-embed-idle", { hasText: "codepen.io" })).toBeVisible();
+});
+
+// Round 2: the three editor cases unmounted on switch and came back as the untouched sample.
+test("edits survive switching to another showcase case and back", async ({ page }) => {
+  let root = await openNotion(page);
+  await caretAtEndOf(page, root, "nt-title");
+  await page.keyboard.type(" EDITED");
+  await expect(text(root, "nt-title")).toContainText("EDITED");
+  await page.locator(".showcase-picker-card").nth(0).click();
+  await expect(page.locator(".showcase-active .showcase-agent")).toBeVisible();
+  await page.locator(".showcase-picker-card").nth(NOTION_CARD).click();
+  root = page.locator(".showcase-active .showcase-notion");
+  await expect(text(root, "nt-title")).toContainText("EDITED");
+});

@@ -148,3 +148,89 @@ describe("useSuggestion", () => {
     expect(result.current.items).toEqual(["AB"]);
   });
 });
+
+describe("useSuggestion: empty results and scrolling", () => {
+  it("Enter with no matching items closes the menu and is not consumed", async () => {
+    vi.useFakeTimers();
+    const onSelect = vi.fn();
+    const items = () => [] as string[];
+    renderHook(() => useSuggestion({ char: "/", items, onSelect }));
+    act(() => openWith());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    let handled = true;
+    act(() => {
+      handled = captured!.onKey!({ key: "Enter" });
+    });
+    expect(handled).toBe(false);
+    expect(closeSuggestion).toHaveBeenCalledTimes(1);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("a re-emit with the same query (scroll) keeps the highlighted item", async () => {
+    vi.useFakeTimers();
+    const items = () => ["a", "b", "c"];
+    const { result } = renderHook(() => useSuggestion({ char: "/", items, onSelect: vi.fn() }));
+    act(() => openWith());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    act(() => {
+      captured!.onKey!({ key: "ArrowDown" });
+    });
+    expect(result.current.activeIndex).toBe(1);
+    act(() => openWith());
+    expect(result.current.activeIndex).toBe(1);
+  });
+
+  it("arrow navigation scrolls the active option into view", async () => {
+    vi.useFakeTimers();
+    const items = () => ["a", "b"];
+    const { result } = renderHook(() => useSuggestion({ char: "/", items, onSelect: vi.fn() }));
+    act(() => openWith());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const option = document.createElement("div");
+    option.id = result.current.getOptionProps(1).id;
+    const scrollIntoView = vi.fn();
+    option.scrollIntoView = scrollIntoView;
+    document.body.appendChild(option);
+    act(() => {
+      captured!.onKey!({ key: "ArrowDown" });
+    });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    option.remove();
+  });
+
+  it("Enter pressed before the debounce lands picks from the current query (sync source)", () => {
+    vi.useFakeTimers();
+    const onSelect = vi.fn();
+    const items = (q: string) => ["chart", "code"].filter((x) => x.startsWith(q));
+    renderHook(() => useSuggestion({ char: "/", items, onSelect }));
+    act(() => openWith());
+    act(() => captured!.onUpdate({ open: true, query: "ch", range: { blockId: "b1", from: 0, to: 3 }, rect: null }));
+    let handled = false;
+    act(() => {
+      handled = captured!.onKey!({ key: "Enter" });
+    });
+    expect(handled).toBe(true);
+    expect(onSelect.mock.calls[0]?.[0]).toBe("chart");
+  });
+
+  it("Enter while an async source is still loading is held, not lost to a newline", () => {
+    vi.useFakeTimers();
+    const onSelect = vi.fn();
+    const items = () => new Promise<string[]>(() => {});
+    renderHook(() => useSuggestion({ char: "@", items, onSelect }));
+    act(() => openWith());
+    let handled = false;
+    act(() => {
+      handled = captured!.onKey!({ key: "Enter" });
+    });
+    expect(handled).toBe(true);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(closeSuggestion).not.toHaveBeenCalled();
+  });
+});

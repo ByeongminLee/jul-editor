@@ -34,6 +34,7 @@ export interface Labels {
   slashChart: string;
   slashDiagram: string;
   slashDataTable: string;
+  slashCodeWorkspace: string;
   slashNoResults: string;
 
   // ---- TurnInto's own curated item labels (turnInto.tsx) ----
@@ -144,6 +145,7 @@ export const EN_LABELS: Labels = {
   slashChart: "Chart",
   slashDiagram: "Diagram",
   slashDataTable: "Data table",
+  slashCodeWorkspace: "Code Workspace",
   slashNoResults: "No results",
 
   turnIntoText: "Text",
@@ -243,6 +245,7 @@ export const KO_LABELS: Labels = {
   slashChart: "차트",
   slashDiagram: "다이어그램",
   slashDataTable: "데이터 표",
+  slashCodeWorkspace: "코드 워크스페이스",
   slashNoResults: "결과 없음",
 
   turnIntoText: "텍스트",

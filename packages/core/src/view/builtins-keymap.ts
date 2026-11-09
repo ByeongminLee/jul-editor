@@ -90,6 +90,29 @@ function plainText(content: Block["content"]): string {
 // rules, so this is the one place that can catch it.
 const LANG_TOKEN = /^[a-zA-Z0-9_+-]+$/;
 
+// Only a token that actually names a language may be swallowed as one --
+// otherwise the first word of real code ("const x = 1", "ab" + Enter) would
+// silently vanish into `props.language`. The common highlight.js grammar
+// names plus their usual aliases (the same vocabulary GitHub/Notion accept
+// after a fence), lowercase; the comparison lowercases the typed token.
+const KNOWN_CODE_LANGUAGES = new Set([
+  "plaintext", "text", "txt", "plain",
+  "ts", "typescript", "tsx", "mts", "cts", "js", "javascript", "jsx", "mjs", "cjs",
+  "json", "jsonc", "json5", "yaml", "yml", "toml", "ini", "xml", "html", "xhtml", "svg", "css", "scss", "sass", "less",
+  "markdown", "md", "mdx", "diff", "patch",
+  "bash", "sh", "zsh", "shell", "console", "shellsession", "powershell", "ps1", "bat", "cmd", "dockerfile", "docker", "makefile", "make", "nginx",
+  "python", "py", "ruby", "rb", "php", "perl", "pl", "lua", "r", "julia", "go", "golang", "rust", "rs",
+  "java", "kotlin", "kt", "kts", "scala", "groovy", "gradle", "swift", "objectivec", "objc", "dart",
+  "c", "h", "cpp", "c++", "cc", "cxx", "hpp", "csharp", "cs", "fsharp", "fs", "vb", "vbnet",
+  "sql", "mysql", "pgsql", "postgres", "postgresql", "graphql", "gql", "prisma", "proto", "protobuf",
+  "haskell", "hs", "elixir", "ex", "exs", "erlang", "erl", "clojure", "clj", "ocaml", "ml", "elm", "zig", "nim", "solidity", "sol",
+  "vue", "svelte", "astro", "latex", "tex", "wasm", "asm", "x86asm", "mermaid", "http", "csv",
+]);
+
+function isKnownCodeLanguage(token: string): boolean {
+  return KNOWN_CODE_LANGUAGES.has(token.toLowerCase());
+}
+
 function trySetLanguageFromTyped(ctx: Parameters<Keymap[string]>[0]): boolean {
   const sel = ctx.state.selection;
   if (!sel || sel.type !== "text" || sel.anchor.blockId !== sel.focus.blockId || sel.anchor.offset !== sel.focus.offset) return false;
@@ -105,9 +128,80 @@ function trySetLanguageFromTyped(ctx: Parameters<Keymap[string]>[0]): boolean {
   const currentLang = getProp<string>({ id: rec.id, type: rec.type, props: rec.props }, "language", ctx.registry) ?? "";
   if (currentLang !== "") return false; // already has a language -- a plain space/newline inside real code
   const text = plainText(rec.content);
-  if (sel.anchor.offset !== text.length || !LANG_TOKEN.test(text)) return false;
+  if (sel.anchor.offset !== text.length || !LANG_TOKEN.test(text) || !isKnownCodeLanguage(text)) return false;
   const caret = { blockId, offset: 0 };
-  ctx.dispatch((tx) => tx.setProps(blockId, { language: text }).replaceContent(blockId, 0, text.length, []).setSelection({ type: "text", anchor: caret, focus: caret }));
+  ctx.dispatch((tx) => tx.setProps(blockId, { language: text.toLowerCase() }).replaceContent(blockId, 0, text.length, []).setSelection({ type: "text", anchor: caret, focus: caret }));
+  return true;
+}
+
+/** One indent step inside a codeBlock (and a code-workspace editor, which
+ * mirrors it): two spaces, the most common default for the languages the
+ * picker offers. */
+const CODE_INDENT = "  ";
+
+/** Tab: a collapsed caret gets CODE_INDENT inserted at the caret; a range
+ * within the block gets CODE_INDENT prepended to every line it touches.
+ * Shift-Tab: every touched line loses one leading tab or up to
+ * CODE_INDENT.length leading spaces. The selection is kept on the same text
+ * (shifted by what was inserted/removed before each end). Always handled
+ * for a text selection inside the block (even when there is nothing to
+ * outdent), so the key never falls through to block-level indent. */
+function indentCode(ctx: Parameters<Keymap[string]>[0], dir: 1 | -1): boolean {
+  const sel = ctx.state.selection;
+  if (!sel || sel.type !== "text") return false;
+  if (sel.anchor.blockId !== sel.focus.blockId) return true; // a cross-block range: swallow, never indent the block
+  const blockId = sel.anchor.blockId;
+  const rec = ctx.state.store.records.get(blockId);
+  if (!rec) return false;
+  const text = plainText(rec.content);
+  const from = Math.min(sel.anchor.offset, sel.focus.offset);
+  const to = Math.max(sel.anchor.offset, sel.focus.offset);
+  if (dir === 1 && from === to) {
+    const caret = { blockId, offset: from + CODE_INDENT.length };
+    ctx.dispatch((tx) => tx.insertText({ blockId, offset: from }, CODE_INDENT).setSelection({ type: "text", anchor: caret, focus: caret }));
+    return true;
+  }
+  // line starts touched by [from, to] (a range ending right at a line's
+  // own start does not touch that line, the usual editor convention).
+  const starts: number[] = [];
+  let lineStart = text.lastIndexOf("\n", from - 1) + 1;
+  const lastOffset = to > from && text[to - 1] === "\n" ? to - 1 : to;
+  while (lineStart <= lastOffset) {
+    starts.push(lineStart);
+    const nl = text.indexOf("\n", lineStart);
+    if (nl < 0 || nl >= lastOffset) break;
+    lineStart = nl + 1;
+  }
+  // per line: [start, removeCount] for outdent, insert at start for indent.
+  const edits = starts.map((start) => {
+    if (dir === 1) return { start, remove: 0 };
+    if (text[start] === "\t") return { start, remove: 1 };
+    let n = 0;
+    while (n < CODE_INDENT.length && text[start + n] === " ") n++;
+    return { start, remove: n };
+  });
+  if (dir === -1 && edits.every((ed) => ed.remove === 0)) return true;
+  const shift = (offset: number) => {
+    let delta = 0;
+    for (const ed of edits) {
+      if (dir === 1) {
+        if (ed.start <= offset) delta += CODE_INDENT.length;
+      } else if (ed.start < offset) {
+        delta -= Math.min(ed.remove, offset - ed.start);
+      }
+    }
+    return offset + delta;
+  };
+  const anchor = { blockId, offset: shift(sel.anchor.offset) };
+  const focus = { blockId, offset: shift(sel.focus.offset) };
+  ctx.dispatch((tx) => {
+    let t = tx;
+    // back to front, so earlier offsets stay valid while later lines change.
+    for (const ed of [...edits].reverse()) {
+      t = dir === 1 ? t.insertText({ blockId, offset: ed.start }, CODE_INDENT) : ed.remove > 0 ? t.replaceContent(blockId, ed.start, ed.start + ed.remove, []) : t;
+    }
+    return t.setSelection({ type: "text", anchor, focus });
+  });
   return true;
 }
 
@@ -116,6 +210,12 @@ export function attachBuiltinKeymaps(): void {
 
   (codeBlock.keymap as Keymap) = {
     " ": (ctx) => trySetLanguageFromTyped(ctx),
+    // Tab/Shift-Tab indent/outdent the CODE (every line the selection
+    // touches), never the block itself -- without these the key fell through
+    // to the default keymap's block-level indent and nested the whole
+    // codeBlock under its previous sibling.
+    Tab: (ctx) => indentCode(ctx, 1),
+    "Shift-Tab": (ctx) => indentCode(ctx, -1),
     Enter: (ctx) => {
       if (trySetLanguageFromTyped(ctx)) return true;
       const sel = ctx.state.selection;
@@ -165,9 +265,12 @@ export function attachBuiltinKeymaps(): void {
       const pos = cellPos(store, sel.anchor.blockId);
       if (!pos) return false;
       const row = store.records.get(pos.rowId)!;
+      // the caret lands at the END of the target cell, same as Shift-Tab
+      // below -- forward and backward cell navigation must agree, so typing
+      // right after Tab appends to the cell instead of prefixing it.
       if (pos.col + 1 < row.childIds.length) {
         const nextCell = row.childIds[pos.col + 1]!;
-        const caret = { blockId: nextCell, offset: 0 };
+        const caret = { blockId: nextCell, offset: contentLength(store.records.get(nextCell)?.content) };
         ctx.dispatch((tx) => tx.setSelection({ type: "text", anchor: caret, focus: caret }));
         return true;
       }
@@ -175,7 +278,7 @@ export function attachBuiltinKeymaps(): void {
       if (pos.row + 1 < table.childIds.length) {
         const nextRow = store.records.get(table.childIds[pos.row + 1]!)!;
         const firstCell = nextRow.childIds[0]!;
-        const caret = { blockId: firstCell, offset: 0 };
+        const caret = { blockId: firstCell, offset: contentLength(store.records.get(firstCell)?.content) };
         ctx.dispatch((tx) => tx.setSelection({ type: "text", anchor: caret, focus: caret }));
         return true;
       }

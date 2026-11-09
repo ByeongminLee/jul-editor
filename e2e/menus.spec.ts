@@ -107,20 +107,68 @@ test("slash: '/표' composed via a real IME sequence shows the Table item", asyn
   await page.keyboard.press("Escape");
 });
 
-test("slash: inserting a void item (image) inserts after, and adds a trailing paragraph", async ({ page }) => {
+test("slash: a void item (image) replaces the empty '/' line, adds a trailing paragraph, and the caret lands there", async ({ page }) => {
+  const before = await page.evaluate(() => window.__julEditorReact!.getDoc());
+  const idx = before.blocks.findIndex((b) => b.id === "r-p2");
   await page.keyboard.type("/image");
   await expect(page.getByTestId("slash-menu").getByText("Image", { exact: true })).toBeVisible();
   await page.keyboard.press("Enter");
-  const doc = await page.evaluate(() => window.__julEditorReact!.getDoc());
-  const idx = doc.blocks.findIndex((b) => b.id === "r-p2");
   // A void block (no content/children slot of its own) can never be
-  // "converted into" -- r-p2 stays a (now-empty) paragraph, the image is
-  // inserted right after it, and a fresh trailing paragraph follows (the
-  // doc must not end -- or have any block sit -- with no cursor slot).
-  expect(doc.blocks[idx]?.type).toBe("paragraph");
-  expect(doc.blocks[idx]?.content).toEqual([]);
-  expect(doc.blocks[idx + 1]?.type).toBe("image");
-  expect(doc.blocks[idx + 2]?.type).toBe("paragraph");
+  // "converted into": the now-empty '/' paragraph is swapped for the image,
+  // and a fresh trailing paragraph follows and takes the caret, so the next
+  // keystroke types there instead of replacing the image (Notion).
+  await page.keyboard.type("Next line");
+  const doc = await page.evaluate(() => window.__julEditorReact!.getDoc());
+  expect(doc.blocks.some((b) => b.id === "r-p2")).toBe(false);
+  expect(doc.blocks[idx]?.type).toBe("image");
+  expect(doc.blocks[idx + 1]?.type).toBe("paragraph");
+  expect(doc.blocks[idx + 1]?.content).toEqual([{ type: "text", text: "Next line" }]);
+});
+
+test("slash: Enter with no matching items closes the menu and splits the line", async ({ page }) => {
+  await page.keyboard.type("/zzz");
+  await expect(page.getByTestId("slash-menu")).toBeVisible();
+  await expect(page.getByTestId("slash-menu").getByText("No results")).toBeVisible();
+  await page.waitForTimeout(200); // past the 100ms item debounce: the empty result has landed
+  const before = (await page.evaluate(() => window.__julEditorReact!.getDoc())).blocks.length;
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("slash-menu")).toBeHidden();
+  await expect.poll(async () => (await page.evaluate(() => window.__julEditorReact!.getDoc())).blocks.length).toBe(before + 1);
+});
+
+test("slash/mention: never open inside a code block; Enter types a newline", async ({ page }) => {
+  await page.evaluate(() => window.__julEditorReact!.setCaret("r-code1", 0));
+  await page.keyboard.type("/");
+  await page.waitForTimeout(150);
+  await expect(page.getByTestId("slash-menu")).toBeHidden();
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("@김");
+  await page.waitForTimeout(400);
+  await expect(page.getByTestId("mention-menu")).toBeHidden();
+  const code = findBlock(await page.evaluate(() => window.__julEditorReact!.getDoc()), "r-code1");
+  expect(code.content?.every((inl) => inl.type === "text")).toBe(true);
+  expect(code.content?.map((inl) => inl.text).join("")).toMatch(/^\/\n@김const greet/);
+});
+
+test("mention: '@' right after a letter (an email address) does not open the menu", async ({ page }) => {
+  await page.keyboard.type("email me@x");
+  await page.waitForTimeout(400);
+  await expect(page.getByTestId("mention-menu")).toBeHidden();
+  await page.keyboard.type(" @");
+  await expect(page.getByTestId("mention-menu")).toBeVisible();
+});
+
+test("slash: the menu closes when focus leaves the editor", async ({ page }) => {
+  await page.keyboard.type("/");
+  await expect(page.getByTestId("slash-menu")).toBeVisible();
+  await page.evaluate(() => {
+    const button = document.createElement("button");
+    button.id = "outside-focus";
+    button.textContent = "outside";
+    document.body.appendChild(button);
+  });
+  await page.locator("#outside-focus").focus();
+  await expect(page.getByTestId("slash-menu")).toBeHidden();
 });
 
 test("slash: '/chart' (an @jul-editor/plugins-integrated item, per extraItems) inserts a real chart void, not just an empty placeholder", async ({ page }) => {
@@ -199,6 +247,50 @@ test("bubble: shows only on a non-empty selection, hides when collapsed, and Bol
   await page.evaluate(() =>
     window.__julEditorReact!.setSelection({ type: "text", anchor: { blockId: "r-p1", offset: 5 }, focus: { blockId: "r-p1", offset: 5 } }),
   );
+  await expect(bubble).toBeHidden();
+});
+
+test("bubble: follows the live selection (backward drag, Shift+Arrow) and hides after a click outside the editor", async ({ page }) => {
+  const bubble = page.getByTestId("bubble-menu");
+  const point = (offset: number) =>
+    page.evaluate((offset) => {
+      const text = document.querySelector('[data-id="r-p1"] [data-jul-editor-content]')!.firstChild as Text;
+      const r = document.createRange();
+      r.setStart(text, offset);
+      r.setEnd(text, offset + 1);
+      const b = r.getClientRects()[0]!;
+      return { x: b.left + 1, y: b.top + b.height / 2 };
+    }, offset);
+  const selLeft = () => page.evaluate(() => window.getSelection()!.getRangeAt(0).getBoundingClientRect().left);
+  const bubbleLeft = async () => (await bubble.boundingBox())!.x;
+
+  // backward drag: the bubble sits at the selection's left edge, not where the drag started
+  const a = await point(20);
+  const z = await point(6);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(z.x, z.y, { steps: 10 });
+  await page.mouse.up();
+  await expect(bubble).toBeVisible();
+  await expect.poll(async () => Math.abs((await bubbleLeft()) - (await selLeft()))).toBeLessThan(2);
+
+  // Shift+ArrowLeft extends the (backward) selection further left: the bubble moves with it
+  const before = await bubbleLeft();
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
+  await expect.poll(bubbleLeft).toBeLessThan(before - 5);
+  await expect.poll(async () => Math.abs((await bubbleLeft()) - (await selLeft()))).toBeLessThan(2);
+
+  // a click outside the editor moves the DOM selection away: no bubble acting on invisible text
+  await page.evaluate(() => {
+    const p = document.createElement("p");
+    p.dataset.testid = "outside-text";
+    p.textContent = "Some page text outside the editor";
+    p.style.cssText = "position: fixed; left: 8px; bottom: 8px; margin: 0; z-index: 100; background: white;";
+    document.body.append(p);
+  });
+  await page.getByTestId("outside-text").click();
   await expect(bubble).toBeHidden();
 });
 

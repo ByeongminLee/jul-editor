@@ -7,7 +7,7 @@
 // codeBlock buttons; `current`/`active` just read @jul-editor/core's own
 // `getBlockType()` (already the "uniform type+props across every touched
 // block, or null" computation, cached there for reference stability).
-import { canAdmit, comparePreOrder, containerInfo, nextBlockInPreOrder } from "@jul-editor/core";
+import { canAdmit, orderPoints, containerInfo, nextBlockInPreOrder } from "@jul-editor/core";
 import type { Editor as CoreEditor, Json, Registry, Store } from "@jul-editor/core";
 import type { ReactNode } from "react";
 import { useContext } from "react";
@@ -77,8 +77,7 @@ function selectionBlockIds(editor: CoreEditor): string[] {
   if (sel.type === "block") return sel.ids;
   if (sel.type !== "text") return [];
   const store = editor.getState().store;
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   const ids: string[] = [start.blockId];
   let cur: string | null = start.blockId;
   while (cur !== end.blockId) {

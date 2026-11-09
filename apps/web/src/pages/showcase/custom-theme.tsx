@@ -294,7 +294,8 @@ ${H(1)}::after { content: ''; display: block; width: 56px; height: 4px; margin-t
 ${H(2)} { color: color-mix(in srgb, ${A} 82%, ${INK}); }
 ${C} [data-type=bulletListItem]::before { font-weight: 900; }
 ${C} [data-type=orderedListItem]::before { font-weight: 800; }
-${C} [data-type=todoListItem]::before { content: ''; top: .5em; width: .95em; height: .95em; border: 2px solid ${A}; border-radius: min(var(--jul-editor-radius), 5px); background: ${tint(16)}; }
+${C} [data-type=todoListItem]::before { content: ''; top: .5em; width: .95em; height: .95em; border: 2px solid ${A}; border-radius: min(var(--jul-editor-radius), 5px); background: ${tint(16)}; cursor: pointer; }
+${C} [data-type=todoListItem][data-jul-editor-checked="true"]::before { background: ${A}; box-shadow: inset 0 0 0 2px #fff; }
 ${C} [data-type=quote] { padding: 12px 18px; border-left: 4px solid ${A}; background: ${tint(9)}; border-radius: 0 var(--jul-editor-radius) var(--jul-editor-radius) 0; }
 ${C} :is([data-type=paragraph], [data-type=bulletListItem], [data-type=orderedListItem], [data-type=todoListItem], [data-type=quote]) code { padding: 1px 5px; border: 1px solid ${tint(28)}; background: ${tint(13)}; color: ${A}; }
 ${TH} { border-bottom: 2px solid ${A}; background: ${tint(16, "var(--jul-editor-bg)")}; color: ${A}; font-weight: 700; }
@@ -354,6 +355,7 @@ ${H(1)}::after { width: 100%; height: 0; border-top: 1px dashed ${A}; background
 ${H(2)} { font-size: 1.2em; }
 ${C} [data-type=bulletListItem]::before { content: '>'; }
 ${C} [data-type=todoListItem]::before { content: '[ ]'; top: 0; width: auto; height: auto; border: 0; background: transparent; color: ${A}; font-weight: 700; }
+${C} [data-type=todoListItem][data-jul-editor-checked="true"]::before { content: '[x]'; box-shadow: none; }
 ${C} [data-type=todoListItem] { padding-left: 32px; }
 ${C} [data-type=quote] { border-left: 2px solid ${A}; background: transparent; font: normal 1em/1.5 var(--jul-editor-font); }
 ${C} [data-type=tableCell] { border-style: dashed; padding: 3px 8px; }

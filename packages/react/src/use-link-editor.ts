@@ -4,7 +4,7 @@
 // (editor.registerKeymap: highest priority wins, checked before the built-in
 // entry), so pressing Mod+K opens THIS popover instead. Unmounting the hook
 // (registerKeymap's own returned cleanup) restores the built-in behavior.
-import { comparePreOrder, contentLength, inlineLength, isText, nextBlockInPreOrder, sanitizeUrl, sliceContent } from "@jul-editor/core";
+import { orderPoints, contentLength, inlineLength, isText, nextBlockInPreOrder, normalizeLinkHref, sanitizeUrl, sliceContent } from "@jul-editor/core";
 import type { Editor as CoreEditor, Inline } from "@jul-editor/core";
 import { useCallback, useEffect, useState } from "react";
 import { useEditor } from "./hooks.js";
@@ -19,7 +19,8 @@ export interface UseLinkEditorResult {
    * href (if any). Also callable directly (e.g. from a toolbar button), not
    * just via Mod+K. */
   openEditor(): void;
-  /** Applies `href` (through sanitizeUrl) to the current selection and
+  /** Applies `href` (through normalizeLinkHref, so a bare "example.com"
+   * becomes "https://example.com", then sanitizeUrl) to the current selection and
    * closes the popover. An empty/whitespace-only href removes the link
    * instead (same convention as editorcn's own link control). A rejected
    * scheme leaves the popover open (nothing applied). */
@@ -74,8 +75,7 @@ function setLinkMark(editor: CoreEditor, href: string | null): void {
   const sel = editor.getState().selection;
   if (!sel || sel.type !== "text") return;
   const store = editor.getState().store;
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
 
   let ranges: { blockId: string; from: number; to: number }[];
   if (start.blockId === end.blockId && start.offset === end.offset) {
@@ -156,7 +156,8 @@ export function useLinkEditor(): UseLinkEditorResult {
         setOpen(false);
         return;
       }
-      const cleaned = sanitizeUrl(trimmed, "link");
+      // "example.com" -> "https://example.com": a bare domain is never meant as a relative URL.
+      const cleaned = sanitizeUrl(normalizeLinkHref(trimmed), "link");
       if (cleaned === null) return; // rejected scheme -- popover stays open
       setLinkMark(editor, cleaned);
       setOpen(false);

@@ -60,9 +60,16 @@ const oldHashes: Record<string, string> = {
   state: "/docs/core/document-model", "extension-api": "/docs/core/custom-blocks",
 };
 
-export function resolveDocsPath(pathname: string, hash: string): DocPage {
-  const path = pathname === "/docs" || pathname === "/docs/"
-    ? oldHashes[decodeURIComponent(hash.slice(1))] ?? "/docs/getting-started"
-    : pathname.replace(/\/$/, "");
-  return pages.find((page) => page.path === path) ?? pages[0]!;
+function safeDecode(value: string): string {
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
+/** The docs page for a route path (no base, no trailing slash). `/docs` opens Getting started,
+ * or the page an old `/docs#hash` bookmark pointed at; an unknown path returns undefined. */
+export function resolveDocsPath(pathname: string, hash: string): DocPage | undefined {
+  const trimmed = pathname.replace(/\/+$/, "");
+  const path = trimmed === "/docs"
+    ? oldHashes[safeDecode(hash.slice(1))] ?? "/docs/getting-started"
+    : trimmed;
+  return pages.find((page) => page.path === path);
 }

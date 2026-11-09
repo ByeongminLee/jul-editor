@@ -19,7 +19,7 @@ import type { Extensions } from "./interaction.js";
 import type { InputRuleEntry } from "./input-rules.js";
 import { buildDefaultKeymap } from "./keymap.js";
 import type { Keymap, KeymapEntry } from "./keymap.js";
-import { activeMarks, createMarksRef, textSelectionBlockIds, toggleMarkOrStore } from "./marks.js";
+import { activeMarks, canApplyMarks, createMarksRef, textSelectionBlockIds, toggleMarkOrStore } from "./marks.js";
 import { getCaretRect, getSelectionRect } from "./selection.js";
 import { createSuggestionController } from "./suggestion.js";
 import type { SuggestionConfig, SuggestionHandle } from "./suggestion.js";
@@ -108,7 +108,12 @@ export interface Editor {
    * renderer's own per-keystroke `updateProps` (caption/alt/embed-title) is
    * the intended use (see react's VoidPortal). */
   update(build: (tx: Transaction) => Transaction, opts?: { mergeable?: boolean }): TransactionResult;
-  on(event: "change" | "selection", listener: (state: EditorState, meta?: { remote: boolean }) => void): () => void;
+  /** `"change"`/`"selection"` fire after every commit. `"marks"` fires when
+   * the pending stored marks (`commands.toggleMark`/Mod+B with a collapsed
+   * caret) change WITHOUT a commit -- they live outside EditorState, so a
+   * UI showing `getActiveMarks()` (a pressed Bold button) subscribes to it
+   * to stay in sync. */
+  on(event: "change" | "selection" | "marks", listener: (state: EditorState, meta?: { remote: boolean }) => void): () => void;
   /** Fires whenever a block's getUploadState(blockId) would return something
    * new (start/success/failure) -- upload status is transient view-layer
    * state, not part of EditorState, so it never flows through `on("change")`.
@@ -158,6 +163,10 @@ export interface Editor {
   registerSuggestion(config: SuggestionConfig): SuggestionHandle;
   use(plugin: EditorPlugin): () => void;
   getActiveMarks(): Mark[];
+  /** False when a mark command has nothing to format: no selection, a block selection, or a selection
+   * only inside blocks that hold no marks (a codeBlock). True for a cells rectangle (every selected
+   * cell is formatted). Toolbars disable their Bold/Italic/... buttons with it. */
+  canApplyMarks(): boolean;
   /** Type + effective props of the block(s) touched by the current selection,
    * or null when there's no selection or the touched blocks don't all agree
    * (mixed types, or the same type with different prop values) -- for a
@@ -194,6 +203,12 @@ export interface Editor {
   retryUpload(blockId: string): void;
   /** Shared file-input/paste/drop insertion path. Returns inserted block IDs. */
   insertFiles(files: File[]): string[];
+  /** Stages `file` as the pending upload of an image/file block that is already in the doc, for
+   * example one that fromHTML returned with an empty src and a `pendingUploads` entry (a data:
+   * image) after the host loaded that doc with setDoc. The block previews the file at once and
+   * uploads like insertFiles: now ("immediate") or on uploadPending() ("deferred"). Returns false
+   * when the block does not exist or there is no upload path (no onUpload, not deferred). */
+  attachUpload(blockId: string, file: File): boolean;
   getUploadPreview(blockId: string): string | undefined;
   getPendingUploads(): PendingUploadInfo[];
   /** Flush queued/error/in-flight uploads. Save the latest document only when failed is empty. */
@@ -340,7 +355,25 @@ export function createEditor(options: CreateEditorOptions): Editor {
     return result;
   }
 
-  const marksRef = createMarksRef();
+  // true only while applyRemote's own view.setState runs, so `on("change")`
+  // listeners can distinguish a remote commit from a local one.
+  let applyingRemote = false;
+
+  // Stored marks (a collapsed-caret Bold) are tied to the caret they were
+  // set at: `storedAt` remembers that selection, and the onCommit hook
+  // registered right after createView discards them once a commit moves the
+  // caret elsewhere (ProseMirror semantics -- a pending Bold must not leak to
+  // wherever the user clicks next). Every change outside a commit is
+  // announced on `on("marks")` so a toolbar can show it.
+  let storedAt: Selection | null = null;
+  let inCommit = false;
+  const marksListeners = new Set<(state: EditorState) => void>();
+  const marksRef = createMarksRef(() => {
+    const current = view.getState();
+    storedAt = current.selection;
+    if (inCommit) return; // the commit's own emit already notifies every listener
+    for (const listener of marksListeners) listener(current);
+  });
 
   const commands: Editor["commands"] = {
     undo() {
@@ -363,7 +396,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     toggleMark(markType, attrs) {
       // Collapsed selection: no range to flip yet -- records a stored mark
       // instead, applied to the next actually-typed text.
-      toggleMarkOrStore(view.getState(), marksRef, commitAndSync, markType, attrs);
+      toggleMarkOrStore(view.getState(), marksRef, commitAndSync, markType, attrs, registry);
     },
     setBlockType(blockType, props) {
       const ids = currentBlockIds();
@@ -571,7 +604,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
   function getActiveMarksCached(): Mark[] {
     const state = view.getState();
     if (marksCache && marksCache.state === state && marksCache.stored === marksRef.stored) return marksCache.value;
-    const value = activeMarks(state, marksRef);
+    const value = activeMarks(state, marksRef, registry);
     const key = JSON.stringify(value);
     if (!marksCache || marksCache.key !== key) marksCache = { key, value, state, stored: marksRef.stored };
     else {
@@ -594,7 +627,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
   const keymaps: KeymapEntry[] = [{ keymap: buildDefaultKeymap(), priority: DEFAULT_KEYMAP_PRIORITY }];
   const inputRules: InputRuleEntry[] = [];
   const onLinkRequest = options.onLinkRequest ?? (async (currentHref) => (typeof window === "undefined" ? null : window.prompt("Link URL", currentHref ?? "")));
-  const suggestions = createSuggestionController({ getState: () => view.getState(), dispatch: commitAndSync, getCaretRect });
+  const suggestions = createSuggestionController({ getState: () => view.getState(), dispatch: commitAndSync, getCaretRect, registry, root: element });
   const extensions: Extensions = { keymaps, inputRules, suggestions, marksRef, onLinkRequest, mergeIntent };
 
   function registerKeymap(keymap: Keymap, opts?: { priority?: number }): () => void {
@@ -649,12 +682,25 @@ export function createEditor(options: CreateEditorOptions): Editor {
   // hooking here (rather than duplicating that at each call site) covers
   // "after commits that change a codeBlock" and "on mount" (setHighlighter's
   // own initial full scan) both, with a single subscription.
+  view.onCommit((info) => {
+    if (marksRef.stored === null) return;
+    if (applyingRemote) {
+      // a collaborator's edit only shifts our caret -- keep the pending marks
+      storedAt = info.state.selection;
+      return;
+    }
+    if (JSON.stringify(info.state.selection) === JSON.stringify(storedAt)) return;
+    inCommit = true;
+    try {
+      marksRef.stored = null;
+    } finally {
+      inCommit = false;
+    }
+  });
+
   const highlightController = createHighlightController({ root: element, registry, getState: () => view.getState(), isComposing: view.isComposing });
   view.onCommit((info) => highlightController.onCommit(info.changedIds));
 
-  // true only while applyRemote's own view.setState runs, so `on("change")`
-  // listeners can distinguish a remote commit from a local one.
-  let applyingRemote = false;
 
   return {
     getRoot: () => element,
@@ -707,7 +753,13 @@ export function createEditor(options: CreateEditorOptions): Editor {
       // "change" and "selection" both fire off the same onCommit stream today
       // (every commit updates both store and selection together) -- kept as
       // two event names because callers reason about them separately.
-      void event;
+      if (event === "marks") {
+        const wrapped = (state: EditorState) => listener(state, { remote: false });
+        marksListeners.add(wrapped);
+        return () => {
+          marksListeners.delete(wrapped);
+        };
+      }
       return view.onCommit((info) => listener(info.state, { remote: applyingRemote }));
     },
     onUpload: (listener) => view.onUpload(listener),
@@ -717,6 +769,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     registerSuggestion: (config) => suggestions.register(config),
     use,
     getActiveMarks: getActiveMarksCached,
+    canApplyMarks: () => canApplyMarks(view.getState(), registry),
     getBlockType: getBlockTypeCached,
     getCaretRect,
     getSelectionRect,
@@ -747,6 +800,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     getUploadState: (blockId) => view.getUploadState(blockId),
     retryUpload: (blockId) => view.retryUpload(blockId),
     insertFiles: (files) => view.insertFiles(files),
+    attachUpload: (blockId, file) => view.attachUpload(blockId, file),
     getUploadPreview: (id) => view.getUploadPreview(id),
     getPendingUploads: () => view.getPendingUploads(),
     uploadPending: () => view.uploadPending(),
@@ -758,6 +812,7 @@ export function createEditor(options: CreateEditorOptions): Editor {
     },
     destroy() {
       highlightController.destroy();
+      suggestions.destroy();
       view.destroy();
     },
   };

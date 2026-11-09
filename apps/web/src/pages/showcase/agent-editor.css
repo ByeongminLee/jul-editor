@@ -50,7 +50,9 @@ html[data-theme="light"] .showcase-agent {
 .showcase-agent .editor-content [data-type=bulletListItem], .showcase-agent .editor-content [data-type=orderedListItem], .showcase-agent .editor-content [data-type=todoListItem] { padding-left: 1.6em; margin: .2em 0; }
 .showcase-agent .editor-content [data-type=bulletListItem]::before { content: "•"; position: absolute; left: .45em; color: var(--ag-accent); }
 .showcase-agent .editor-content [data-type=orderedListItem]::before { content: attr(data-jul-editor-index) "."; position: absolute; left: 0; color: var(--ag-accent); font-variant-numeric: tabular-nums; }
-.showcase-agent .editor-content [data-type=todoListItem]::before { content: "\2610"; position: absolute; left: .1em; color: var(--ag-accent); }
+.showcase-agent .editor-content [data-type=todoListItem]::before { content: "\2610"; position: absolute; left: .1em; color: var(--ag-accent); cursor: pointer; }
+.showcase-agent .editor-content [data-type=todoListItem][data-jul-editor-checked="true"]::before { content: "\2611"; }
+.showcase-agent .editor-content [data-type=todoListItem][data-jul-editor-checked="true"] > [data-jul-editor-content] { color: var(--ag-muted); text-decoration: line-through; }
 .showcase-agent .editor-content [data-jul-editor-children] { margin-left: 1.5em; }
 .showcase-agent .editor-content [data-type=quote] { margin: 1em 0; padding-left: 1em; border-left: 3px solid var(--ag-accent); color: var(--ag-muted); }
 .showcase-agent .editor-content [data-type=callout] { margin: 1em 0; }
@@ -123,6 +125,25 @@ html[data-theme="light"] .showcase-agent {
 /* review views (SuggestionView / DiffCompare) take the canvas */
 .agent-review { width: min(100%, 780px); margin: 0 auto; padding: 24px; background: var(--ag-paper); border: 1px solid var(--ag-line); border-radius: 6px; box-shadow: var(--ag-shadow); }
 .agent-review-foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+/* the review document reads like the paper: headings, lists, callout and table keep their shape */
+.agent-review [data-jul-editor-diff-inline] { background: transparent; font: 15px/1.65 "DM Sans", "Noto Sans KR", ui-sans-serif, system-ui, sans-serif; }
+.agent-review [data-jul-editor-diff-block][data-type=heading] { margin-top: 1em; font-weight: 700; letter-spacing: -.02em; line-height: 1.3; }
+.agent-review [data-jul-editor-diff-block][data-type=heading]:first-child { margin-top: 0; }
+.agent-review [data-jul-editor-diff-block][data-type=heading][data-jul-editor-level="1"] { font-size: 1.8em; }
+.agent-review [data-jul-editor-diff-block][data-type=heading][data-jul-editor-level="2"] { font-size: 1.3em; }
+.agent-review [data-jul-editor-diff-block][data-type=heading][data-jul-editor-level="3"] { font-size: 1.1em; }
+.agent-review [data-jul-editor-diff-block]:is([data-type=bulletListItem], [data-type=orderedListItem], [data-type=todoListItem]) { padding-left: 1.6em; }
+.agent-review [data-jul-editor-diff-block][data-type=bulletListItem]::before { content: "•"; position: absolute; left: .7em; color: var(--ag-accent); }
+.agent-review [data-jul-editor-diff-block][data-type=todoListItem]::before { content: "\2610"; position: absolute; left: .5em; color: var(--ag-accent); }
+.agent-review [data-jul-editor-diff-block][data-type=quote] { border-left: 3px solid var(--ag-accent); color: var(--ag-muted); }
+.agent-review [data-jul-editor-diff-block][data-type=callout] { margin: 8px 0; padding: 10px 14px; border-radius: 8px; background: var(--ag-accent-soft); }
+.agent-review [data-jul-editor-diff-block][data-type=table] { padding: 0; overflow-x: auto; }
+.agent-review [data-type=table] > [data-jul-editor-diff-children] { display: table; width: 100%; margin: 0; border-collapse: collapse; }
+.agent-review [data-type=tableRow] { display: table-row; }
+.agent-review [data-type=tableRow] > [data-jul-editor-diff-children] { display: contents; }
+.agent-review [data-jul-editor-diff-block][data-type=tableCell] { display: table-cell; margin: 0; padding: 6px 10px; border: 1px solid var(--ag-line); border-radius: 0; font-size: 14px; }
+.agent-review [data-type=tableRow]:first-child [data-type=tableCell] { font-weight: 600; background: var(--ag-hover); }
+.agent-review [data-jul-editor-diff-block][data-type=chart] { margin: 12px 0; }
 
 @media (max-width: 900px) {
   .agent-body { grid-template-columns: 1fr; }

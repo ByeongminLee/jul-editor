@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { useLinkContext } from "./link-context.js";
 import { cardFromProps, resolveCard, type CardState } from "./metadata.js";
 import type { PluginViewProps } from "../view-props.js";
+import { UrlInput } from "./url-input.js";
 
 export interface BookmarkClassNames {
   container?: string;
@@ -24,7 +25,7 @@ export interface BookmarkViewProps extends PluginViewProps {
   className?: string | BookmarkClassNames;
 }
 
-export function BookmarkView({ block, updateProps, readOnly, locale = "en", className }: BookmarkViewProps): ReactNode {
+export function BookmarkView({ block, editor, updateProps, readOnly, selected, locale = "en", className }: BookmarkViewProps): ReactNode {
   const classes = typeof className === "string" ? { container: className } : className ?? {};
   const { fetchMetadata } = useLinkContext();
   const stored = useMemo(() => cardFromProps(block.props), [block.props]);
@@ -54,6 +55,8 @@ export function BookmarkView({ block, updateProps, readOnly, locale = "en", clas
 
   const { card, status } = state;
   const ko = locale === "ko";
+  // Empty card (a slash insert): ask for the url right here instead of a dead-end placeholder.
+  if (!card.url && updateProps && !readOnly) return <UrlInput kind="bookmark" selected={selected} editor={editor} locale={locale} className={classes.container} onSubmit={(url) => updateProps({ url })} />;
   if (!card.url) return <div className={classes.container} data-jul-editor-plugin="bookmark" data-state="empty">{ko ? "URL이 없습니다" : "No URL"}</div>;
   return (
     <a className={classes.container} href={card.url} target="_blank" rel="noopener noreferrer" data-jul-editor-plugin="bookmark" data-state={status} data-provider={card.provider} data-kind={card.kind} aria-busy={status === "loading"}>

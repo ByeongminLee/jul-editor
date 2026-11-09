@@ -6,7 +6,7 @@
 // :where() selectors, so any host rule overrides them without !important.
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { Json } from "@jul-editor/core";
-import { parseCSV, parseJSON, type ColumnType, type DataSource, type RangeSpec } from "../data";
+import { parseCSV, parseJSON, type CellValue, type ColumnType, type DataSource, type RangeSpec, type Table } from "../data";
 import type { ChartKind } from "./recharts-chart.js";
 import { DEFAULT_COLORS, DEFAULT_PALETTE_HEX, PALETTE_PRESETS, PALETTE_SIZE, type ColorBy } from "./palette.js";
 
@@ -95,6 +95,37 @@ function previewOf(source: DataSource, columns: string[], columnTypes: ColumnTyp
   return { error: null, columns, types: columnTypes ?? columns.map(() => "string" as ColumnType), rows: null };
 }
 
+/** Parses inline text, or null when it is blank or invalid (nothing to convert). */
+function tableOf(text: string | undefined, json: boolean): Table | null {
+  if (!text || text.trim() === "") return null;
+  try {
+    const table = json ? parseJSON(text) : parseCSV(text);
+    return table.columns.length ? table : null;
+  } catch {
+    return null;
+  }
+}
+
+function cellText(value: CellValue): string {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value);
+}
+
+function tableToJSON(table: Table): string {
+  return JSON.stringify(table.rows.map((row) => Object.fromEntries(table.columns.map((column, i) => {
+    const value = row[i] ?? "";
+    return [column, value instanceof Date ? cellText(value) : value];
+  }))), null, 2);
+}
+
+function csvField(value: string): string {
+  return /[",\n\r]/.test(value) || value !== value.trim() ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function tableToCSV(table: Table): string {
+  return [table.columns, ...table.rows.map((row) => table.columns.map((_, i) => cellText(row[i] ?? "")))]
+    .map((row) => row.map(csvField).join(",")).join("\n");
+}
+
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 /** Best-effort hex for a palette entry: a literal hex, else the host's `--chart-N` value, else the built-in default. */
@@ -140,6 +171,26 @@ function ColorSwatch({ index, color, label, onCommit, "data-testid": testId }: {
     onBlur={(e) => { if (draft !== null) commit(e.target.value); }} />;
 }
 
+/**
+ * The Data source select. It remembers the last source of each type it has seen, so switching to
+ * URL / Host view and back restores the previous inline data (or URL) instead of an empty one.
+ */
+function SourceSelect({ source, "aria-label": label, inlineLabel, viewLabel, onSelect }: { source: DataSource; "aria-label": string; inlineLabel: string; viewLabel: string; onSelect: (next: DataSource) => void }): ReactNode {
+  const lastSources = useRef<Partial<Record<DataSource["type"], DataSource>>>({});
+  lastSources.current[source.type] = source;
+  return (
+    <select aria-label={label} className="jul-editor-chart-editor__select" data-testid="jul-editor-chart-source" value={source.type} onChange={(e: ChangeEvent<HTMLSelectElement>) => {
+      const type = e.target.value as DataSource["type"];
+      if (type === source.type) return;
+      onSelect(lastSources.current[type] ?? (type === "url" ? { type: "url", format: "csv", url: "" } : type === "view" ? { type: "view", viewId: "" } : { type: "inline", csv: "" }));
+    }}>
+      <option value="inline">{inlineLabel}</option>
+      <option value="url">URL</option>
+      <option value="view">{viewLabel}</option>
+    </select>
+  );
+}
+
 export function ChartEditor({ kind, source, range, x, y, ys, columns, yColumns, columnTypes, palette, colorBy, updateProps, locale = "en" }: ChartEditorProps): ReactNode {
   const t = (en: string, ko: string) => locale === "ko" ? ko : en;
   const kindsEn = { bar: "Bar", line: "Line", area: "Area", pie: "Pie", radar: "Radar", radial: "Radial" };
@@ -152,10 +203,15 @@ export function ChartEditor({ kind, source, range, x, y, ys, columns, yColumns, 
   const typeNames: Record<ColumnType, string> = { number: t("number", "숫자"), date: t("date", "날짜"), string: t("text", "텍스트") };
 
   const switchFormat = (next: "csv" | "json") => {
+    if (next === format) return;
     if (source.type === "url") updateProps({ source: { ...source, format: next } });
-    else if (source.type === "inline") updateProps({ source: next === "json"
-      ? { type: "inline", format: "json", json: source.json ?? "[]", ...(source.csv !== undefined ? { csv: source.csv } : {}) }
-      : { type: "inline", csv: source.csv ?? "", ...(source.json !== undefined ? { json: source.json } : {}) } });
+    else if (source.type === "inline") {
+      // Convert the rows currently shown; fall back to the other format's stored text when there is nothing to convert.
+      const current = tableOf(format === "json" ? source.json : source.csv, format === "json");
+      updateProps({ source: next === "json"
+        ? { type: "inline", format: "json", json: current ? tableToJSON(current) : source.json ?? "[]", ...(source.csv !== undefined ? { csv: source.csv } : {}) }
+        : { type: "inline", csv: current ? tableToCSV(current) : source.csv ?? "", ...(source.json !== undefined ? { json: source.json } : {}) } });
+    }
   };
   const loadSample = () => {
     if (source.type !== "inline") return;
@@ -213,14 +269,8 @@ export function ChartEditor({ kind, source, range, x, y, ys, columns, yColumns, 
       <div data-chart-editor-section="data" className="jul-editor-chart-editor__section">
         <span className="jul-editor-chart-editor__heading">{t("Data", "데이터")}</span>
         <div className="jul-editor-chart-editor__row">
-          <select aria-label={t("Data source", "데이터 소스")} className="jul-editor-chart-editor__select" data-testid="jul-editor-chart-source" value={source.type} onChange={(e: ChangeEvent<HTMLSelectElement>) => {
-            const type = e.target.value;
-            updateProps({ source: type === "url" ? { type: "url", format: "csv", url: "" } : type === "view" ? { type: "view", viewId: "" } : { type: "inline", csv: "" } });
-          }}>
-            <option value="inline">{t("Inline", "직접 입력")}</option>
-            <option value="url">URL</option>
-            <option value="view">{t("Host view", "호스트 뷰")}</option>
-          </select>
+          <SourceSelect source={source} aria-label={t("Data source", "데이터 소스")} inlineLabel={t("Inline", "직접 입력")} viewLabel={t("Host view", "호스트 뷰")}
+            onSelect={(next) => updateProps({ source: next })} />
           {format && (
             <div role="tablist" aria-label={t("Data format", "데이터 형식")} data-testid="jul-editor-chart-format" className="jul-editor-chart-editor__formats">
               {(["csv", "json"] as const).map((f) => (

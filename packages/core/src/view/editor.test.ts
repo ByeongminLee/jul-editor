@@ -514,4 +514,94 @@ describe("drag handle core API", () => {
 
     editor.destroy();
   });
+
+  describe("stored marks (collapsed-caret toggleMark)", () => {
+    const caret = (blockId: string, offset: number) => ({ type: "text" as const, anchor: { blockId, offset }, focus: { blockId, offset } });
+
+    it("on('marks') fires and getActiveMarks reflects the pending mark", () => {
+      const element = document.createElement("div");
+      document.body.appendChild(element);
+      const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+      const seen: string[][] = [];
+      const off = editor.on("marks", () => seen.push(editor.getActiveMarks().map((m) => m.type)));
+      editor.commands.toggleMark("bold");
+      expect(editor.getActiveMarks().map((m) => m.type)).toEqual(["bold"]);
+      expect(seen).toEqual([["bold"]]);
+      editor.commands.toggleMark("bold");
+      expect(editor.getActiveMarks()).toEqual([]);
+      expect(seen).toEqual([["bold"], []]);
+      off();
+      editor.destroy();
+    });
+
+    it("are discarded when the caret moves (no leak into another block or offset)", () => {
+      const element = document.createElement("div");
+      document.body.appendChild(element);
+      const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+      editor.commands.toggleMark("bold");
+      editor.update((tx) => tx.setSelection(caret("p2", 2)));
+      expect(editor.getActiveMarks()).toEqual([]);
+      element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "W", bubbles: true, cancelable: true }));
+      expect(editor.getDoc().blocks[1]?.content).toEqual([{ type: "text", text: "woWrld" }]);
+
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+      editor.commands.toggleMark("bold");
+      editor.update((tx) => tx.setSelection(caret("p1", 3)));
+      expect(editor.getActiveMarks()).toEqual([]);
+      editor.destroy();
+    });
+
+    it("survive a commit that keeps the caret in place and apply to the next typed text", () => {
+      const element = document.createElement("div");
+      document.body.appendChild(element);
+      const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+      editor.update((tx) => tx.setSelection(caret("p1", 5)));
+      editor.commands.toggleMark("bold");
+      editor.commands.setBlockType("heading", { level: 1 });
+      expect(editor.getActiveMarks().map((m) => m.type)).toEqual(["bold"]);
+      element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "Q", bubbles: true, cancelable: true }));
+      expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "hello" }, { type: "text", text: "Q", marks: [{ type: "bold" }] }]);
+      editor.destroy();
+    });
+  });
+});
+
+describe("canApplyMarks / toggleMark across selection kinds", () => {
+  function setup() {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const cell = (id: string, text: string) => ({ id, type: "tableCell", props: {}, content: [{ type: "text" as const, text }] });
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "hello" }] },
+      { id: "code", type: "codeBlock", props: { language: "js" }, content: [{ type: "text", text: "const accent = 1;" }] },
+      { id: "t1", type: "table", props: {}, children: [
+        { id: "r1", type: "tableRow", props: {}, children: [cell("a", "Docs"), cell("b", "120")] },
+        { id: "r2", type: "tableRow", props: {}, children: [cell("c", "API"), cell("d", "880")] },
+      ] },
+    ] } });
+    return editor;
+  }
+
+  it("is false inside a code block, and Bold there changes nothing", () => {
+    const editor = setup();
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "code", offset: 6 }, focus: { blockId: "code", offset: 12 } }));
+    expect(editor.canApplyMarks()).toBe(false);
+    const before = JSON.stringify(editor.getDoc());
+    editor.commands.toggleMark("bold");
+    expect(JSON.stringify(editor.getDoc())).toBe(before);
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 5 } }));
+    expect(editor.canApplyMarks()).toBe(true);
+  });
+
+  it("a cells rectangle formats every selected cell and reports the common marks", () => {
+    const editor = setup();
+    editor.update((tx) => tx.setSelection({ type: "cells", tableId: "t1", anchor: [0, 0], focus: [1, 1] }));
+    expect(editor.canApplyMarks()).toBe(true);
+    editor.commands.toggleMark("bold");
+    const rows = editor.getDoc().blocks[2]!.children!;
+    for (const row of rows) for (const c of row.children!) expect(c.content).toEqual([{ type: "text", text: expect.any(String), marks: [{ type: "bold" }] }]);
+    expect(editor.getActiveMarks().map((m) => m.type)).toEqual(["bold"]);
+  });
 });

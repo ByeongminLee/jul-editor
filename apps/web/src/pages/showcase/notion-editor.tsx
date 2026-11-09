@@ -23,10 +23,15 @@ import type { CollabUser } from "@jul-editor/plugins/collaboration";
 import { Copy, GripVertical, MessageSquare, Moon, Plus, Redo2, Sun, Trash2, Undo2, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NOTION_DOC_ID, notionSampleDoc } from "./notion-editor-sample.js";
+import type { Doc } from "@jul-editor/core";
+import { useBubblePlacement } from "../../components/workspace/bubble-placement.js";
 import "./notion-editor.css";
 
 export interface NotionEditorProps {
   locale?: "en" | "ko";
+  /** Documents kept by the host page, so edits survive unmounting (e.g. switching showcase cases). */
+  drafts?: Partial<Record<"en" | "ko", Doc>>;
+  onDraftChange?: (locale: "en" | "ko", doc: Doc) => void;
 }
 
 type Locale = "en" | "ko";
@@ -61,8 +66,9 @@ const codeBlockRenderer = createCodeBlockRenderer({ languages: pluginCodeLanguag
 /** Click-to-load wrapper: the embed stays a placeholder (no iframe, no request) until the user opts in. */
 function LazyIframeView(props: IframeViewProps) {
   const [loaded, setLoaded] = useState(false);
-  if (loaded) return <IframeView {...props} />;
   const url = typeof props.block.props.url === "string" ? props.block.props.url : "";
+  // no url yet (a slash insert): IframeView shows its URL field, there is nothing to load
+  if (loaded || !url) return <IframeView {...props} />;
   const ko = props.locale === "ko";
   let host = url;
   try { host = new URL(url).hostname; } catch { /* keep raw url */ }
@@ -198,8 +204,9 @@ function ColorMenu({ copy }: { copy: Strings }) {
   </span>;
 }
 
-function BubbleTools({ copy, onComment }: { copy: Strings; onComment: () => void }) {
-  return <Editor.BubbleMenu>{({ rect }) => <div className="nt-bubble" data-jul-editor-keep-selection="" style={{ left: Math.max(8, Math.min(rect.left, window.innerWidth - 330)), top: Math.max(8, rect.top - 46) }}>
+function BubbleBar({ rect, copy, onComment }: { rect: DOMRect; copy: Strings; onComment: () => void }) {
+  const { ref, style } = useBubblePlacement(rect, { width: 330, height: 40 });
+  return <div ref={ref} className="nt-bubble" data-jul-editor-keep-selection="" style={style}>
     <Editor.Bold className="nt-tool" aria-label={copy.bold} title={copy.bold}><b>B</b></Editor.Bold>
     <Editor.Italic className="nt-tool" aria-label={copy.italic} title={copy.italic}><i>I</i></Editor.Italic>
     <Editor.Underline className="nt-tool" aria-label={copy.underline} title={copy.underline}><u>U</u></Editor.Underline>
@@ -208,7 +215,11 @@ function BubbleTools({ copy, onComment }: { copy: Strings; onComment: () => void
     <ColorMenu copy={copy} />
     <span className="nt-bubble-sep" />
     <AddCommentButton className="nt-tool nt-tool-wide" onOpen={onComment}><MessageSquare size={14} /> {copy.addComment}</AddCommentButton>
-  </div>}</Editor.BubbleMenu>;
+  </div>;
+}
+
+function BubbleTools({ copy, onComment }: { copy: Strings; onComment: () => void }) {
+  return <Editor.BubbleMenu>{({ rect }) => <BubbleBar rect={rect} copy={copy} onComment={onComment} />}</Editor.BubbleMenu>;
 }
 
 // ---- paste menu (Link / Bookmark / Embed / Mention) ---------------------------------------------------------
@@ -315,7 +326,7 @@ function readSiteTheme(): Theme {
   try { return document.documentElement.dataset.theme === "light" ? "light" : "dark"; } catch { return "dark"; }
 }
 
-export function NotionEditor({ locale = "en" }: NotionEditorProps) {
+export function NotionEditor({ locale = "en", drafts, onDraftChange }: NotionEditorProps) {
   const [theme, setTheme] = useState<Theme>(readSiteTheme);
   const [user] = useState<CollabUser>(randomUser);
   const copy = COPY[locale];
@@ -332,12 +343,13 @@ export function NotionEditor({ locale = "en" }: NotionEditorProps) {
   }, []);
   const author = useMemo(() => ({ id: user.id, name: user.name, color: user.color }), [user]);
   const linkContext = useMemo(() => ({ fetchMetadata, iframePolicy: IFRAME_POLICY }), []);
-  const initial = useMemo(() => notionSampleDoc(locale), [locale]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initial = useMemo(() => drafts?.[locale] ?? notionSampleDoc(locale), [locale]);
 
   return <div className="showcase-notion" data-nt-theme={theme}>
     <style>{PLUGIN_CSS}</style>
     <LinkContextProvider value={linkContext}>
-      <Editor key={locale} defaultValue={initial} locale={locale} renderers={RENDERERS} placeholder={copy.placeholder} className="editor-instance nt-shell">
+      <Editor key={locale} defaultValue={initial} onChange={(doc) => onDraftChange?.(locale, doc)} locale={locale} renderers={RENDERERS} placeholder={copy.placeholder} className="editor-instance nt-shell">
         <Editor.Plugin {...calloutPlugin} />
         <Editor.Plugin {...togglePlugin} />
         <Editor.Plugin {...tocPlugin} />

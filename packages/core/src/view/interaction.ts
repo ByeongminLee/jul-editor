@@ -6,11 +6,11 @@ import { isText } from "../model/canonical.js";
 import { newId } from "../model/id.js";
 import type { Registry } from "../model/schema.js";
 import type { Block, Doc } from "../model/types.js";
-import { comparePreOrder, contentLength, extractFragment, nextBlockInPreOrder, prevBlockInPreOrder, siblingsOf, spannedTopBlocks } from "../store/store.js";
+import { canAdmit, containerInfo, contentLength, orderPoints, extractFragment, nextBlockInPreOrder, prevBlockInPreOrder, siblingsOf, spannedTopBlocks } from "../store/store.js";
 import { cellIdAt } from "../store/table.js";
 import type { Transaction, TransactionResult } from "../store/transaction.js";
 import type { EditorState, Point, Selection, Store } from "../store/types.js";
-import { closestBlockId, DECORATION_ATTR, isInsideVoid, isInsideVoidEvent } from "./dom.js";
+import { BLOCK_ATTR, closestBlockId, CONTENT_ATTR, DECORATION_ATTR, ID_ATTR, isInsideVoid, isInsideVoidEvent } from "./dom.js";
 import { syncBlockFromDOM } from "./ime.js";
 import type { ComposeRef } from "./ime.js";
 import { buildDefaultInputRules, clearCodeBlockLangGrab, currentBlockInputRules, runInputRules } from "./input-rules.js";
@@ -178,6 +178,8 @@ export interface Interaction {
    * when there's nothing pending (compose.id is null, or composition is
    * still genuinely active -- can't force-end a live IME session). */
   flush(): void;
+  /** True while a primary-button drag that started on this view's text is still held. */
+  isPointerSelecting(): boolean;
   destroy(): void;
 }
 
@@ -191,6 +193,16 @@ interface RegisteredView {
   getState: () => EditorState;
   runDispatch: (build: (tx: Transaction) => Transaction) => TransactionResult;
   suppressed: boolean;
+  /** A primary-button press that started on this view's text is still held: the browser is
+   * extending a drag selection, so the live DOM selection is authoritative even over a 'block'
+   * selection (a drag over a void turns into one, and dragging back must turn it into text again). */
+  pointerSelecting: boolean;
+  /** The last input on the page was a pointer (not a key): see readDOMSelection's `pointer`. */
+  lastInputWasPointer: () => boolean;
+  /** The current press is a triple (paragraph) click: its selection may end on the next block's
+   * wrapper, a void included, which never means "select that block too". */
+  paragraphClick: boolean;
+  restoreSelection: () => void;
 }
 
 const registeredViews = new Set<RegisteredView>();
@@ -219,11 +231,23 @@ function onDocumentSelectionChange(): void {
     // finding it differs from the current (intentionally DOM-less) selection
     // is expected, not a signal of an external change -- ignore it entirely
     // rather than racing a timing-based suppression flag.
-    if (cur && cur.type !== "text") continue;
-    const raw = readDOMSelection(v.root);
-    if (!raw) continue; // outside a mapped content div (e.g. inside a void) -- leave model selection as-is
+    // A drag still in progress is not such a stale event: the browser is extending it right now.
+    if (cur && cur.type !== "text" && !v.pointerSelecting) continue;
+    const raw = readDOMSelection(v.root, { store: v.paragraphClick ? undefined : v.getState().store, registry: v.registry, pointer: v.lastInputWasPointer() });
+    if (!raw) continue;
+    // A drag that reaches a void becomes a 'block' selection only on release: selecting the void now
+    // would reveal its edit controls mid-drag and shift the layout under the pointer.
+    if (raw.type === "block" && v.pointerSelecting) continue; // outside a mapped content div (e.g. inside a void) -- leave model selection as-is
     const promoted = promoteSelection(v.getState().store, v.registry, raw);
-    if (sameSelection(cur, promoted)) continue;
+    // Same for a text range promoted to blocks mid-drag (it left a table cell for the text around it).
+    if (promoted.type === "block" && v.pointerSelecting) continue;
+    if (sameSelection(cur, promoted)) {
+      // The DOM may still show more than the model (a triple click's end on the next block, which the
+      // pointer read clamped): rewrite it so the highlight and the next native edit match. A no-op
+      // when the DOM already maps to the model.
+      if (promoted.type === "text") v.restoreSelection();
+      continue;
+    }
     v.runDispatch((tx) => tx.setSelection(promoted));
   }
 }
@@ -271,23 +295,29 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   }
 
   /** a block-selection command (delete/type-replace/Enter) must never
-   * act directly on an id that's isolating or pinned to a specific container
-   * (tableRow/tableCell -- the registry `parent` rule) -- Escape's own
-   * spannedTopBlocks (onEscape) can otherwise hand one straight through,
-   * letting Backspace/typing/Enter tear a single cell out of its row or drop
-   * a paragraph where only a tableRow may live. Lifts `id` to the nearest
-   * ancestor that is BOTH non-isolating and un-parent-restricted; null means
-   * the whole chain up to the root is isolating/parent-restricted (e.g. the
-   * caret sat inside a root-level table, which is itself isolating), so the
-   * caller refuses the whole command as a no-op rather than guess at
-   * destroying part of a fixed-shape structure. */
-  function admissibleUnit(store: Store, id: string): string | null {
+   * act directly on an id that's pinned to a specific container (tableRow/
+   * tableCell/column -- the registry `parent` rule) -- Escape's own
+   * spannedTopBlocks (onEscape) or a drag across two columns can otherwise
+   * hand one straight through, letting Backspace/typing/Enter tear a single
+   * cell out of its row or drop a paragraph where only a tableRow may live.
+   * Lifts `id` to the nearest ancestor with no `parent` restriction.
+   *
+   * An isolating block that is NOT parent-restricted (a table, a columns
+   * block) is a whole, self-contained unit: when it is itself one of the
+   * selected ids (Select All, a drag from a table cell into the next block)
+   * it is admissible as-is and the command replaces the whole structure.
+   * Reaching one only by LIFTING is admissible only when `allowLiftIntoIsolating`
+   * (the selection spans several of its restricted children, e.g. a drag
+   * across two columns selects the columns block); a single lifted id (Escape
+   * with the caret inside one cell) returns null so the caller refuses the
+   * command rather than destroy the whole table from inside one cell. */
+  function admissibleUnit(store: Store, id: string, allowLiftIntoIsolating: boolean): string | null {
     let cur: string | null = id;
     while (cur !== null) {
       const rec = store.records.get(cur);
       if (!rec) return null;
       const spec = registry.blocks.get(rec.type);
-      if (!spec?.parent && !spec?.isolating) return cur;
+      if (!spec?.parent) return cur !== id && spec?.isolating && !allowLiftIntoIsolating ? null : cur;
       cur = rec.parentId;
     }
     return null;
@@ -298,7 +328,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   function admissibleUnits(store: Store, ids: string[]): string[] | null {
     const out: string[] = [];
     for (const id of ids) {
-      const lifted = admissibleUnit(store, id);
+      const lifted = admissibleUnit(store, id, ids.length > 1);
       if (lifted === null) return null;
       if (!out.includes(lifted)) out.push(lifted);
     }
@@ -331,12 +361,22 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   }
 
   function currentSelection(e?: InputEvent): Selection | null {
-    const raw = (e && targetRangesSelection(e)) ?? readDOMSelection(root);
+    const target = e ? targetRangesSelection(e) : null;
+    const dom = readDOMSelection(root);
+    // A COLLAPSED target range is just "where the caret is", and the live
+    // DOM selection is authoritative for that. Chromium can hand back a
+    // stale/canonicalized one right after we moved the caret ourselves: a
+    // key typed with no delay after Enter reported offset 0 of the block
+    // AFTER the new empty paragraph (whose only child is a <br>) while the
+    // DOM caret sat correctly inside it, so the text landed in the wrong
+    // block. A non-collapsed target range (spellcheck/autocorrect replacing
+    // a word, a deletion's own extent) stays the source of truth.
+    const raw = target?.type === "text" && dom?.type === "text" && collapsed(target) && collapsed(dom) ? dom : (target ?? dom);
     return raw ? promoteSelection(getState().store, registry, raw) : raw;
   }
 
   function preOrderStart(a: Point, b: Point): Point {
-    return comparePreOrder(getState().store, a.blockId, b.blockId) <= 0 ? a : b;
+    return orderPoints(getState().store, a, b)[0]; // offset order within one block (backward drags)
   }
 
   function onInsertText(e: InputEvent): void {
@@ -518,6 +558,21 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
         else runDispatch((tx) => tx.setType(point.blockId, "paragraph"));
         return;
       }
+      // Same rule for an empty quote line: Enter ends the quote (becomes a
+      // paragraph) instead of stacking empty quotes forever.
+      if (rec && rec.type === "quote" && contentLength(rec.content) === 0 && rec.childIds.length === 0) {
+        runDispatch((tx) => tx.setType(point.blockId, "paragraph"));
+        return;
+      }
+      // Enter on an EMPTY last child of a text container (callout, toggle,
+      // quote, list item, nested paragraph...) leaves the container: the
+      // empty line moves out to become the container's next sibling (Notion).
+      // Only where the line is admissible there and the container is a real
+      // text block -- never out of a column/table cell structure.
+      if (rec && rec.type === "paragraph" && contentLength(rec.content) === 0 && rec.childIds.length === 0 && canLeaveContainer(point.blockId)) {
+        runDispatch((tx) => tx.outdent(point.blockId));
+        return;
+      }
       // the `onEnter`-flagged subset of input rules ("---"/"***"/
       // "___" -> divider -- see inputRules.ts's dividerRule doc comment)
       // confirms on Enter instead of the ordinary per-character phase
@@ -546,10 +601,16 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     const wasCollapsed = collapsed(sel);
     const point = wasCollapsed ? sel.anchor : preOrderStart(sel.anchor, sel.focus);
     const atStart = point.offset === 0;
+    // Enter at the very END of a heading starts a plain paragraph, not
+    // another heading (Notion/Google Docs/BlockNote); a split mid-heading
+    // keeps both halves headings.
+    const splitRec = getState().store.records.get(point.blockId);
+    const len = contentLength(splitRec?.content);
+    const backType = wasCollapsed && splitRec?.type === "heading" && len > 0 && point.offset === len ? "paragraph" : undefined;
     // Enter over a non-collapsed selection is ONE undo step -- the
     // delete and the split are the same user action, so they go in the same
     // transaction instead of two separate (separately-undoable) dispatches.
-    runDispatch((tx) => (wasCollapsed ? tx : tx.deleteRange(sel)).splitBlock(point));
+    runDispatch((tx) => (wasCollapsed ? tx : tx.deleteRange(sel)).splitBlock(point, backType ? { type: backType } : undefined));
     // offset 0 keeps `point` on the same (now-second) block; offset>0 moved
     // the remainder into a freshly-generated id we can only find post-commit.
     let caret: Point = point;
@@ -559,6 +620,24 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
       if (backId) caret = { blockId: backId, offset: 0 };
     }
     runDispatch((tx) => tx.setSelection({ type: "text", anchor: caret, focus: caret }));
+  }
+
+  /** Whether the empty block `id` is the LAST child of a text container
+   * (a parent with its own inline content: callout, toggle, quote, list
+   * item, a nested paragraph) and may legally sit right after that parent
+   * -- onInsertParagraph's "Enter on an empty last line leaves the
+   * container" rule. A column/table cell parent (content: none, or a
+   * parent-restricted structure) never qualifies. */
+  function canLeaveContainer(id: string): boolean {
+    const store = getState().store;
+    const rec = store.records.get(id);
+    if (!rec || rec.parentId === null) return false;
+    const parent = store.records.get(rec.parentId);
+    if (!parent || parent.childIds[parent.childIds.length - 1] !== id) return false;
+    const parentSpec = registry.blocks.get(parent.type);
+    if (parentSpec?.content !== "inline" || parentSpec.parent) return false;
+    const grand = containerInfo(store, parent.parentId, registry);
+    return canAdmit(registry, rec.type, grand.type, grand.children);
   }
 
   // ---- block/cells selection commands --------------------------
@@ -703,7 +782,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
 
   function onCopy(e: ClipboardEvent): void {
     if (isInsideVoidEvent(e)) return;
-    const sel = getState().selection;
+    const sel = syncedSelection(); // same live-DOM reconcile as keydown/paste (a click's selectionchange may not have landed yet)
     if (!sel) return;
     const fragment = extractFragment(getState().store, sel, registry);
     if (fragment.blocks.length === 0) return;
@@ -713,7 +792,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
 
   function onCut(e: ClipboardEvent): void {
     if (isInsideVoidEvent(e)) return;
-    const sel = getState().selection;
+    const sel = syncedSelection(); // same live-DOM reconcile as keydown/paste (a click's selectionchange may not have landed yet)
     if (!sel) return;
     const fragment = extractFragment(getState().store, sel, registry);
     if (fragment.blocks.length === 0) return;
@@ -758,7 +837,12 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     // untouched into a LATER, wholly unrelated click and wrongly swallow it
     // (e.g. a real "click elsewhere to deselect" a while after the fact).
     justSelectedVoidId = null;
-    if (!isInsideVoidEvent(e)) return;
+    registered.paragraphClick = false;
+    if (toggleTodoFromMarker(e)) return;
+    if (!isInsideVoidEvent(e)) {
+      if (e.button === 0) startPointerSelection(e.detail >= 3);
+      return;
+    }
     const target = e.target;
     // isInsideVoid also matches a decoration container now (chrome next
     // to an editable block, e.g. the code language select) -- that's not a
@@ -776,6 +860,125 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     root.focus();
     justSelectedVoidId = blockId;
     runDispatch((tx) => tx.setSelection({ type: "block", ids: [blockId] }));
+  }
+
+  /** A primary press in a to-do's marker gutter -- on the block wrapper
+   * itself (where a host's CSS draws the checkbox, e.g. a `::before`), left
+   * of its content div and within the content's own line box -- toggles
+   * `checked` instead of placing a caret. A press on the text, or anywhere
+   * once the root is not editable, is left alone. */
+  function toggleTodoFromMarker(e: MouseEvent): boolean {
+    if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey || root.getAttribute("contenteditable") === "false") return false;
+    const target = e.target;
+    if (!(target instanceof Element) || !target.hasAttribute(BLOCK_ATTR) || !root.contains(target)) return false;
+    const blockId = target.getAttribute(ID_ATTR);
+    const rec = blockId ? getState().store.records.get(blockId) : undefined;
+    if (!blockId || !rec || rec.type !== "todoListItem") return false;
+    const content = target.querySelector(`:scope > [${CONTENT_ATTR}]`);
+    if (!content) return false;
+    const rect = content.getBoundingClientRect();
+    if (rect.height === 0 || e.clientX >= rect.left || e.clientY < rect.top || e.clientY > rect.bottom) return false;
+    e.preventDefault();
+    const checked = rec.props.checked === true;
+    runDispatch((tx) => tx.setProps(blockId, { checked: !checked }));
+    return true;
+  }
+
+  /** A primary press on text starts a native drag selection: while it is held the shared
+   * selectionchange listener follows the live DOM selection even over a 'block' selection (see
+   * RegisteredView.pointerSelecting). The release ends it; a drag that ended as a 'block' selection
+   * (over a void) then gets its leftover native highlight cleared by restoreSelection. */
+  function startPointerSelection(paragraph: boolean): void {
+    registered.pointerSelecting = true;
+    registered.paragraphClick = paragraph;
+    const doc = root.ownerDocument;
+    const onRelease = (e?: Event): void => {
+      // the block under the pointer, read now: selecting a void later reveals its controls and moves the layout
+      const hit = e instanceof MouseEvent ? (doc.elementFromPoint?.(e.clientX, e.clientY) ?? null) : null;
+      releaseBlockId = hit && root.contains(hit) ? closestBlockId(hit, root) : null;
+      doc.removeEventListener("mouseup", onRelease, true);
+      doc.defaultView?.removeEventListener("blur", onRelease);
+      stopPointerSelection = null;
+      if (!registered.pointerSelecting) return;
+      registered.pointerSelecting = false;
+      // Sync once the release's own selectionchange (if any) has landed. Not inside mouseup itself:
+      // a selection write there makes Chrome treat the drag as a click and collapse it. A key pressed
+      // before then (typing straight after a triple click) syncs first, in onKeyInput.
+      pendingPointerSync = paragraph;
+      setTimeout(flushPointerSync, 0);
+    };
+    stopPointerSelection?.();
+    stopPointerSelection = () => {
+      doc.removeEventListener("mouseup", onRelease, true);
+      doc.defaultView?.removeEventListener("blur", onRelease);
+      stopPointerSelection = null;
+      registered.pointerSelecting = false;
+    };
+    doc.addEventListener("mouseup", onRelease, true);
+    doc.defaultView?.addEventListener("blur", onRelease);
+  }
+  let stopPointerSelection: (() => void) | null = null;
+  let pendingPointerSync: boolean | null = null;
+  /** The block under the pointer where the last drag was released, for extendPastVoids. */
+  let releaseBlockId: string | null = null;
+  function flushPointerSync(): void {
+    if (pendingPointerSync === null) return;
+    const paragraph = pendingPointerSync;
+    pendingPointerSync = null;
+    syncPointerSelection(paragraph);
+  }
+
+  /** A drag that passes one or more void blocks (a chart, an image) spans whole blocks: the voids have
+   * no text to put in a text range, so a range over them would select (and delete) blocks that never
+   * show as selected. Chrome also often leaves the native selection stuck at or before the first void,
+   * since it will not extend a selection across a contenteditable=false island. So when a void lies
+   * between the press and the release (the block under the pointer on release, else the native
+   * focus), the result is a 'block' selection over the top-level blocks from one to the other. Null
+   * when no void stands in the way (the read selection is kept as it is). */
+  function extendPastVoids(read: Selection | null, releaseId: string | null): Selection | null {
+    const anchorNode = root.ownerDocument.getSelection()?.anchorNode ?? null;
+    const anchorId = read?.type === "text" ? read.anchor.blockId : anchorNode && root.contains(anchorNode) ? closestBlockId(anchorNode, root) : null;
+    const store = getState().store;
+    const targetId = releaseId && store.records.has(releaseId) ? releaseId : read?.type === "text" ? read.focus.blockId : null;
+    if (!anchorId || !targetId) return null;
+    const span = spannedTopBlocks(store, anchorId, targetId);
+    if (span.length < 2) return null;
+    const anchorTop = topIn(store, anchorId, span);
+    if (!anchorTop) return null;
+    const blocked = span.some((id) => {
+      if (id === anchorTop) return false;
+      const type = store.records.get(id)?.type;
+      return type !== undefined && isVoidSpec(registry.blocks.get(type));
+    });
+    return blocked ? { type: "block", ids: span } : null;
+  }
+
+  /** The member of `span` (sibling ids) that is `id` or one of its ancestors. */
+  function topIn(store: Store, id: string, span: string[]): string | null {
+    let cur: string | null = id;
+    while (cur) {
+      if (span.includes(cur)) return cur;
+      cur = store.records.get(cur)?.parentId ?? null;
+    }
+    return null;
+  }
+
+  /** Takes the released pointer selection into the model (a drag that ended on a void becomes a
+   * 'block' selection here) and rewrites the DOM to match it (clamped ends, cleared highlight). */
+  function syncPointerSelection(paragraph: boolean): void {
+    if (compose.active) return;
+    const cur = getState().selection;
+    const release = releaseBlockId;
+    releaseBlockId = null;
+    const read = readDOMSelection(root, { store: paragraph ? undefined : getState().store, registry, pointer: true });
+    const raw = (!paragraph && extendPastVoids(read, release)) || read;
+    if (!raw) {
+      if (cur?.type === "block") restoreSelection();
+      return;
+    }
+    const promoted = promoteSelection(getState().store, registry, raw);
+    if (!sameSelection(cur, promoted)) runDispatch((tx) => tx.setSelection(promoted));
+    else restoreSelection();
   }
 
   /** a plain click while the model selection is already 'block'/'cells'
@@ -812,9 +1015,16 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
       return;
     }
     if (isInsideVoidEvent(e)) return;
+    // A press that started on text: take its selection now, before a control the user reaches
+    // for next (a toolbar select) can act on the previous one. The browser has settled the
+    // selection by 'click', so this never fights the drag.
+    if (pendingPointerSync !== null) {
+      flushPointerSync();
+      return;
+    }
     const cur = getState().selection;
     if (!cur || cur.type === "text") return;
-    const raw = readDOMSelection(root);
+    const raw = readDOMSelection(root, { store: getState().store, registry, pointer: true });
     if (!raw) return;
     const promoted = promoteSelection(getState().store, registry, raw);
     if (sameSelection(cur, promoted)) return;
@@ -1170,7 +1380,11 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   }
   let lastInputWasPointer = false;
   const onPointerInput = (): void => { lastInputWasPointer = true; };
-  const onKeyInput = (): void => { lastInputWasPointer = false; };
+  const onKeyInput = (): void => {
+    flushPointerSync();
+    lastInputWasPointer = false;
+    registered.paragraphClick = false;
+  };
   root.ownerDocument.addEventListener("pointerdown", onPointerInput, true);
   root.ownerDocument.addEventListener("keydown", onKeyInput, true);
   // Focus orphaned on the body (its keep-selection control unmounted) fires no further focusout, so the selection would
@@ -1229,7 +1443,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   }
   root.addEventListener("focusout", onFocusOut);
 
-  const registered: RegisteredView = { root, registry, compose, getState, runDispatch, suppressed: false };
+  const registered: RegisteredView = { root, registry, compose, getState, runDispatch, suppressed: false, pointerSelecting: false, lastInputWasPointer: () => lastInputWasPointer, paragraphClick: false, restoreSelection };
   registeredViews.add(registered);
   ensureSharedListener();
 
@@ -1253,9 +1467,11 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     flush() {
       flushComposition();
     },
+    isPointerSelecting: () => registered.pointerSelecting,
     destroy() {
       mo.disconnect();
       disarmOrphanWatch?.();
+      stopPointerSelection?.();
       root.ownerDocument.removeEventListener("pointerdown", onPointerInput, true);
       root.ownerDocument.removeEventListener("keydown", onKeyInput, true);
       root.removeEventListener("beforeinput", onBeforeInput as EventListener);

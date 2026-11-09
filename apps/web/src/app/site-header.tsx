@@ -1,4 +1,5 @@
 import { ArrowUpRight, Menu, Moon, Sun, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useSiteSettings } from "./site-settings.js";
 
 export const siteLinks = [
@@ -12,6 +13,17 @@ export function SiteHeader({ path, menuOpen, onMenuOpenChange }: { path: string;
   const { locale, setLocale, theme, setTheme, t } = useSiteSettings();
   const links = siteLinks;
   const setMenuOpen = onMenuOpenChange;
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      setMenuOpen(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen, setMenuOpen]);
   return (
   <header className="site-header">
       <div className="site-header-inner">
@@ -24,7 +36,7 @@ export function SiteHeader({ path, menuOpen, onMenuOpenChange }: { path: string;
           <button className="header-icon-button" type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? t("Switch to light theme", "라이트 테마로 전환") : t("Switch to dark theme", "다크 테마로 전환")} title={theme === "dark" ? t("Light theme", "라이트 테마") : t("Dark theme", "다크 테마")}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button>
           <button className="header-language-button" type="button" onClick={() => setLocale(locale === "en" ? "ko" : "en")} aria-label={locale === "en" ? "한국어" : "English"} title={locale === "en" ? "한국어" : "English"}><span aria-hidden="true">{locale.toUpperCase()}</span></button>
           <a className="header-cta" href="/docs/getting-started">{t("Get started", "시작하기")} <ArrowUpRight size={15} /></a>
-          <button className="mobile-menu-button" type="button" aria-label={menuOpen ? t("Close menu", "메뉴 닫기") : t("Open menu", "메뉴 열기")} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
+          <button ref={toggleRef} className="mobile-menu-button" type="button" aria-label={menuOpen ? t("Close menu", "메뉴 닫기") : t("Open menu", "메뉴 열기")} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21} /> : <Menu size={21} />}</button>
         </div>
       </div>
   </header>

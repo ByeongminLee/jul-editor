@@ -20,7 +20,7 @@ import {
   buildToggleMarkOps,
 } from "./edits.js";
 import { applyOp } from "./ops.js";
-import { ancestorChain, canAdmit, comparePreOrder, containerInfo, siblingsOf } from "./store.js";
+import { ancestorChain, canAdmit, containerInfo, orderPoints, siblingsOf } from "./store.js";
 import {
   buildAddColumnOps,
   buildAddRowOps,
@@ -109,7 +109,10 @@ export interface Transaction {
   replaceContent(id: string, from: number, to: number, inlines: NonNullable<Block["content"]>): Transaction;
   insertText(point: Point, text: string, marks?: Mark[]): Transaction;
   deleteRange(selection: Selection): Transaction;
-  splitBlock(point: Point): Transaction;
+  /** Splits the block at `point` (see edits.ts's buildSplitBlockOps).
+   * `opts.type` gives the block created after the caret a different type
+   * (Enter at the end of a heading starts a paragraph). */
+  splitBlock(point: Point, opts?: { type?: string }): Transaction;
   mergeBackward(blockId: string): Transaction;
   indent(id: string): Transaction;
   outdent(id: string): Transaction;
@@ -225,8 +228,8 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       applyAll(buildDeleteRangeOps(store, sel, registry));
       return tx;
     },
-    splitBlock(point) {
-      applyAll(buildSplitBlockOps(store, point));
+    splitBlock(point, opts) {
+      applyAll(buildSplitBlockOps(store, point, opts));
       return tx;
     },
     mergeBackward(blockId) {
@@ -242,7 +245,7 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       return tx;
     },
     toggleMark(sel, markType, attrs) {
-      applyAll(buildToggleMarkOps(store, sel, markType, attrs));
+      applyAll(buildToggleMarkOps(store, sel, markType, attrs, registry));
       return tx;
     },
     setBlockType(ids, blockType, props) {
@@ -304,7 +307,7 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       const collapsed = sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset;
       let point: Point = sel.anchor;
       if (!collapsed) {
-        point = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId) <= 0 ? sel.anchor : sel.focus;
+        point = orderPoints(store, sel.anchor, sel.focus)[0];
         applyAll(buildDeleteRangeOps(store, sel, registry));
       }
       const { ops, caret } = buildInsertFragmentOps(store, registry, point, fragment);

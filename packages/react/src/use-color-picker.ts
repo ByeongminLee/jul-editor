@@ -9,7 +9,7 @@
 // (color: null clears it entirely). Same rule as every other hook in this
 // package: read+dispatch through @jul-editor/core's own public primitives only.
 import type { ColorToken, Editor as CoreEditor } from "@jul-editor/core";
-import { COLOR_PALETTE, comparePreOrder, contentLength, isText, nextBlockInPreOrder, sliceContent } from "@jul-editor/core";
+import { COLOR_PALETTE, orderPoints, contentLength, isText, nextBlockInPreOrder, sliceContent } from "@jul-editor/core";
 import { useCallback, useEffect, useState } from "react";
 import { useEditor, useEditorState } from "./hooks.js";
 
@@ -64,8 +64,7 @@ function selectionBlockIds(editor: CoreEditor): string[] {
   const sel = editor.getState().selection;
   if (!sel || sel.type !== "text") return [];
   const store = editor.getState().store;
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   const ids: string[] = [start.blockId];
   let cur: string | null = start.blockId;
   while (cur !== end.blockId) {
@@ -84,8 +83,7 @@ function selectionRuns(editor: CoreEditor): { blockId: string; from: number; to:
   const sel = editor.getState().selection;
   if (!sel || sel.type !== "text") return [];
   const store = editor.getState().store;
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   return selectionBlockIds(editor).map((blockId) => {
     const content = store.records.get(blockId)?.content ?? [];
     const len = contentLength(content);

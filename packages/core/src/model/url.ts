@@ -64,3 +64,22 @@ export function sanitizeUrl(url: string, kind: "link" | "image", opts: { allowBl
   if (scheme === "blob" && opts.allowBlob) return out;
   return null;
 }
+
+// A bare host ("example.com", "www.a.co.kr:8080/x") -- a dotted name of letters,
+// digits and hyphens with an alphabetic last label, then a port, path, query,
+// fragment or the end. SCHEME_RE would otherwise read "example.com:8080" as a scheme.
+const BARE_DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i;
+const BARE_EMAIL_RE = /^[^\s@/:?#]+@(?:[a-z0-9-]+\.)+[a-z]{2,}$/i;
+
+/**
+ * Normalizes what a person typed into a link field: a bare domain gets `https://`
+ * and a bare email gets `mailto:`, so "example.com" is not stored as a relative
+ * URL. Anything else (a scheme, "/path", "#frag", "?q", "./rel") is returned
+ * trimmed but otherwise unchanged; run sanitizeUrl on the result before storing.
+ */
+export function normalizeLinkHref(input: string): string {
+  const trimmed = input.trim();
+  if (BARE_EMAIL_RE.test(trimmed)) return `mailto:${trimmed}`;
+  if (BARE_DOMAIN_RE.test(trimmed)) return `https://${trimmed}`;
+  return trimmed;
+}

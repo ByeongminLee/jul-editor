@@ -111,6 +111,17 @@ function movePreservingOrder(editor: CoreEditor, ids: string[], target: DropTarg
   editor.moveBlocksTo(ids, target);
 }
 
+/** Moves focus from the handle back into the editor root, re-applying the model selection (a bare focus() may drop the
+ * caret at the root's start). Skipped when focus already moved elsewhere during the drag. */
+function refocusEditor(editor: CoreEditor, handle: HTMLElement): void {
+  const root = editor.getRoot();
+  const active = root.ownerDocument.activeElement;
+  if (active !== handle && active !== root.ownerDocument.body && active !== null) return;
+  const selection = editor.getState().selection;
+  root.focus({ preventScroll: true });
+  if (selection) editor.update((tx) => tx.setSelection(selection));
+}
+
 export function useDragHandle(): UseDragHandleResult {
   const editor = useEditor();
   const { registry, rootRef } = useEditorContext("useDragHandle");
@@ -216,6 +227,7 @@ export function useDragHandle(): UseDragHandleResult {
     };
   }, [editor, rootRef]);
 
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
   const onPointerDown = useCallback((e: ReactPointerEvent<HTMLElement>) => {
     const ed = editorRef.current;
     const id = blockIdRef.current;
@@ -253,16 +265,19 @@ export function useDragHandle(): UseDragHandleResult {
       setDragState(next);
     }
     function finish(commit: boolean): void {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onCancel);
+      if (pointerCleanupRef.current === detach) pointerCleanupRef.current = null;
+      detach();
       if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
       const finalTarget = dragRef.current?.dropTarget ?? null;
       dragRef.current = null;
       setDragState(null);
-      if (commit && finalTarget && editorRef.current) {
-        movePreservingOrder(editorRef.current, ids, finalTarget);
+      const current = editorRef.current;
+      if (commit && finalTarget && current) {
+        movePreservingOrder(current, ids, finalTarget);
         setAnnouncement(ids.length > 1 ? `Moved ${ids.length} blocks.` : "Moved block.");
+        // The pointerdown focused the handle; hand focus back to the editor (on the moved block's selection) so
+        // Mod+Z undoes the move and keyboard editing continues there, instead of going to the handle.
+        refocusEditor(current, el);
       } else {
         setAnnouncement("Move cancelled.");
       }
@@ -273,10 +288,31 @@ export function useDragHandle(): UseDragHandleResult {
     function onCancel(): void {
       finish(false);
     }
+    // Escape while the button is still held cancels the drag; the later pointerup then has no listener left.
+    function onEscape(ev: KeyboardEvent): void {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      finish(false);
+    }
+    function detach(): void {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onCancel);
+      el.ownerDocument.defaultView?.removeEventListener("keydown", onEscape, true);
+    }
+    pointerCleanupRef.current?.();
+    pointerCleanupRef.current = detach;
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onCancel);
+    el.ownerDocument.defaultView?.addEventListener("keydown", onEscape, true);
   }, [registry]);
+  // Unmounted mid pointer drag: drop the drag's listeners (the window keydown one would otherwise outlive the editor).
+  useEffect(() => () => {
+    pointerCleanupRef.current?.();
+    pointerCleanupRef.current = null;
+  }, []);
 
   const onKeyDown = useCallback((e: ReactKeyboardEvent<HTMLElement>) => {
     const ed = editorRef.current;
@@ -298,6 +334,15 @@ export function useDragHandle(): UseDragHandleResult {
       dragRef.current = next;
       setDragState(next);
       setAnnouncement(ids.length > 1 ? `Picked up ${ids.length} blocks. Use arrow keys to move, space or enter to drop, escape to cancel.` : "Picked up block. Use arrow keys to move, space or enter to drop, escape to cancel.");
+      return;
+    }
+
+    // The handle keeps focus after a click or a keyboard drop; Mod+Z / Mod+Shift+Z must still reach editor history
+    // (same combos core's own keydown handles). Not mid keyboard move: Escape owns undoing those steps.
+    if (!current && ed && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) ed.commands.redo();
+      else ed.commands.undo();
       return;
     }
 

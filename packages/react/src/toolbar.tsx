@@ -5,12 +5,12 @@
 // editing behavior; it only wraps core). className passthrough only, no
 // inline styles, no CSS.
 
-import type { Json } from "@jul-editor/core";
+import type { Editor as CoreEditor, Json } from "@jul-editor/core";
 import type { ComponentPropsWithoutRef, KeyboardEvent, MouseEvent } from "react";
 import { createContext, forwardRef, useContext, useEffect, useRef } from "react";
 import { LabelsContext, useEditorContext } from "./context.js";
 import { Slot, mergeRefs } from "./slot.js";
-import { useActiveMarks, useBlockType, useCommands, useEditorState } from "./hooks.js";
+import { useActiveMarks, useBlockType, useCanApplyMarks, useCommands, useEditor, useEditorState } from "./hooks.js";
 import type { Labels } from "./labels.js";
 
 export interface ToolbarClassNames { container?: string; button?: string; text?: string }
@@ -27,10 +27,42 @@ export interface ToolbarButtonProps extends Omit<ComponentPropsWithoutRef<"butto
   asChild?: boolean;
 }
 
-function handleClick(onCommand: () => void, userOnClick?: (e: MouseEvent<HTMLButtonElement>) => void) {
+// A pointer click on a toolbar button must not take focus away from the
+// editor: the next keystroke (typing after Bold, after H1) has to land in
+// the document. mousedown's default action is what moves focus, so it is
+// prevented (the consumer's own onMouseDown still runs first and can opt
+// out by preventing nothing -- we only skip when THEY already prevented).
+function handleMouseDown(userOnMouseDown?: (e: MouseEvent<HTMLButtonElement>) => void) {
+  return (e: MouseEvent<HTMLButtonElement>) => {
+    userOnMouseDown?.(e);
+    if (e.button === 0) e.preventDefault();
+  };
+}
+
+// If the editor still was not focused (focus sat elsewhere, e.g. the
+// toolbar after a Tab), a pointer click hands focus back to the editor at
+// its current model selection so typing continues there. A keyboard
+// activation (Enter/Space on a roving-focus item, e.detail === 0) keeps
+// focus in the toolbar, per the WAI-ARIA toolbar pattern.
+function refocusEditor(editor: CoreEditor | null): void {
+  if (!editor) return;
+  const root = editor.getRoot();
+  const doc = root.ownerDocument;
+  if (root.contains(doc.activeElement)) return;
+  const selection = editor.getState().selection;
+  if (!selection) return;
+  root.focus({ preventScroll: true });
+  // focus() alone may drop the caret at the root's start; re-applying the
+  // model selection writes it back to the DOM (no history entry).
+  editor.update((tx) => tx.setSelection(selection));
+}
+
+function handleClick(editor: CoreEditor | null, onCommand: () => void, userOnClick?: (e: MouseEvent<HTMLButtonElement>) => void) {
   return (e: MouseEvent<HTMLButtonElement>) => {
     userOnClick?.(e);
-    if (!e.defaultPrevented) onCommand();
+    if (e.defaultPrevented) return;
+    onCommand();
+    if (e.detail > 0) refocusEditor(editor);
   };
 }
 
@@ -41,8 +73,10 @@ function handleClick(onCommand: () => void, userOnClick?: (e: MouseEvent<HTMLBut
 // overriding `children` with e.g. an icon still gets a localized accessible
 // name, unless THEY also pass their own `aria-label`).
 function createToggleButton(markType: string, labelKey: keyof Labels) {
-  return forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarMarkButton({ asChild, children, onClick, className, "aria-label": ariaLabel, ...props }, ref) {
+  return forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarMarkButton({ asChild, children, onClick, onMouseDown, className, "aria-label": ariaLabel, ...props }, ref) {
     const marks = useActiveMarks();
+    const canApply = useCanApplyMarks();
+    const editor = useEditor();
     const commands = useCommands();
     useEditorContext("Editor.Toolbar");
     const label = useContext(LabelsContext)[labelKey];
@@ -56,8 +90,10 @@ function createToggleButton(markType: string, labelKey: keyof Labels) {
         aria-pressed={active}
         aria-label={ariaLabel ?? label}
         data-active={active ? "" : undefined}
+        disabled={!canApply}
         {...toolbarItemAttrs}
-        onClick={handleClick(() => commands.toggleMark(markType), onClick)}
+        onMouseDown={handleMouseDown(onMouseDown)}
+        onClick={handleClick(editor, () => commands.toggleMark(markType), onClick)}
         {...props} className={classes.button}
       >
         {children ?? (classes.text ? <span className={classes.text}>{label}</span> : label)}
@@ -77,8 +113,10 @@ export const EditorUnderline = /* @__PURE__ */ createToggleButton("underline", "
 export const EditorSubscript = /* @__PURE__ */ createToggleButton("subscript", "toolbarSubscript");
 export const EditorSuperscript = /* @__PURE__ */ createToggleButton("superscript", "toolbarSuperscript");
 
-export const EditorLink = /* @__PURE__ */ forwardRef<HTMLButtonElement, ToolbarButtonProps>(function EditorLink({ asChild, children, onClick, className, "aria-label": ariaLabel, ...props }, ref) {
+export const EditorLink = /* @__PURE__ */ forwardRef<HTMLButtonElement, ToolbarButtonProps>(function EditorLink({ asChild, children, onClick, onMouseDown, className, "aria-label": ariaLabel, ...props }, ref) {
   const marks = useActiveMarks();
+  const canApply = useCanApplyMarks();
+  const editor = useEditor();
   const commands = useCommands();
   useEditorContext("Editor.Toolbar");
   const label = useContext(LabelsContext).toolbarLink;
@@ -92,8 +130,10 @@ export const EditorLink = /* @__PURE__ */ forwardRef<HTMLButtonElement, ToolbarB
       aria-pressed={active}
       aria-label={ariaLabel ?? label}
       data-active={active ? "" : undefined}
+      disabled={!canApply}
       {...toolbarItemAttrs}
-      onClick={handleClick(() => {
+      onMouseDown={handleMouseDown(onMouseDown)}
+      onClick={handleClick(editor, () => {
         if (active) {
           commands.toggleMark("link");
           return;
@@ -112,8 +152,9 @@ export const EditorLink = /* @__PURE__ */ forwardRef<HTMLButtonElement, ToolbarB
 });
 
 function createBlockTypeButton(blockType: string, labelKey: keyof Labels, extraProps?: Record<string, Json>) {
-  return forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarBlockButton({ asChild, children, onClick, className, "aria-label": ariaLabel, ...props }, ref) {
+  return forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarBlockButton({ asChild, children, onClick, onMouseDown, className, "aria-label": ariaLabel, ...props }, ref) {
     const currentType = useBlockType();
+    const editor = useEditor();
     const commands = useCommands();
     useEditorContext("Editor.Toolbar");
     const label = useContext(LabelsContext)[labelKey];
@@ -128,7 +169,10 @@ function createBlockTypeButton(blockType: string, labelKey: keyof Labels, extraP
         aria-label={ariaLabel ?? label}
         data-active={active ? "" : undefined}
         {...toolbarItemAttrs}
-        onClick={handleClick(() => commands.setBlockType(blockType, extraProps), onClick)}
+        onMouseDown={handleMouseDown(onMouseDown)}
+        // Clicking the pressed button toggles the block back to a paragraph
+        // (same as every mainstream editor's H1/list/quote buttons).
+        onClick={handleClick(editor, () => (active ? commands.setBlockType("paragraph") : commands.setBlockType(blockType, extraProps)), onClick)}
         {...props} className={classes.button}
       >
         {children ?? (classes.text ? <span className={classes.text}>{label}</span> : label)}
@@ -158,11 +202,12 @@ function useCurrentHeadingLevel(): number | null {
 }
 
 export const EditorHeading = /* @__PURE__ */ forwardRef<HTMLButtonElement, HeadingButtonProps>(function EditorHeading(
-  { asChild, children, onClick, className, level = 1, "aria-label": ariaLabel, ...props },
+  { asChild, children, onClick, onMouseDown, className, level = 1, "aria-label": ariaLabel, ...props },
   ref,
 ) {
   const currentType = useBlockType();
   const currentLevel = useCurrentHeadingLevel();
+  const editor = useEditor();
   const commands = useCommands();
   useEditorContext("Editor.Toolbar");
   const label = `${useContext(LabelsContext).toolbarHeadingWord} ${level}`;
@@ -177,7 +222,8 @@ export const EditorHeading = /* @__PURE__ */ forwardRef<HTMLButtonElement, Headi
       aria-label={ariaLabel ?? label}
       data-active={active ? "" : undefined}
       {...toolbarItemAttrs}
-      onClick={handleClick(() => commands.setBlockType("heading", { level }), onClick)}
+      onMouseDown={handleMouseDown(onMouseDown)}
+      onClick={handleClick(editor, () => (active ? commands.setBlockType("paragraph") : commands.setBlockType("heading", { level })), onClick)}
       {...props} className={classes.button}
     >
       {children ?? (classes.text ? <span className={classes.text}>{label}</span> : label)}
@@ -186,14 +232,15 @@ export const EditorHeading = /* @__PURE__ */ forwardRef<HTMLButtonElement, Headi
 });
 
 function createHistoryButton(run: (commands: ReturnType<typeof useCommands>) => void, labelKey: keyof Labels) {
-  return forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarHistoryButton({ asChild, children, onClick, className, "aria-label": ariaLabel, ...props }, ref) {
+  return forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarHistoryButton({ asChild, children, onClick, onMouseDown, className, "aria-label": ariaLabel, ...props }, ref) {
+    const editor = useEditor();
     const commands = useCommands();
     useEditorContext("Editor.Toolbar");
     const label = useContext(LabelsContext)[labelKey];
     const classes = useToolbarClasses(className);
     const Comp = (asChild ? Slot : "button") as "button";
     return (
-      <Comp ref={ref} type={asChild ? undefined : "button"} aria-label={ariaLabel ?? label} {...toolbarItemAttrs} onClick={handleClick(() => run(commands), onClick)} {...props} className={classes.button}>
+      <Comp ref={ref} type={asChild ? undefined : "button"} aria-label={ariaLabel ?? label} {...toolbarItemAttrs} onMouseDown={handleMouseDown(onMouseDown)} onClick={handleClick(editor, () => run(commands), onClick)} {...props} className={classes.button}>
         {children ?? (classes.text ? <span className={classes.text}>{label}</span> : label)}
       </Comp>
     );
@@ -221,7 +268,12 @@ export const EditorToolbar = /* @__PURE__ */ forwardRef<HTMLDivElement, EditorTo
     const el = localRef.current;
     if (!el) return;
     const items = Array.from(el.querySelectorAll<HTMLElement>(`[${TOOLBAR_ITEM_ATTR}]`));
-    items.forEach((item, i) => item.setAttribute("tabindex", i === 0 ? "0" : "-1"));
+    // Runs after every render, so it must not undo onToolbarKeyDown's
+    // choice: keep whichever item already holds tabindex=0 and only
+    // initialise new items (or fall back to the first when the current
+    // tab stop was removed).
+    const current = items.find((item) => item.getAttribute("tabindex") === "0") ?? items[0];
+    for (const item of items) item.setAttribute("tabindex", item === current ? "0" : "-1");
   });
 
   function onToolbarKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
