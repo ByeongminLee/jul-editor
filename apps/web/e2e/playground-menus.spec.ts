@@ -88,3 +88,35 @@ test("Korean locale localizes plugin slash items too", async ({ page }) => {
   for (const title of ["차트", "다이어그램", "데이터 표", "코드 워크스페이스"]) expect(text).toContain(title);
   for (const english of ["Chart", "Diagram", "Data table", "Code Workspace"]) expect(text).not.toContain(english);
 });
+
+test("slash no-results exposes combobox and live status", async ({ page }) => {
+  await page.goto("/playground");
+  const line = page.locator('[data-id="demo-end"] [data-jul-editor-content]');
+  await line.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/no-matching-block-999");
+  const editor = page.locator("[data-jul-editor-root]");
+  await expect(editor).toHaveAttribute("role", "combobox");
+  const list = page.getByRole("listbox", { name: "Block commands" });
+  await expect(list).toBeAttached();
+  await expect(page.getByRole("status").filter({ hasText: "No matching blocks" })).toHaveText("No matching blocks");
+  await expect(list.getByRole("status")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(editor).toHaveAttribute("role", "textbox");
+});
+
+test("an empty tag or mention search is announced from a status region outside the listbox", async ({ page }) => {
+  await page.goto("/playground");
+  const line = page.locator(".playground-workspace [data-type=paragraph] [data-jul-editor-content]").first();
+  for (const [trigger, message] of [["#", "No matching tags"], ["@", "No matching mentions"]] as const) {
+    await line.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(` ${trigger}zzzz`);
+    const status = page.locator(".slash-menu:visible [role=status]");
+    await expect(status).toHaveText(message);
+    await expect(status.locator("xpath=ancestor::*[@role='listbox']")).toHaveCount(0);
+    await expect(status.locator("xpath=ancestor::*[@data-jul-editor-keep-selection]")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+  }
+});

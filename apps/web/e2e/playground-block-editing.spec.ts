@@ -75,3 +75,10 @@ test("a checked to-do shows its state, hands an UNchecked item to Enter, and its
   await expect(todos.nth(1)).toHaveAttribute("data-jul-editor-checked", "true");
   await expect(todos.nth(1).locator(":scope > [data-jul-editor-content]")).toHaveText("new task");
 });
+
+test("selected images expose a visible resize handle", async ({ page }) => {
+  await page.goto("/playground");
+  const image = page.locator("[data-jul-editor-image] img").first();
+  await image.click();
+  await expect(page.locator('[data-jul-editor-resize-handle="right"]').first()).toBeVisible();
+});

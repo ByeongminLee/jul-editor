@@ -146,7 +146,7 @@
 .showcase-notion .nt-bubble-sep { width: 1px; height: 18px; margin: 0 3px; background: var(--nt-line); }
 .showcase-notion .nt-color { position: relative; display: inline-flex; }
 .showcase-notion .nt-color-a { border-bottom: 2px solid var(--nt-muted); line-height: 1.1; }
-.showcase-notion .nt-color-pop { position: absolute; top: 36px; left: 0; width: 214px; }
+.showcase-notion .nt-color-pop { position: fixed; width: 214px; }
 .showcase-notion .nt-swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 2px 4px 6px; }
 .showcase-notion .nt-swatch { display: grid; place-items: center; height: 28px; border: 1px solid var(--nt-line); border-radius: 6px; background: var(--nt-bg); font-weight: 700; cursor: pointer; }
 .showcase-notion .nt-swatch[data-active] { border-color: var(--nt-accent); }

@@ -3,6 +3,9 @@
 // selection after an upward drag and stayed put on scroll), sat under the sticky header with no flip,
 // and a triple click selected into the next block, so Bold/typing spilled over into it.
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -144,4 +147,71 @@ test("Bold applies to every cell of a drag-selected rectangle", async ({ page })
   }).toPass({ timeout: 10_000 });
   await page.keyboard.press("ControlOrMeta+b");
   await expect.poll(() => page.$$eval("[data-type=tableCell] strong", (els) => els.map((e) => e.textContent))).toEqual(["Docs", "1,240", "Showcase", "880"]);
+});
+
+test("clicking a disabled formatting button preserves editor focus", async ({ page }) => {
+  await page.goto("/playground");
+  const code = page.locator('[data-id="demo-code"] [data-jul-editor-content]');
+  await code.click();
+  const editor = page.locator("[data-jul-editor-root]");
+  await expect(editor).toBeFocused();
+  const bold = page.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Bold" });
+  await expect(bold).toBeDisabled();
+  await bold.scrollIntoViewIfNeeded();
+  const box = (await bold.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(editor).toBeFocused();
+});
+
+test("a backward drag keeps its native anchor until release", async ({ page }) => {
+  const from = await charPoint(page, "demo-list-3", 0);
+  const to = await charPoint(page, "demo-list-2", 1);
+  await page.mouse.move(from.x - 2, from.y);
+  await page.mouse.down();
+  expect(await page.evaluate(() => window.getSelection()?.anchorOffset)).toBe(0);
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  const anchorBlock = () => page.evaluate(() => {
+    const node = window.getSelection()?.anchorNode;
+    return node?.parentElement?.closest("[data-id]")?.getAttribute("data-id");
+  });
+  await expect.poll(anchorBlock).toBe("demo-list-3");
+  await page.mouse.up();
+  await expect.poll(anchorBlock).toBe("demo-list-2");
+});
+
+test("a delayed site font does not disrupt an active drag", async ({ page }) => {
+  const require = createRequire(realpathSync("apps/web/node_modules/mermaid/package.json"));
+  const font = readFileSync(join(dirname(require.resolve("katex/package.json")), "dist/fonts/KaTeX_Main-Regular.woff2"));
+  let releaseFont!: () => void;
+  const fontGate = new Promise<void>((resolve) => { releaseFont = resolve; });
+  let requestedFont!: () => void;
+  const fontRequested = new Promise<void>((resolve) => { requestedFont = resolve; });
+  await page.route("https://fonts.googleapis.com/**", async (route) => {
+    const display = new URL(route.request().url()).searchParams.get("display");
+    await route.fulfill({ contentType: "text/css", body: `@font-face { font-family: 'DM Sans'; src: url(https://fonts.gstatic.com/test.woff2); font-display: ${display}; }` });
+  });
+  await page.route("https://fonts.gstatic.com/**", async (route) => {
+    requestedFont();
+    await fontGate;
+    await route.fulfill({ contentType: "font/woff2", body: font });
+  });
+  await page.goto("/playground", { waitUntil: "domcontentloaded" });
+  await fontRequested;
+  const canvas = page.locator(".unified-workspace .unified-editor-view .editor-content");
+  await expect(canvas).toHaveCSS("font-family", /DM Sans/);
+  await expect(canvas.locator('[data-type="codeBlock"]').first()).toHaveCSS("font-family", /monospace/);
+  // Let the optional font's block period expire before starting the drag.
+  await page.waitForTimeout(500);
+  const from = await charPoint(page, "demo-list-3", 20);
+  const to = await charPoint(page, "demo-p1", 10);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 8 });
+  releaseFont();
+  await page.evaluate(() => document.fonts.ready);
+  expect(await charPoint(page, "demo-list-3", 20)).toEqual(from);
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().length)).toBeGreaterThan(0);
+  await expect(page.locator(".bubble-tools")).toBeVisible();
 });

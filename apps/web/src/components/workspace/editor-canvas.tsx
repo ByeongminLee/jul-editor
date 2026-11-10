@@ -14,17 +14,8 @@ import { Bold, Code2, GripVertical, Heading1, Heading2, Italic, Link2, List, Lis
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useBubblePlacement } from "./bubble-placement.js";
 import { useMenuPlacement } from "./menu-placement.js";
+import { refocusEditor } from "./refocus-editor.js";
 import { useSiteSettings } from "../../app/site-settings.js";
-
-/** Hands focus back to the editor at its model selection without scrolling the page. */
-function refocusEditor(editor: ReturnType<typeof useEditor>): void {
-  if (!editor) return;
-  const root = editor.getRoot();
-  if (root.contains(document.activeElement)) return;
-  root.focus({ preventScroll: true });
-  const selection = editor.getState().selection;
-  if (selection) editor.update((tx) => tx.setSelection(selection));
-}
 
 function LinkPopover({ link }: { link: ReturnType<typeof useLinkEditor> }) {
   const { t } = useSiteSettings();
@@ -63,22 +54,21 @@ function LinkControl() {
   </>;
 }
 
-function SlashMenuList({ items, activeIndex, rect, getListboxProps, getOptionProps }: SlashMenuRenderArgs) {
+function SlashMenuList({ items, activeIndex, rect, loading, getListboxProps, getOptionProps }: SlashMenuRenderArgs) {
   const { t } = useSiteSettings();
   const { ref, style } = useMenuPlacement(rect);
-  return <div
-    {...getListboxProps()}
-    ref={ref}
-    aria-label={t("Block commands", "블록 명령")}
-    className="slash-menu"
-    style={style}
-  >
-    <div className="slash-menu-label">{t("INSERT A BLOCK", "블록 삽입")}</div>
-    {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>
-      <span className="slash-option-symbol">{item.type === "chart" ? "▥" : item.type === "diagram" ? "◇" : item.type === "table" ? "▦" : item.type === "heading" ? "H" : "＋"}</span>
-      <span>{item.title}</span>
-    </div>) : <div className="slash-empty">{t("No matching blocks", "일치하는 블록이 없습니다")}</div>}
-  </div>;
+  const empty = loading ? t("Loading…", "불러오는 중…") : t("No matching blocks", "일치하는 블록이 없습니다");
+  return <>
+    <div {...getListboxProps()} ref={ref} aria-label={t("Block commands", "블록 명령")} className="slash-menu" style={style}>
+      <div className="slash-menu-label" aria-hidden="true">{t("INSERT A BLOCK", "블록 삽입")}</div>
+      {items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>
+        <span className="slash-option-symbol">{item.type === "chart" ? "▥" : item.type === "diagram" ? "◇" : item.type === "table" ? "▦" : item.type === "heading" ? "H" : "＋"}</span>
+        <span>{item.title}</span>
+      </div>)}
+      {!items.length && <div aria-hidden="true" className="slash-empty">{empty}</div>}
+    </div>
+    <span role="status" className="visually-hidden">{!items.length ? empty : ""}</span>
+  </>;
 }
 
 function SlashCommands() {
@@ -141,11 +131,11 @@ export function EditorCanvas({ value, defaultValue, onChange, compact = false, s
   const hostRef = useRef<HTMLDivElement>(null);
   const displayRef = useRef({ locale, mode });
   displayRef.current = { locale, mode };
-  const placeholder = () => displayRef.current.locale === "ko"
+  const placeholder = (block?: { type: string }) => block?.type === "tableCell" ? "" : displayRef.current.locale === "ko"
     ? (displayRef.current.mode === "rich" ? "글을 입력하세요…" : "블록을 추가하려면 /를 입력하세요…")
     : (displayRef.current.mode === "rich" ? "Start writing…" : "Type / for a block…");
   useEffect(() => {
-    hostRef.current?.querySelectorAll("[data-jul-editor-content][data-placeholder]").forEach((element) => element.setAttribute("data-placeholder", placeholder()));
+    hostRef.current?.querySelectorAll("[data-jul-editor-content][data-placeholder]").forEach((element) => element.setAttribute("data-placeholder", placeholder({ type: element.closest("[data-type]")?.getAttribute("data-type") ?? "" })));
   }, [locale, mode]);
   return <div ref={hostRef}><Editor value={value} defaultValue={defaultValue} onChange={onChange} renderers={renderers} uploadMode={uploadMode} onUpload={onUpload} createFileBlock={createFileBlock} placeholder={placeholder} locale={locale} className={`editor-instance${className ? ` ${className}` : ""}`}>
     {children}
@@ -178,7 +168,7 @@ export function EditorCanvas({ value, defaultValue, onChange, compact = false, s
       </div>
     </Editor.Toolbar>}
     {(showDrag ?? mode !== "rich") && <DragControls />}
-    <Editor.Content className={`editor-content${compact ? " editor-content-compact" : ""}`} />
+    <Editor.Content aria-label={t("Document editor", "문서 편집기")} className={`editor-content${compact ? " editor-content-compact" : ""}`} />
     {mode !== "rich" && (slashMenu === undefined ? <SlashCommands /> : slashMenu)}
     {mode !== "block" && <BubbleTools />}
   </Editor></div>;

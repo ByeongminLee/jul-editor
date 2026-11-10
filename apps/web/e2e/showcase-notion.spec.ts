@@ -271,3 +271,17 @@ test("edits survive switching to another showcase case and back", async ({ page 
   root = page.locator(".showcase-active .showcase-notion");
   await expect(text(root, "nt-title")).toContainText("EDITED");
 });
+
+test("color menu stays reachable near the viewport bottom", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const root = await openNotion(page);
+  const line = text(root, "nt-md-intro");
+  await line.scrollIntoViewIfNeeded();
+  await line.evaluate((el) => window.scrollBy({ top: el.getBoundingClientRect().bottom - (window.innerHeight - 60), behavior: "instant" }));
+  await line.click({ clickCount: 3 });
+  await page.locator(".nt-bubble").getByRole("button", { name: "Text color and highlight" }).click();
+  const swatch = page.getByRole("button", { name: "Highlight: yellow" });
+  await expect(swatch).toBeInViewport({ ratio: 1 });
+  await swatch.click();
+  await expect(root.locator("mark[data-jul-editor-highlight=yellow]").first()).toBeVisible();
+});

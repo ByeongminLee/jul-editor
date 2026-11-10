@@ -20,18 +20,18 @@ test("chart data switches from inline JSON to a fetched JSON URL", async ({ page
   await expect(page.locator(".unified-source-view textarea")).toContainText("https://cdn.example.test/visitors.json");
 });
 
-test("file picker queues image and attachment previews without serializing local URLs", async ({ page }) => {
+test("file picker stores images and queues attachments without blob URLs", async ({ page }) => {
   await page.goto("/playground");
   const input = page.locator('.unified-workspace input[type="file"]');
   await input.setInputFiles({ name: "pixel.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
-  await expect(page.locator('[data-jul-editor-image][data-state="queued"]')).toHaveCount(1);
+  await expect(page.locator('[data-jul-editor-image][data-state="ready"]:has(img[alt="pixel.png"])')).toHaveCount(1);
   await input.setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("notes") });
   await expect(page.locator('[data-jul-editor-attachment][data-state="queued"]')).toContainText("notes.txt");
   await page.getByRole("tab", { name: "JSON" }).click();
   const json = await page.locator(".unified-source-view textarea").inputValue();
   expect(json).toContain('"type": "attachment"');
   expect(json).not.toContain("blob:");
-  expect(json).not.toContain("data:");
+  expect(json).toContain("data:image/png;base64,");
 });
 
 test("Code Workspace opens file tabs, highlights syntax, and can hide its tree and line numbers", async ({ page }) => {
@@ -163,9 +163,7 @@ type Rect = { x: number; y: number; w: number; h: number };
 async function readPixels(page: import("@playwright/test").Page, rawClip: Rect): Promise<(x: number, y: number) => [number, number, number]> {
   // Integer clip so pixel indexes map 1:1 to CSS pixels (fractional clips get rounded by the browser).
   const clip = { x: Math.floor(rawClip.x), y: Math.floor(rawClip.y), w: Math.ceil(rawClip.w) + 1, h: Math.ceil(rawClip.h) + 1 };
-  // boundingBox() is viewport-relative while screenshot clips are page-relative: add the scroll offset, then sample with the viewport coordinates.
-  const scroll = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
-  const png = (await page.screenshot({ fullPage: true, clip: { x: clip.x + scroll.x, y: clip.y + scroll.y, width: clip.w, height: clip.h } })).toString("base64");
+  const png = (await page.screenshot({ clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h } })).toString("base64");
   const data = await page.evaluate(async (b64) => {
     const bitmap = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
     const canvas = document.createElement("canvas");

@@ -122,12 +122,12 @@ test("a source draft survives view switches until it is imported", async ({ page
 test("conversion warnings stay visible after importing into the editor", async ({ page }) => {
   await page.goto("/playground");
   await page.getByRole("tab", { name: "HTML" }).click();
-  await page.getByLabel("Edit html source").fill('<p>Image note</p><img src="data:image/png;base64,AA==" alt="draft">');
+  await page.getByLabel("Edit html source").fill('<p>Image note</p><script>discarded</script>');
   await page.getByRole("button", { name: "Apply source to document" }).click();
   await expect(page.getByRole("tab", { name: "Editor" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".unified-feedback")).toContainText("1 image upload(s) need an upload handler in your app");
+  await expect(page.locator(".unified-feedback")).toContainText("dropped-element");
   await page.getByRole("tab", { name: "HTML" }).click();
-  await expect(page.locator(".conversion-message")).toContainText("image upload(s)");
+  await expect(page.locator(".conversion-message")).toContainText("dropped-element");
 });
 
 test("the home workspace stays usable on a narrow screen", async ({ page }) => {

@@ -103,7 +103,14 @@ function reconcileList(previous: Block[], next: Block[], key: (block: Block) => 
  * an edited block keeps its id; a new block keeps its new id.
  */
 export function reconcileIds(previous: Doc, next: Doc, key: (block: Block) => string = blockSignature): Doc {
-  return { ...next, blocks: reconcileList(previous.blocks, next.blocks, key) };
+  // A matching source must not restore descendants the parser could not retain.
+  const shape = (block: Block): unknown => [block.type, (block.children ?? []).map(shape)];
+  const sourceKey = (block: Block): string => {
+    const value = key(block);
+    if (block.type === "tableRow" || block.type === "tableCell" || !value || value.includes("data-jul-editor-unknown")) return blockSignature(block);
+    return canonicalStringify([shape(block), value]);
+  };
+  return { ...next, blocks: reconcileList(previous.blocks, next.blocks, sourceKey) };
 }
 
 /** Turns the editor's document into `next` as one undoable edit. Blocks that are the

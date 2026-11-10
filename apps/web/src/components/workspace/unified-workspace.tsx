@@ -1,9 +1,10 @@
-import { fromJSON, type Block, type Doc, type Editor as CoreEditor } from "@jul-editor/core";
+import { dataUrlToFile, fromJSON, type Block, type Doc, type Editor as CoreEditor } from "@jul-editor/core";
 import { fromHTML, fromMarkdown, toHTML, toMarkdown } from "@jul-editor/core/serde";
 import { diffDocs, DiffView } from "@jul-editor/plugins/diff";
 import { ArrowRight, Check, CircleAlert, Copy, FileText, RotateCcw } from "lucide-react";
 import { useEditor } from "@jul-editor/react";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject } from "react";
+import { uploadLocalImage } from "../../lib/local-image.js";
 import { FullEditorCanvas } from "./full-editor-canvas.js";
 import { useSiteSettings } from "../../app/site-settings.js";
 import { compareRows } from "../../lib/diff-rows.js";
@@ -91,6 +92,16 @@ export function UnifiedWorkspace({ createDocument, createBaseline, variant = "pl
   const rows = useMemo(() => view === "diff" && diffMode === "split" ? compareRows(baseline, doc, workspaceRegistry) : [], [view, diffMode, baseline, doc]);
   const changed = stats.inserted + stats.deleted + stats.modified + stats.moved;
   const shownFileName = fileName ?? "document.md";
+  // Invalidate an in-flight conversion whenever the visible source or editor changes,
+  // including a switch away and back while an image is still decoding.
+  const current = useRef({ locale, view, doc, draft, revision: 0 });
+  const prior = current.current;
+  if (prior.locale !== locale || prior.view !== view || prior.doc !== doc || prior.draft !== draft) {
+    current.current = { locale, view, doc, draft, revision: prior.revision + 1 };
+  }
+  const applySequence = useRef(0);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   function clearFeedback() {
     setMessage("");
@@ -152,11 +163,23 @@ export function UnifiedWorkspace({ createDocument, createBaseline, variant = "pl
     clearFeedback();
   }
 
-  function importSource() {
+  async function importSource() {
     if (!format) return;
+    const request = ++applySequence.current;
+    const revision = current.current.revision;
+    const editor = editorRef.current;
+    const editorStore = editor?.getState().store;
+    const isCurrent = () => mounted.current && request === applySequence.current && revision === current.current.revision && editor === editorRef.current && (!editor || editor.getState().store === editorStore);
+    const cancelStale = () => {
+      if (mounted.current && request === applySequence.current) {
+        setError(current.current.locale === "ko" ? "변환 중 문서나 소스가 변경되어 적용하지 않았습니다." : "The document or source changed during conversion; nothing was applied.");
+        setMessage("");
+      }
+    };
     try {
       let next: Doc;
       let notes: string[] = [];
+      let pendingImages: Array<{ blockId: string; dataUrl: string }> = [];
       if (format === "markdown") {
         const parsed = fromMarkdown(draft, { registry: workspaceRegistry });
         next = parsed.doc;
@@ -165,7 +188,7 @@ export function UnifiedWorkspace({ createDocument, createBaseline, variant = "pl
         const parsed = fromHTML(draft, { registry: workspaceRegistry });
         next = parsed.doc;
         notes = parsed.lossy.map((entry) => entry.type + ": " + entry.reason);
-        if (parsed.pendingUploads.length) notes.push(t(`${parsed.pendingUploads.length} image upload(s) need an upload handler in your app`, `이미지 ${parsed.pendingUploads.length}개를 업로드하려면 앱에 업로드 처리 함수를 연결해야 합니다`));
+        pendingImages = parsed.pendingUploads;
       } else {
         const raw: unknown = JSON.parse(draft);
         if (!raw || typeof raw !== "object" || !Array.isArray((raw as { blocks?: unknown }).blocks)) throw new Error(t("JSON must contain a document object with a blocks array.", "JSON에 blocks 배열이 있는 문서 객체가 필요합니다."));
@@ -173,17 +196,33 @@ export function UnifiedWorkspace({ createDocument, createBaseline, variant = "pl
         next = parsed.doc;
         notes = parsed.issues.map((issue) => issue.message);
       }
+      if (pendingImages.length) {
+        const sources = new Map<string, string>();
+        for (const image of pendingImages) {
+          const file = dataUrlToFile(image.dataUrl);
+          if (!file) throw new Error(t("Could not read an embedded image.", "포함된 이미지를 읽을 수 없습니다."));
+          sources.set(image.blockId, (await uploadLocalImage(file, { blockId: image.blockId, kind: "image" })).src);
+        }
+        const withImages = (blocks: Block[]): Block[] => blocks.map((block) => ({ ...block,
+          ...(sources.has(block.id) ? { props: { ...block.props, src: sources.get(block.id)! } } : {}),
+          ...(block.children ? { children: withImages(block.children) } : {}),
+        }));
+        next = { ...next, blocks: withImages(next.blocks) };
+      }
+      if (!isCurrent()) { cancelStale(); return; }
       // Markdown and HTML carry no block ids: match the parsed blocks to the current ones so only
       // edited blocks change. JSON keeps the ids it was given.
       const parsed = canonicalDoc(next, workspaceRegistry);
       const key = sourceKey(format);
-      replaceDoc(key ? reconcileIds(doc, parsed, key) : parsed);
+      const reconciled = key ? reconcileIds(doc, parsed, key) : parsed;
+      replaceDoc(reconciled);
       setDrafts((previous) => ({ ...previous, [locale]: { ...previous[locale], [format]: undefined } }));
       setView("editor");
       setError("");
       setNotesShown(notes.length > 0);
       setMessage(notes.length ? t(`Imported with ${notes.length} conversion note(s):`, `소스를 적용했습니다. 변환 참고 사항 ${notes.length}개:`) + " " + notes.join(" · ") : t("Source applied to the document. Use Undo to revert it.", "수정한 소스를 문서에 적용했습니다. 실행 취소로 되돌릴 수 있습니다."));
     } catch (cause) {
+      if (!isCurrent()) { cancelStale(); return; }
       clearFeedback();
       setError(cause instanceof Error ? cause.message : t("Could not read this source. Check its format and try again.", "소스를 읽을 수 없습니다. 형식을 확인한 뒤 다시 시도하세요."));
       setMessage("");

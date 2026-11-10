@@ -7,6 +7,9 @@ import { ZoomControl } from "@jul-editor/plugins/pages";
 import { newId } from "@jul-editor/core";
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowUpDown, Baseline, Bold, Code, Download, Ellipsis, Image as ImageIcon, Italic, Link as LinkIcon, List, ListOrdered, Moon, PanelRight, Printer, Strikethrough, Sun, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useMenuPlacement } from "../../components/workspace/menu-placement.js";
+import { refocusEditor } from "../../components/workspace/refocus-editor.js";
 import type { ReactNode } from "react";
 import { setBlockProp, setMarkAttrs } from "./docx-editor-commands.js";
 
@@ -33,24 +36,42 @@ const ALIGNS = [
 
 type Tr = (en: string, ko: string) => string;
 
-/** A button that opens a floating panel. Fixed positioning so the toolbar's own horizontal scroll never clips it. */
+function visibleAnchor(button: HTMLElement): DOMRect | null {
+  const rect = button.getBoundingClientRect();
+  const toolbar = button.closest(".docx-toolbar")?.getBoundingClientRect();
+  const header = document.querySelector(".site-header")?.getBoundingClientRect().bottom ?? 0;
+  if (rect.bottom <= header || rect.top >= window.innerHeight || rect.right <= 0 || rect.left >= window.innerWidth || (toolbar && (rect.right <= toolbar.left || rect.left >= toolbar.right))) return null;
+  return rect;
+}
+
+/** A button that opens a floating panel, rendered in <body> so the toolbar's horizontal scroll never clips it. */
 function Menu(props: { label: string; icon: ReactNode; className?: string; pressed?: boolean; onOpen?: () => void; children: (close: () => void) => ReactNode; testId?: string }) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const [rect, setRect] = useState<DOMRect | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
+  const { ref: panel, style } = useMenuPlacement<HTMLDivElement>(open ? rect : null);
   useEffect(() => {
     if (!open) return;
+    panel.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
     const close = (e: Event) => {
       if (e.type === "keydown" && (e as KeyboardEvent).key !== "Escape") return;
       // Only clicks inside this menu keep it open: opening another toolbar menu closes this one.
       if (e.type === "pointerdown" && e.target instanceof Node && (btn.current?.contains(e.target) || panel.current?.contains(e.target))) return;
+      if (e.type === "keydown" && panel.current?.contains(document.activeElement)) btn.current?.focus();
       setOpen(false);
     };
+    const follow = (e: Event) => {
+      if (e.target instanceof Node && panel.current?.contains(e.target)) return;
+      const next = btn.current && visibleAnchor(btn.current);
+      if (next) setRect(next);
+      else setOpen(false);
+    };
+    document.addEventListener("scroll", follow, true);
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
     window.addEventListener("resize", close);
     return () => {
+      document.removeEventListener("scroll", follow, true);
       document.removeEventListener("pointerdown", close);
       document.removeEventListener("keydown", close);
       window.removeEventListener("resize", close);
@@ -58,13 +79,19 @@ function Menu(props: { label: string; icon: ReactNode; className?: string; press
   }, [open]);
   return <>
     <button ref={btn} type="button" className={`docx-tool ${props.className ?? ""}`} aria-label={props.label} title={props.label} aria-haspopup="menu" aria-expanded={open} aria-pressed={props.pressed} data-docx-menu-button="" data-testid={props.testId}
+      onKeyDown={(event) => { if (!open && (event.key === "ArrowDown" || event.key === "ArrowUp")) { event.preventDefault(); event.stopPropagation(); event.currentTarget.click(); } }}
       onClick={() => {
-        const r = btn.current!.getBoundingClientRect();
-        setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 240)), top: r.bottom + 6 });
+        setRect(btn.current!.getBoundingClientRect());
         if (!open) props.onOpen?.();
         setOpen(!open);
       }}>{props.icon}</button>
-    {open && <div ref={panel} className="docx-menu" role="menu" data-docx-menu-panel="" data-jul-editor-keep-selection="" style={pos}>{props.children(() => setOpen(false))}</div>}
+    {open && createPortal(<div ref={panel} className="docx-menu" role="menu" data-docx-menu-panel="" data-jul-editor-keep-selection="" style={style} onKeyDown={(event) => {
+      if (event.key === "Tab") { btn.current?.focus(); setOpen(false); return; }
+      const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]'));
+      const index = items.indexOf(document.activeElement as HTMLElement);
+      const next = event.key === "ArrowDown" ? (index + 1) % items.length : event.key === "ArrowUp" ? (index + items.length - 1) % items.length : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : -1;
+      if (next >= 0 && items.length) { event.preventDefault(); event.stopPropagation(); items[next]?.focus(); }
+    }}>{props.children(() => { if (panel.current?.contains(document.activeElement)) btn.current?.focus(); setOpen(false); })}</div>, document.body)}
   </>;
 }
 
@@ -117,17 +144,36 @@ function ColorMenu({ t }: { t: Tr }) {
 
 function LinkMenu({ t }: { t: Tr }) {
   const link = useLinkEditor();
+  const editor = useEditor();
+  const done = (action: () => void) => { action(); refocusEditor(editor); };
   const marks = useActiveMarks();
   const [value, setValue] = useState("");
-  useEffect(() => setValue(link.href), [link.href, link.open]);
+  const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const { ref, style } = useMenuPlacement<HTMLFormElement>(link.open ? triggerRect ?? link.rect ?? new DOMRect(80, 80, 0, 0) : null, { width: 290, height: 43 });
+  useEffect(() => {
+    setValue(link.href);
+    if (!link.open) setTriggerRect(null);
+  }, [link.href, link.open]);
+  useEffect(() => {
+    if (!link.open) return;
+    const follow = (event: Event) => {
+      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
+      const next = triggerRect && button.current && visibleAnchor(button.current);
+      if (next) setTriggerRect(next);
+      else link.close();
+    };
+    document.addEventListener("scroll", follow, true);
+    return () => document.removeEventListener("scroll", follow, true);
+  }, [link.open, link.close, triggerRect, ref]);
   return <>
-    <button type="button" className="docx-tool" aria-label={t("Link", "링크")} title={t("Link (Ctrl+K)", "링크 (Ctrl+K)")} aria-pressed={marks.has("link")} onClick={() => link.openEditor()}><LinkIcon size={16} /></button>
-    {link.open && <form className="docx-menu docx-linkform" data-jul-editor-keep-selection="" style={{ left: Math.max(8, Math.min(link.rect?.left ?? 80, window.innerWidth - 300)), top: (link.rect?.bottom ?? 80) + 8 }}
-      onSubmit={(e) => { e.preventDefault(); link.apply(value); }}>
-      <input autoFocus aria-label={t("Link URL", "링크 주소")} placeholder="https://" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Escape" && link.close()} />
+    <button ref={button} type="button" className="docx-tool" aria-label={t("Link", "링크")} title={t("Link (Ctrl+K)", "링크 (Ctrl+K)")} aria-pressed={marks.has("link")} onClick={(event) => { setTriggerRect(event.currentTarget.getBoundingClientRect()); link.openEditor(); }}><LinkIcon size={16} /></button>
+    {link.open && createPortal(<form ref={ref} className="docx-menu docx-linkform" data-jul-editor-keep-selection="" style={style}
+      onSubmit={(e) => { e.preventDefault(); done(() => link.apply(value)); }}>
+      <input autoFocus aria-label={t("Link URL", "링크 주소")} placeholder="https://" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); done(link.close); } }} />
       <button type="submit">{t("Apply", "적용")}</button>
-      {link.href && <button type="button" onClick={() => link.remove()}>{t("Remove", "제거")}</button>}
-    </form>}
+      {link.href && <button type="button" onClick={() => done(link.remove)}>{t("Remove", "제거")}</button>}
+    </form>, document.body)}
   </>;
 }
 
@@ -155,8 +201,8 @@ export function DocxToolbar(p: DocxToolbarProps) {
   const imageInput = useRef<HTMLInputElement>(null);
   const CurrentAlign = ALIGNS.find((a) => a.value === align)?.Icon ?? AlignLeft;
 
-  // The editor's own file path: the image block previews the file at once and keeps it as a pending
-  // upload (core never stores data: or blob: URLs in the document). Export reads the pending bytes.
+  // The editor's own file path: the image block previews the file at once, then the demo's
+  // local upload handler stores it as a data URL (there is no upload server).
   function insertImage(file: File) {
     editor?.insertFiles([file]);
   }

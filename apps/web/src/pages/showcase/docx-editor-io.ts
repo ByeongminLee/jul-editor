@@ -14,15 +14,18 @@ export const LOGO_SRC = `data:image/svg+xml;utf8,${encodeURIComponent(
 
 /** docx cannot embed SVG, so the logo is rasterised to PNG at export time. */
 async function resolveImage(src: string) {
-  const img = new Image();
-  img.src = src;
-  await img.decode();
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 128;
-  canvas.getContext("2d")!.drawImage(img, 0, 0, 128, 128);
-  const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/png"));
-  if (!blob) return null;
-  return { data: new Uint8Array(await blob.arrayBuffer()), type: "png" as const, width: 128, height: 128 };
+  try {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || 128;
+    canvas.height = img.naturalHeight || 128;
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/png"));
+    if (!blob) return null;
+    return { data: new Uint8Array(await blob.arrayBuffer()), type: "png" as const, width: canvas.width, height: canvas.height };
+  } catch { return null; }
 }
 
 export interface DocxExportInfo {
@@ -69,19 +72,19 @@ async function rasterise(src: string): Promise<string | null> {
 /** Images inserted or imported in this session have no permanent URL (the demo has no upload server):
  * their bytes live in the editor's pending uploads. Export reads them from there. */
 async function withPendingImages(doc: Doc, files: ReadonlyMap<string, File>): Promise<Doc> {
-  if (!files.size) return doc;
   const srcs = new Map<string, string>();
   for (const [id, file] of files) {
     const url = await fileToDataUrl(file);
     // docx embeds png/jpeg/gif/bmp only: anything else (webp, svg ...) is rasterised to png first.
     srcs.set(id, DOCX_IMAGE_TYPES.has(file.type) ? url : (await rasterise(url)) ?? url);
   }
-  const walk = (blocks: Block[]): Block[] => blocks.map((b) => {
-    const src = b.type === "image" && !b.props.src ? srcs.get(b.id) : undefined;
+  const walk = async (blocks: Block[]): Promise<Block[]> => Promise.all(blocks.map(async (b) => {
+    let src = b.type === "image" && !b.props.src ? srcs.get(b.id) : undefined;
+    if (b.type === "image" && typeof b.props.src === "string" && /^data:image\/webp;base64,/i.test(b.props.src)) src = (await rasterise(b.props.src)) ?? undefined;
     const next = src ? { ...b, props: { ...b.props, src } } : b;
-    return b.children?.length ? { ...next, children: walk(b.children) } : next;
-  });
-  return { ...doc, blocks: walk(doc.blocks) };
+    return b.children?.length ? { ...next, children: await walk(b.children) } : next;
+  }));
+  return { ...doc, blocks: await walk(doc.blocks) };
 }
 
 export async function buildDocx(doc: Doc, settings: DocumentSettings, pendingFiles: ReadonlyMap<string, File> = new Map()): Promise<DocxExportInfo> {

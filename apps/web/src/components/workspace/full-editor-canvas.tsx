@@ -6,6 +6,8 @@ import { DataTableView, dataTableSlashItem } from "@jul-editor/plugins/table";
 import { AttachmentView, attachmentBlock, createAttachmentBlock, createCodeBlockRenderer, defaultRenderers, Editor, useEditor, type MentionItem, type MentionMenuRenderArgs, type TagMenuRenderArgs } from "@jul-editor/react";
 import { Paperclip } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { uploadLocalImage } from "../../lib/local-image.js";
+import { LocalImageUploads } from "./local-image-uploads.js";
 import { EditorCanvas, type EditorCanvasProps } from "./editor-canvas.js";
 import { useMenuPlacement } from "./menu-placement.js";
 import { useSiteSettings } from "../../app/site-settings.js";
@@ -37,9 +39,10 @@ const tagItems = {
 function MentionMenuList({ items, activeIndex, kindLabel, rect, getListboxProps, getOptionProps }: MentionMenuRenderArgs) {
   const { t } = useSiteSettings();
   const { ref, style } = useMenuPlacement(rect, { width: 250, height: 104 });
-  return <div {...getListboxProps()} ref={ref} aria-label={kindLabel} className="slash-menu" style={style}>
+  return <div ref={ref} data-jul-editor-keep-selection="" className="slash-menu" style={style}>
     <div className="slash-menu-label">{kindLabel.toUpperCase()} · {t("TAB TO SWITCH TYPE", "TAB으로 유형 전환")}</div>
-    {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>@{item.label}</div>) : <div className="slash-empty">{t("No matching mentions", "일치하는 멘션이 없습니다")}</div>}
+    <div {...getListboxProps()} aria-label={kindLabel}>{items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>@{item.label}</div>)}</div>
+    <div role="status">{!items.length && <div className="slash-empty">{t("No matching mentions", "일치하는 멘션이 없습니다")}</div>}</div>
   </div>;
 }
 
@@ -53,9 +56,10 @@ function MentionCommands() {
 function TagMenuList({ items, activeIndex, rect, getListboxProps, getOptionProps }: TagMenuRenderArgs) {
   const { t } = useSiteSettings();
   const { ref, style } = useMenuPlacement(rect, { width: 250, height: 140 });
-  return <div {...getListboxProps()} ref={ref} aria-label={t("Tags", "태그")} className="slash-menu" style={style}>
+  return <div ref={ref} data-jul-editor-keep-selection="" className="slash-menu" style={style}>
     <div className="slash-menu-label">{t("TAGS", "태그")}</div>
-    {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>#{item.label}</div>) : <div className="slash-empty">{t("No matching tags", "일치하는 태그가 없습니다")}</div>}
+    <div {...getListboxProps()} aria-label={t("Tags", "태그")}>{items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>#{item.label}</div>)}</div>
+    <div role="status">{!items.length && <div className="slash-empty">{t("No matching tags", "일치하는 태그가 없습니다")}</div>}</div>
   </div>;
 }
 
@@ -87,8 +91,9 @@ function FileInsert() {
 
 /** Consumer opt-in: importing this module adds chart, diagram, data and highlighting UI. */
 export function FullEditorCanvas(props: EditorCanvasProps) {
-  return <ResolveDataProvider value={resolveData}><EditorCanvas {...props} uploadMode={props.uploadMode ?? "deferred"} createFileBlock={props.createFileBlock ?? createAttachmentBlock} toolbarActions={<FileInsert />} renderers={{ ...defaultRenderers, codeBlock, attachment: AttachmentView, ...props.renderers }}>
+  return <ResolveDataProvider value={resolveData}><EditorCanvas {...props} uploadMode={props.uploadMode ?? "deferred"} onUpload={props.onUpload ?? uploadLocalImage} createFileBlock={props.createFileBlock ?? createAttachmentBlock} toolbarActions={<FileInsert />} renderers={{ ...defaultRenderers, codeBlock, attachment: AttachmentView, ...props.renderers }}>
     <Editor.Plugin blocks={[codeWorkspaceBlock, attachmentBlock]} renderers={pluginRenderers} slashItems={pluginSlashItems} />
+    {!props.onUpload && <LocalImageUploads />}
     <HighlightCode />
     <MentionCommands />
     <TagCommands />

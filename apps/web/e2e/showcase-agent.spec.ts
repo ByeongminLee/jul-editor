@@ -77,13 +77,16 @@ test("chat layout: composer pinned to the bottom, thread keeps history across tw
   await page.setViewportSize({ width: 1440, height: 1000 });
   await open(page);
   const panel = page.locator(".showcase-agent .agent-panel");
-  const composer = page.getByTestId("agent-composer");
   await expect(page.getByTestId("agent-empty")).toBeVisible();
   await expect(page.getByTestId("agent-turn")).toHaveCount(0);
   const near = async () => {
-    const p = (await panel.boundingBox())!, c = (await composer.boundingBox())!;
-    expect(Math.abs(p.y + p.height - (c.y + c.height))).toBeLessThanOrEqual(2);
-    expect(c.y).toBeGreaterThan(p.y + p.height / 2); // lower half of the panel
+    const { panelTop, panelBottom, composerTop, composerBottom } = await panel.evaluate((el) => {
+      const p = el.getBoundingClientRect();
+      const c = el.querySelector('[data-testid="agent-composer"]')!.getBoundingClientRect();
+      return { panelTop: p.top, panelBottom: p.bottom, composerTop: c.top, composerBottom: c.bottom };
+    });
+    expect(Math.abs(panelBottom - composerBottom)).toBeLessThanOrEqual(2);
+    expect(composerTop).toBeGreaterThan((panelTop + panelBottom) / 2); // lower half of the panel
   };
   await near();
 

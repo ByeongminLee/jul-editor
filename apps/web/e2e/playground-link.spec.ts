@@ -109,3 +109,18 @@ test("clicking an internal link inside the editor places the caret and stays on 
   await expect(page.locator(END)).toBeVisible();
   await expect.poll(() => page.evaluate(() => !!window.getSelection()?.anchorNode?.parentElement?.closest("[data-jul-editor-root]"))).toBe(true);
 });
+
+test("link URL input retains normal navigation keys", async ({ page }) => {
+  await selectStartOfLastParagraph(page);
+  await page.keyboard.press("ControlOrMeta+k");
+  const input = page.locator("#jul-editor-link-url");
+  await input.fill("https://example.com/foo");
+  await input.press("Home");
+  await expect(input).toBeFocused();
+  await input.press("ArrowLeft");
+  await expect.poll(() => input.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(22);
+  await input.press("End");
+  await expect(input).toBeFocused();
+  await input.press("ArrowRight");
+  await expect.poll(() => input.evaluate((el: HTMLInputElement) => el.selectionStart)).toBe(23);
+});

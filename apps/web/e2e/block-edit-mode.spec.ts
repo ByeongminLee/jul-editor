@@ -140,3 +140,27 @@ for (const target of ["page h1", "header link"] as const) {
     await expect(controls).toHaveCount(0);
   });
 }
+
+test('Escape from chart controls returns focus to editor', async ({ page }) => {
+  await page.goto('/playground');
+  await page.locator('[data-id=demo-chart]').click();
+  const control = page.getByTestId('jul-editor-chart-csv');
+  await control.focus();
+  await control.press('Escape');
+  await expect(page.locator('.playground-workspace [data-jul-editor-root]')).toBeFocused();
+  await expect(control).toHaveCount(0);
+});
+
+test('Escape from diagram controls returns focus to editor', async ({ page }) => {
+  await page.goto('/docs/plugins/diagram');
+  const demo = page.locator('.docs-plugin-demo');
+  const diagram = demo.locator('[data-jul-editor-plugin=diagram]');
+  await expect(diagram.getByTestId('jul-editor-diagram-preview')).toBeVisible();
+  await diagram.click();
+  const source = demo.getByTestId('jul-editor-diagram-code');
+  await expect(source).toBeVisible();
+  await source.focus();
+  await source.press('Escape');
+  await expect(demo.locator('[data-jul-editor-root]')).toBeFocused();
+  await expect(source).toHaveCount(0);
+});
