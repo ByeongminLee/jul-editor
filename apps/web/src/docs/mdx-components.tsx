@@ -1,4 +1,5 @@
-import { lazy, Suspense, useState, type ReactElement, type ReactNode } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Code } from "../components/code-block.js";
 import { DocsStyleAnatomy } from "../components/docs/style-anatomy.js";
 import { DocsLive, DocsLiveDiff, type DocsChartKind } from "../components/docs/live.js";
@@ -26,7 +27,33 @@ export function MdxPre({ children }: { children?: ReactNode }) {
   return <Code title={title} language={language} locale={locale}>{String(code?.props?.children ?? "")}</Code>;
 }
 
-export function Demo({ example }: { example: "composition" | "formats" | "tags" | "typography" | "toolbar" | "style-slots" | "custom-blocks" | "menus" | "menus-custom" | "view" | "tables" | "media" | "state" | "extension-api" | "diagram" | "data-table" | "code-blocks" | "code-workspace" | "code-workspace-ide" | "chart-customization" | "diff" }) {
+type DemoEntry = { host: HTMLDivElement; node: ReactNode };
+const DemoSlotsContext = createContext<((key: string, slot: HTMLElement, node: ReactNode) => void) | null>(null);
+
+export function DemoSlotsProvider({ children }: { children: ReactNode }) {
+  const [entries, setEntries] = useState<Record<string, DemoEntry>>({});
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  const register = useCallback((key: string, slot: HTMLElement, node: ReactNode) => {
+    let entry = entriesRef.current[key];
+    if (!entry) {
+      entry = { host: document.createElement("div"), node };
+      entriesRef.current = { ...entriesRef.current, [key]: entry };
+      setEntries(entriesRef.current);
+    }
+    if (entry.host.parentElement !== slot) slot.appendChild(entry.host);
+  }, []);
+  return <DemoSlotsContext.Provider value={register}>{children}{Object.entries(entries).map(([key, entry]) => createPortal(entry.node, entry.host, key))}</DemoSlotsContext.Provider>;
+}
+
+function DemoSlot({ slotKey, children }: { slotKey: string; children: ReactNode }) {
+  const register = useContext(DemoSlotsContext);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => { if (register && ref.current) register(slotKey, ref.current, children); }, [register, slotKey]);
+  return register ? <div ref={ref} /> : <>{children}</>;
+}
+
+function DemoContent({ example }: { example: "composition" | "formats" | "tags" | "typography" | "toolbar" | "style-slots" | "custom-blocks" | "menus" | "menus-custom" | "view" | "tables" | "media" | "state" | "extension-api" | "diagram" | "data-table" | "code-blocks" | "code-workspace" | "code-workspace-ide" | "chart-customization" | "diff" }) {
   const { locale } = useSiteSettings();
   if (example === "diff") return <DocsLiveDiff locale={locale} />;
   if (example === "composition" || example === "formats" || example === "tags") return <DocsLive example={example} locale={locale} chartKind="bar" />;
@@ -44,6 +71,10 @@ export function Demo({ example }: { example: "composition" | "formats" | "tags" 
   </Suspense>;
 }
 
+export function Demo(props: Parameters<typeof DemoContent>[0]) {
+  return <DemoSlot slotKey={`demo:${props.example}`}><DemoContent {...props} /></DemoSlot>;
+}
+
 const chartKinds: { kind: DocsChartKind; en: string; ko: string }[] = [
   { kind: "bar", en: "Compare categories", ko: "범주별 값을 비교" },
   { kind: "line", en: "Track change", ko: "시간에 따른 변화" },
@@ -53,7 +84,7 @@ const chartKinds: { kind: DocsChartKind; en: string; ko: string }[] = [
   { kind: "radial", en: "A circular measure", ko: "원형 지표" },
 ];
 
-export function ChartKinds() {
+function ChartKindsContent() {
   const { locale } = useSiteSettings();
   const [kind, setKind] = useState<DocsChartKind>("bar");
   return <>
@@ -63,5 +94,7 @@ export function ChartKinds() {
     <DocsLive key={kind} example="charts" locale={locale} chartKind={kind} />
   </>;
 }
+
+export function ChartKinds() { return <DemoSlot slotKey="chart-kinds"><ChartKindsContent /></DemoSlot>; }
 
 export const mdxComponents = { Note, Demo, ChartKinds, DocsStyleAnatomy, AboutCharts, pre: MdxPre };

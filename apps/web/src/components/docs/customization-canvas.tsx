@@ -1,8 +1,9 @@
 import { defineBlock, newId, type Doc } from "@jul-editor/core";
-import { Editor, useCommands, type VoidRendererProps } from "@jul-editor/react";
+import { Editor, useCommands, type SlashMenuRenderArgs, type VoidRendererProps } from "@jul-editor/react";
 import { useEffect, useState } from "react";
 
 import { Code } from "../code-block.js";
+import { useMenuPlacement } from "../workspace/menu-placement.js";
 import { useSiteSettings } from "../../app/site-settings.js";
 
 export const metricSpec = defineBlock({ type: "metric", content: "none", children: "none", props: { label: "Visitors", value: 120 } });
@@ -19,6 +20,12 @@ export function MetricView({ block, updateProps }: VoidRendererProps) {
 function InsertMetric({ ko }: { ko: boolean }) {
   const commands = useCommands();
   return <button type="button" onClick={() => commands.insertBlock(metricBlock(ko))}>{ko ? "지표 블록 삽입" : "Insert metric block"}</button>;
+}
+function CustomizationMenu({ items, activeIndex, loading, rect, getListboxProps, getOptionProps }: SlashMenuRenderArgs) {
+  const { t } = useSiteSettings();
+  const { ref, style } = useMenuPlacement(rect);
+  const empty = loading ? t("Loading…", "불러오는 중…") : t("No matching blocks", "일치하는 블록이 없습니다");
+  return <><div {...getListboxProps()} aria-label={t("Block commands", "블록 명령")} ref={ref} className="slash-menu" style={style}>{items.map((item, index) => <div key={item.id} {...getOptionProps(index)} data-active={index === activeIndex || undefined} className="slash-option">{item.title}</div>)}{!items.length && <div className="slash-empty" aria-hidden="true">{empty}</div>}</div><span role="status" className="visually-hidden">{!items.length ? empty : ""}</span></>;
 }
 export function DocsCustomizationCanvas({ locale, example }: { locale: "en" | "ko"; example: "typography" | "toolbar" | "custom-blocks" }) {
   const ko = locale === "ko";
@@ -53,7 +60,7 @@ export function DocsCustomizationCanvas({ locale, example }: { locale: "en" | "k
           {example === "custom-blocks" && <InsertMetric ko={ko} />}
         </Editor.Toolbar>
         <Editor.Content className="docs-demo-content" />
-        <Editor.SlashMenu>{({ items, rect, getListboxProps, getOptionProps }) => <div {...getListboxProps()} className="slash-menu" style={rect ? { left: rect.left, top: rect.bottom + 6 } : undefined}>{items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option">{item.title}</div>)}</div>}</Editor.SlashMenu>
+        <Editor.SlashMenu>{(args) => <CustomizationMenu {...args} />}</Editor.SlashMenu>
       </Editor>
     </div>
     {example === "custom-blocks" && <details className="docs-model"><summary>{ko ? "저장되는 JSON 보기" : "View saved JSON"}</summary><Code title="json" locale={locale} testId="docs-custom-json">{JSON.stringify(doc, null, 2)}</Code></details>}

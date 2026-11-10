@@ -31,7 +31,32 @@ function Shell() {
   const page = path === "/" ? <Home /> : path === "/playground" ? <Playground /> : path === "/showcase" ? <Showcase /> : path === "/about" ? <About /> : path === "/docs" || path.startsWith("/docs/") ? <Docs path={path} onRedirect={setPath} /> : <main className="interior-page"><NotFound /></main>;
 
   useEffect(() => {
-    const onPopState = () => setPath(currentRoute());
+    // Pages load lazily, so the browser's own restore runs while the page is still too short.
+    // Remember each history entry's scroll offset and reapply it once the content can hold it.
+    const offsets = new Map<number, number>();
+    const entryOf = (state: unknown) => (state as { entry?: number } | null)?.entry ?? 0;
+    let entry = entryOf(window.history.state);
+    let nextEntry = entry + 1;
+    let offset = window.scrollY;
+    let restoring = 0;
+    const stopRestoring = () => { cancelAnimationFrame(restoring); restoring = 0; };
+    const onScroll = () => { if (!restoring) offset = window.scrollY; };
+    const onPopState = (event: PopStateEvent) => {
+      stopRestoring();
+      offsets.set(entry, offset);
+      entry = entryOf(event.state);
+      nextEntry = Math.max(nextEntry, entry + 1);
+      setPath(currentRoute());
+      const target = offsets.get(entry);
+      if (target === undefined) return;
+      offset = target;
+      const deadline = performance.now() + 3000;
+      const step = () => {
+        window.scrollTo(0, target);
+        restoring = Math.abs(window.scrollY - target) > 1 && performance.now() < deadline ? requestAnimationFrame(step) : 0;
+      };
+      restoring = requestAnimationFrame(step);
+    };
     const onLinkClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target;
@@ -44,20 +69,33 @@ function Shell() {
       event.preventDefault();
       if (next.href === window.location.href) { window.scrollTo(0, 0); return; }
       const nextPath = routePath(next.pathname);
-      window.history.pushState(null, "", withBase(nextPath) + next.search + next.hash);
+      stopRestoring();
+      offsets.set(entry, window.scrollY);
+      entry = nextEntry++;
+      window.history.pushState({ entry }, "", withBase(nextPath) + next.search + next.hash);
       setPath(nextPath);
       setMenuOpen(false);
       window.scrollTo(0, 0);
     };
+    const userInput = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
     window.addEventListener("popstate", onPopState);
+    window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("click", onLinkClick);
-    return () => { window.removeEventListener("popstate", onPopState); document.removeEventListener("click", onLinkClick); };
+    for (const type of userInput) window.addEventListener(type, stopRestoring, { passive: true });
+    return () => {
+      stopRestoring();
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("click", onLinkClick);
+      for (const type of userInput) window.removeEventListener(type, stopRestoring);
+    };
   }, []);
 
   useEffect(() => {
     if (!path.startsWith("/docs")) {
       const known = path === "/" || siteLinks.some((link) => link.href === path);
-      const label = siteLinks.find((link) => link.href === path)?.label;
+      const link = siteLinks.find((item) => item.href === path);
+      const label = link && (locale === "ko" ? link.ko : link.label);
       document.title = label ? `${label} | JulEditor` : known ? "JulEditor" : t("Page not found | JulEditor", "페이지를 찾을 수 없음 | JulEditor");
     }
     document.querySelector('meta[name="description"]')?.setAttribute("content", t(

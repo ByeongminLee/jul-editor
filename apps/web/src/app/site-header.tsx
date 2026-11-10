@@ -3,10 +3,10 @@ import { useEffect, useRef } from "react";
 import { useSiteSettings } from "./site-settings.js";
 
 export const siteLinks = [
-  { href: "/playground", label: "Playground" },
-  { href: "/showcase", label: "Showcase" },
-  { href: "/docs", label: "Docs" },
-  { href: "/about", label: "About" },
+  { href: "/playground", label: "Playground", ko: "플레이그라운드" },
+  { href: "/showcase", label: "Showcase", ko: "쇼케이스" },
+  { href: "/docs", label: "Docs", ko: "문서" },
+  { href: "/about", label: "About", ko: "소개" },
 ];
 
 export function SiteHeader({ path, menuOpen, onMenuOpenChange }: { path: string; menuOpen: boolean; onMenuOpenChange: (open: boolean) => void }) {
@@ -14,22 +14,38 @@ export function SiteHeader({ path, menuOpen, onMenuOpenChange }: { path: string;
   const links = siteLinks;
   const setMenuOpen = onMenuOpenChange;
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!menuOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      setMenuOpen(false);
-      toggleRef.current?.focus();
+      if (event.defaultPrevented) return;
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        toggleRef.current?.focus();
+      } else if (event.key === "Tab") {
+        const items = Array.from(headerRef.current?.querySelectorAll<HTMLElement>("a[href], button") ?? []).filter((el) => el.offsetParent !== null);
+        const edge = event.shiftKey ? items[0] : items[items.length - 1];
+        if (document.activeElement === edge || !headerRef.current?.contains(document.activeElement)) {
+          event.preventDefault();
+          (event.shiftKey ? items[items.length - 1] : items[0])?.focus();
+        }
+      }
     };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!headerRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const onScroll = () => setMenuOpen(false);
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerdown", onPointerDown); window.removeEventListener("scroll", onScroll); };
   }, [menuOpen, setMenuOpen]);
   return (
-  <header className="site-header">
+  <header ref={headerRef} className="site-header">
       <div className="site-header-inner">
         <a className="brand" href="/" aria-label={t("JulEditor home", "JulEditor 홈")}><img className="brand-mark" src="/favicon.svg" alt="" /><span>JulEditor</span></a>
         <nav className={`site-nav${menuOpen ? " site-nav-open" : ""}`} aria-label={t("Main navigation", "기본 메뉴")}>
-          {links.map((link) => <a key={link.href} href={link.href} aria-current={path === link.href || (link.href === "/docs" && path.startsWith("/docs/")) ? "page" : undefined} onClick={() => setMenuOpen(false)}>{link.label}</a>)}
+          {links.map((link) => <a key={link.href} href={link.href} aria-current={path === link.href || (link.href === "/docs" && path.startsWith("/docs/")) ? "page" : undefined} onClick={() => setMenuOpen(false)}>{locale === "ko" ? link.ko : link.label}</a>)}
         </nav>
         <div className="header-actions">
           <a className="header-icon-button" href="https://github.com/ByeongminLee/jul-editor" target="_blank" rel="noreferrer" title="GitHub" aria-label={t("JulEditor on GitHub", "GitHub의 JulEditor")}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.69c-2.78.6-3.37-1.18-3.37-1.18-.45-1.15-1.1-1.45-1.1-1.45-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.82.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.81c.85 0 1.7.11 2.5.34 1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.69.92.69 1.85v2.77c0 .26.18.57.69.48A10 10 0 0 0 12 2Z" /></svg></a>

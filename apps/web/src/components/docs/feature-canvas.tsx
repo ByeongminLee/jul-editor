@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { Code } from "../code-block.js";
 import { metricSpec, MetricView } from "./customization-canvas.js";
+import { PlacedMenu } from "../workspace/menu-placement.js";
 import { useBubblePlacement } from "../workspace/bubble-placement.js";
 import "../../styles/docs-feature.css";
 
@@ -49,10 +50,6 @@ function initialDoc(example: DocsFeatureExample, locale: Locale): Doc {
   ] };
 }
 
-function menuPosition(rect: DOMRect | null) {
-  return rect ? { left: Math.max(8, Math.min(rect.left, window.innerWidth - 258)), top: Math.max(8, Math.min(rect.bottom + 7, window.innerHeight - 280)) } : undefined;
-}
-
 function Menus({ locale }: { locale: Locale }) {
   const ko = locale === "ko";
   const tags = [
@@ -65,20 +62,20 @@ function Menus({ locale }: { locale: Locale }) {
     ? [{ id: "lee", kind: "user" as const, label: ko ? "이민" : "Lee" }]
     : [{ id: "guide", kind: "post" as const, label: ko ? "안내 글" : "Guide" }]).filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
   return <>
-    <Editor.SlashMenu>{({ items, activeIndex, rect, getListboxProps, getOptionProps }) => <div {...getListboxProps()} aria-label={ko ? "블록 명령" : "Block commands"} className="slash-menu" style={menuPosition(rect)}>
+    <Editor.SlashMenu>{({ items, activeIndex, loading, rect, getListboxProps, getOptionProps }) => <PlacedMenu data-jul-editor-keep-selection="" className="slash-menu" rect={rect}>
       <div className="slash-menu-label">{ko ? "블록 삽입" : "INSERT A BLOCK"}</div>
-      {items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>{item.title}</div>)}
-      {!items.length && <div className="slash-empty">{ko ? "일치하는 블록 없음" : "No matching blocks"}</div>}
-    </div>}</Editor.SlashMenu>
-    <Editor.TagMenu onSearch={searchTags}>{({ items, activeIndex, rect, getListboxProps, getOptionProps }) => <div {...getListboxProps()} aria-label={ko ? "태그" : "Tags"} className="slash-menu" style={menuPosition(rect)}>
+      <div {...getListboxProps()} aria-label={ko ? "블록 명령" : "Block commands"}>{items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>{item.title}</div>)}</div>
+      <div role="status">{!items.length && <div className="slash-empty">{loading ? (ko ? "불러오는 중…" : "Loading…") : (ko ? "일치하는 블록 없음" : "No matching blocks")}</div>}</div>
+    </PlacedMenu>}</Editor.SlashMenu>
+    <Editor.TagMenu onSearch={searchTags}>{({ items, activeIndex, rect, getListboxProps, getOptionProps }) => <PlacedMenu data-jul-editor-keep-selection="" className="slash-menu" rect={rect}>
       <div className="slash-menu-label">{ko ? "태그" : "TAGS"}</div>
-      {items.map((tag, index) => <div key={tag.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>#{tag.label}</div>)}
-      {!items.length && <div className="slash-empty">{ko ? "일치하는 태그가 없습니다" : "No matching tags"}</div>}
-    </div>}</Editor.TagMenu>
-    <Editor.MentionMenu onSearch={searchMention}>{({ items, activeIndex, kindLabel, rect, getListboxProps, getOptionProps }) => <div {...getListboxProps()} aria-label={kindLabel} className="slash-menu" style={menuPosition(rect)}>
+      <div {...getListboxProps()} aria-label={ko ? "태그" : "Tags"}>{items.map((tag, index) => <div key={tag.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>#{tag.label}</div>)}</div>
+      <div role="status">{!items.length && <div className="slash-empty">{ko ? "일치하는 태그가 없습니다" : "No matching tags"}</div>}</div>
+    </PlacedMenu>}</Editor.TagMenu>
+    <Editor.MentionMenu onSearch={searchMention}>{({ items, activeIndex, kindLabel, rect, getListboxProps, getOptionProps }) => <PlacedMenu {...getListboxProps()} aria-label={kindLabel} className="slash-menu" rect={rect}>
       <div className="slash-menu-label">{kindLabel} · {ko ? "Tab으로 전환" : "Tab to switch"}</div>
       {items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>@{item.label}</div>)}
-    </div>}</Editor.MentionMenu>
+    </PlacedMenu>}</Editor.MentionMenu>
     <Editor.BubbleMenu>{({ rect }) => <FeatureBubble rect={rect} ko={ko} />}</Editor.BubbleMenu>
   </>;
 }
@@ -134,7 +131,7 @@ export function DocsFeatureCanvas({ example, locale }: { example: DocsFeatureExa
   };
   return <div className="docs-live docs-feature" data-testid={`docs-feature-${example}`}>
     <div className="docs-live-head"><div><span className="docs-live-signal" /><strong>{ko ? "실제 에디터" : "Live editor"}</strong><small>{intro[example][ko ? 1 : 0]}</small></div></div>
-    <Editor value={doc} onChange={(next) => { setEdited(true); setDoc(next); }} locale={locale} labels={example === "state" ? { toolbarBold: ko ? "강조" : "Emphasize" } : undefined} renderers={example === "media" ? defaultRenderers : undefined} className="editor-instance" placeholder={ko ? "블록을 추가하려면 /를 입력하세요…" : "Type / for a block"}>
+    <Editor value={doc} onChange={(next) => { setEdited(true); setDoc(next); }} locale={locale} labels={example === "state" ? { toolbarBold: ko ? "강조" : "Emphasize" } : undefined} renderers={example === "media" ? defaultRenderers : undefined} className="editor-instance" placeholder={example === "menus" ? (ko ? "블록을 추가하려면 /를 입력하세요…" : "Type / for a block") : (ko ? "여기에 입력하세요…" : "Type here…")}>
       {example === "extension-api" && <Editor.Plugin blocks={[metricSpec]} renderers={{ metric: MetricView }} />}
       {example === "tables" && <Editor.Toolbar className="docs-demo-toolbar docs-feature-toolbar" aria-label={ko ? "표 명령" : "Table commands"}>
         <Editor.InsertTable rows={2} cols={2} /><Editor.AddRowAfter /><Editor.AddColumnAfter /><Editor.ToggleHeaderRow /><Editor.DeleteRow /><Editor.DeleteColumn /><Editor.Undo />
