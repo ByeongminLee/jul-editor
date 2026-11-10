@@ -16,6 +16,7 @@ export interface PushOptions {
    * same blockId (and `mergeable: true`) within the merge window fold together. */
   blockId?: string;
   mergeable?: boolean;
+  startsGroup?: boolean;
 }
 
 export interface History {
@@ -27,13 +28,13 @@ export interface History {
    * recorded before it stores a whole-state snapshot -- undoing past it and
    * redoing back would otherwise resurrect the block's PRE-patch props (an
    * uploaded image's src reverting to "" forever). Patches `patch` onto
-   * `blockId` in every stack entry's `before`/`after` that still contains it
+   * `blockId` in every stack entry's `before`/`after` that matches `expected`
    * (both stacks -- an entry already undone into the redo stack must stay
    * patched too), and folds `blockId` into that entry's own `changedIds` so a
    * later renderChanged() picks it up regardless of whether the original
    * edit touched it. A no-op entry (block absent from that snapshot) is left
-   * alone. */
-  patchSystemProps(blockId: string, patch: Record<string, Json | undefined>): void;
+   * alone. `expected` identifies the source being replaced so older assets are preserved. */
+  patchSystemProps(blockId: string, patch: Record<string, Json | undefined>, expected?: Record<string, Json | undefined>): void;
   /** Collaboration seam (plugins/collaboration): a REMOTE edit (applied via
    * editor.applyRemote, never pushed as an undo step) must survive a later
    * local undo/redo. Every entry stores whole-state snapshots, so without
@@ -74,9 +75,16 @@ const REBASE_LOG_CAP = 2000;
  * toDoc() call against the patched store (identity-keyed WeakMap cache) never
  * returns a stale cached Doc for an ancestor whose child just changed. A
  * no-op (same `store` back) when `blockId` isn't in this particular snapshot. */
-function patchStoreProps(store: Store, blockId: string, patch: Record<string, Json | undefined>): Store {
+function patchStoreProps(store: Store, blockId: string, patch: Record<string, Json | undefined>, expected: Record<string, Json | undefined>): Store {
   const rec = store.records.get(blockId);
   if (!rec) return store;
+  const same = (key: string) => {
+    const actual = rec.props[key];
+    const prior = expected[key];
+    if (key === "src" && (actual === undefined || actual === "") && (prior === undefined || prior === "")) return true;
+    return actual === prior;
+  };
+  if (!Object.keys(expected).every(same)) return store;
   const props = { ...rec.props };
   for (const k of Object.keys(patch)) {
     if (patch[k] === undefined) delete props[k];
@@ -100,9 +108,9 @@ export function createHistory(cap = 200): History {
     entry.rebased = rebaseLog.length;
   }
 
-  function patchEntry(entry: StackEntry, blockId: string, patch: Record<string, Json | undefined>): void {
-    const before = patchStoreProps(entry.before.store, blockId, patch);
-    const after = patchStoreProps(entry.after.store, blockId, patch);
+  function patchEntry(entry: StackEntry, blockId: string, patch: Record<string, Json | undefined>, expected: Record<string, Json | undefined>): void {
+    const before = patchStoreProps(entry.before.store, blockId, patch, expected);
+    const after = patchStoreProps(entry.after.store, blockId, patch, expected);
     if (before === entry.before.store && after === entry.after.store) return; // neither snapshot contains this block
     entry.before = { ...entry.before, store: before };
     entry.after = { ...entry.after, store: after };
@@ -114,7 +122,7 @@ export function createHistory(cap = 200): History {
       redoStack = []; // a new edit invalidates redo history
       const now = Date.now();
       const last = undoStack[undoStack.length - 1];
-      if (last?.mergeable && opts.mergeable && opts.blockId !== undefined && last.blockId === opts.blockId && now - last.timestamp < MERGE_WINDOW_MS) {
+      if (last?.mergeable && opts.mergeable && !opts.startsGroup && opts.blockId !== undefined && last.blockId === opts.blockId && now - last.timestamp < MERGE_WINDOW_MS) {
         catchUp(last); // entry.after already includes every logged remote edit
         last.after = entry.after;
         for (const id of entry.changedIds) last.changedIds.add(id);
@@ -129,18 +137,22 @@ export function createHistory(cap = 200): History {
       if (!entry) return null;
       catchUp(entry);
       redoStack.push(entry);
+      // typing right after an undo is a new step, never folded into the entry now on top
+      const top = undoStack[undoStack.length - 1];
+      if (top) top.mergeable = false;
       return { state: entry.before, changedIds: entry.changedIds };
     },
     redo() {
       const entry = redoStack.pop();
       if (!entry) return null;
       catchUp(entry);
+      entry.mergeable = false;
       undoStack.push(entry);
       return { state: entry.after, changedIds: entry.changedIds };
     },
-    patchSystemProps(blockId, patch) {
-      for (const entry of undoStack) patchEntry(entry, blockId, patch);
-      for (const entry of redoStack) patchEntry(entry, blockId, patch);
+    patchSystemProps(blockId, patch, expected = {}) {
+      for (const entry of undoStack) patchEntry(entry, blockId, patch, expected);
+      for (const entry of redoStack) patchEntry(entry, blockId, patch, expected);
     },
     rebase(map, touchedIds) {
       if (undoStack.length === 0 && redoStack.length === 0) return; // nothing to keep consistent

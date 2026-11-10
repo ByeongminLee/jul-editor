@@ -112,7 +112,7 @@ export interface Transaction {
   /** Splits the block at `point` (see edits.ts's buildSplitBlockOps).
    * `opts.type` gives the block created after the caret a different type
    * (Enter at the end of a heading starts a paragraph). */
-  splitBlock(point: Point, opts?: { type?: string }): Transaction;
+  splitBlock(point: Point, opts?: { type?: string; select?: boolean }): Transaction;
   mergeBackward(blockId: string): Transaction;
   indent(id: string): Transaction;
   outdent(id: string): Transaction;
@@ -155,13 +155,14 @@ export interface Transaction {
    * when it would tear a rowspan/colspan crossing the moved range. */
   moveRow(tableId: string, from: number, to: number): Transaction;
   moveColumn(tableId: string, from: number, to: number): Transaction;
-  setSelection(selection: Selection | null): Transaction;
+  setSelection(selection: Selection | null, opts?: { preserveOnRepair?: boolean }): Transaction;
   commit(): TransactionResult;
 }
 
 export function createTransaction(state: EditorState, registry: Registry): Transaction {
   let store: Store = state.store;
   let selection = state.selection;
+  let preserveOnRepair = false;
   const changedIds = new Set<string>();
   const inverseOps: Op[] = [];
 
@@ -229,7 +230,12 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       return tx;
     },
     splitBlock(point, opts) {
-      applyAll(buildSplitBlockOps(store, point, opts));
+      const ops = buildSplitBlockOps(store, point, opts);
+      applyAll(ops);
+      if (opts?.select && ops[0]?.type === "insertBlock" && store.records.has(ops[0].block.id)) {
+        const caret = point.offset === 0 ? point : { blockId: ops[0].block.id, offset: 0 };
+        selection = { type: "text", anchor: caret, focus: caret };
+      }
       return tx;
     },
     mergeBackward(blockId) {
@@ -360,8 +366,9 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
     moveColumn(tableId, from, to) {
       return runTableOp(buildMoveColumnOps(store, registry, tableId, from, to));
     },
-    setSelection(sel) {
+    setSelection(sel, opts) {
       selection = sel;
+      preserveOnRepair = opts?.preserveOnRepair ?? false;
       return tx;
     },
     commit() {
@@ -385,7 +392,8 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       if (noCursorSlot) {
         const trailing: Block = { id: newId(), type: "paragraph", props: {}, content: [] };
         apply({ type: "insertBlock", parentId: null, index: store.rootIds.length, block: trailing });
-        selection = { type: "text", anchor: { blockId: trailing.id, offset: 0 }, focus: { blockId: trailing.id, offset: 0 } };
+        if (!preserveOnRepair && !(selection?.type === "block" && selection.ids.length && selection.ids.every((id) => store.records.has(id))))
+          selection = { type: "text", anchor: { blockId: trailing.id, offset: 0 }, focus: { blockId: trailing.id, offset: 0 } };
       }
       return { state: { store, selection }, changedIds, inverseOps };
     },

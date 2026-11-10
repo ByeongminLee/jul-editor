@@ -622,3 +622,14 @@ test("table: copying a merged region and pasting into another table preserves it
   expect(pastedAnchor.props?.rowspan).toBe(2);
   expect(textOf(pastedAnchor)).toBe("M");
 });
+
+test("table: keyboard toolbar commands retain button focus", async ({ page }) => {
+  const tableId = await insertTable(page);
+  const table = findBlock(await getDoc(page), tableId);
+  await clickCell(page, cellAt(table, 0, 0).id);
+  const button = page.getByTestId("table-add-col-after");
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await expect(button).toBeFocused();
+  expect(findBlock(await getDoc(page), tableId).children![0]!.children).toHaveLength(4);
+});

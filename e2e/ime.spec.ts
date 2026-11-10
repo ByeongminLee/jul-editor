@@ -419,3 +419,108 @@ test("ime @smoke: ASCII typing + keyboard.insertText('한글') sanity check (not
   const after = await getDoc(page);
   expect(textOf(after, "pEnd")).toBe("abc한글");
 });
+
+test("ime: stored marks render after composition and persist through the next composition", async ({ page }) => {
+  await page.evaluate(() => window.__julEditor!.setCaret("pEnd", 0));
+  const mod = await modKey(page);
+  await page.keyboard.press(`${mod}+b`);
+  await page.keyboard.press(`${mod}+i`);
+  await typeComposed(page, ["ㅎ", "하", "한"], "한");
+  await expect(page.locator('[data-id="pEnd"] [data-jul-editor-content] strong em')).toHaveText("한");
+  await typeComposed(page, ["ㄱ", "그", "글"], "글");
+  await page.keyboard.type("x");
+  expect((await getDoc(page)).blocks.find((b) => b.id === "pEnd")?.content).toEqual([{ type: "text", text: "한글x", marks: [{ type: "bold" }, { type: "italic" }] }]);
+});
+
+test("ime: typing after a trailing mention follows the composed text", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__julEditor!.editor.update((tx) => tx.replaceContent("pEnd", 0, 0, [{ type: "mention", attrs: { kind: "user", id: "u1", label: "@Alice" } }]));
+    window.__julEditor!.setCaret("pEnd", 1);
+  });
+  await typeComposed(page, ["ㅎ", "하", "한"], "한");
+  await page.keyboard.type("x");
+  expect(textOf(await getDoc(page), "pEnd")).toBe("@Alice한x");
+});
+
+test("ime: Enter during composition splits after the syllable is committed", async ({ page }) => {
+  await page.evaluate(() => window.__julEditor!.setCaret("p1", 11));
+  await composeSteps(page, ["ㅎ", "하", "한"]);
+  const beforeIds = childIds(await getDoc(page), null);
+  await page.keyboard.press("Enter");
+  expect(childIds(await getDoc(page), null)).toEqual(beforeIds);
+  await commitComposition(page, "한");
+  await expect.poll(async () => (await getDoc(page)).blocks.length).toBeGreaterThan(beforeIds.length);
+  const after = await getDoc(page);
+  expect(textOf(after, "p1")).toBe("Hello world한");
+  const ids = childIds(after, null);
+  const nextId = ids[ids.indexOf("p1") + 1]!;
+  expect(blockType(after, nextId)).toBe("paragraph");
+  expect(textOf(after, nextId)).toBe("");
+  await page.keyboard.type("x");
+  expect(textOf(await getDoc(page), nextId)).toBe("x");
+});
+
+test("ime: Enter during composition selects an open suggestion once after commit", async ({ page }) => {
+  await page.evaluate(() => {
+    let range: { blockId: string; from: number; to: number } | null = null;
+    let calls = 0;
+    const handle = window.__julEditor!.editor.registerSuggestion({
+      char: "/",
+      onUpdate: (state) => { range = state.open ? state.range : null; },
+      onKey: (event) => {
+        if (event.key !== "Enter" || !range) return false;
+        calls++;
+        (window as unknown as { __suggestionCalls: number }).__suggestionCalls = calls;
+        handle.replaceRange(range, [{ type: "text", text: "TABLE" }]);
+        return true;
+      },
+    });
+    window.__julEditor!.setCaret("pEnd", 0);
+  });
+  await page.keyboard.type("/");
+  await composeSteps(page, ["ㅍ", "표"]);
+  await page.keyboard.press("Enter");
+  await commitComposition(page, "표");
+  await expect.poll(async () => textOf(await getDoc(page), "pEnd")).toBe("TABLE");
+  expect(await page.evaluate(() => (window as unknown as { __suggestionCalls: number }).__suggestionCalls)).toBe(1);
+});
+
+test("ime: typing after a trailing tag follows the composed text", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__julEditor!.editor.update((tx) => tx.replaceContent("pEnd", 0, 0, [{ type: "mention", attrs: { kind: "tag", id: "t1", label: "idea" } }]));
+    window.__julEditor!.setCaret("pEnd", 1);
+  });
+  await typeComposed(page, ["ㅎ", "하", "한"], "한");
+  await page.keyboard.type("x");
+  const content = (await getDoc(page)).blocks.find((b) => b.id === "pEnd")?.content;
+  expect(content).toEqual([{ type: "mention", attrs: { kind: "tag", id: "t1", label: "idea" } }, { type: "text", text: "한x" }]);
+});
+
+test("ime: canceling composition after Enter does not split", async ({ page }) => {
+  await page.evaluate(() => window.__julEditor!.setCaret("p1", 11));
+  const before = await getDoc(page);
+  await composeSteps(page, ["ㅎ", "하"]);
+  await page.keyboard.press("Enter");
+  await cancelComposition(page);
+  await page.waitForTimeout(30);
+  expect(await getDoc(page)).toEqual(before);
+});
+
+test("ime: deferred Enter waits for a final input after compositionend", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__julEditor!.setCaret("pEnd", 0);
+    const root = document.querySelector<HTMLElement>("[data-jul-editor-root]")!;
+    const content = root.querySelector<HTMLElement>('[data-id="pEnd"] [data-jul-editor-content]')!;
+    root.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    content.textContent = "하";
+    window.getSelection()!.collapse(content.firstChild!, 1);
+    root.dispatchEvent(new InputEvent("input", { bubbles: true, isComposing: true, data: "하" }));
+    root.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "insertParagraph" }));
+    root.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "한" }));
+    content.textContent = "한";
+    window.getSelection()!.collapse(content.firstChild!, 1);
+    root.dispatchEvent(new InputEvent("input", { bubbles: true, data: "한" }));
+  });
+  await expect.poll(async () => (await getDoc(page)).blocks.length).toBeGreaterThan(9);
+  expect(textOf(await getDoc(page), "pEnd")).toBe("한");
+});

@@ -5,6 +5,7 @@ import { applyOp } from "./ops.js";
 import { createTransaction } from "./transaction.js";
 import type { Op, Selection } from "./types.js";
 import type { Block } from "../model/types.js";
+import { fromDoc } from "./store.js";
 
 function commitAll(store: ReturnType<typeof storeFrom>, ops: Op[]) {
   let s = store;
@@ -46,6 +47,16 @@ describe("splitBlock", () => {
     expect(next.records.get(backId)!.content).toEqual([{ type: "text", text: " world" }]);
     expect(next.records.get(backId)!.childIds).toEqual(["c1"]);
     expect(next.records.get("c1")!.parentId).toBe(backId);
+  });
+
+  it("keeps hidden children on a collapsed toggle when splitting its summary", () => {
+    const toggle: Block = { id: "t", type: "toggle", props: { open: false }, content: [{ type: "text", text: "Title" }], children: [para("child", "hidden")] };
+    const store = fromDoc({ version: 1, blocks: [toggle] }, r);
+    const registry = { ...r, blocks: new Map(r.blocks).set("toggle", { type: "toggle", content: "inline", children: "any", props: { open: false } } as const) };
+    let next = store;
+    for (const op of buildSplitBlockOps(store, { blockId: "t", offset: 3 })) next = applyOp(next, op, registry).store;
+    expect(next.records.get("t")!.childIds).toEqual(["child"]);
+    expect(next.records.get(next.rootIds[1]!)!.childIds).toEqual([]);
   });
 
   it("a checked to-do never hands `checked` to the new item (end, middle and offset 0)", () => {

@@ -145,11 +145,12 @@ const CODE_INDENT = "  ";
  * CODE_INDENT.length leading spaces. The selection is kept on the same text
  * (shifted by what was inserted/removed before each end). Always handled
  * for a text selection inside the block (even when there is nothing to
- * outdent), so the key never falls through to block-level indent. */
+ * outdent), so the key never falls through to block-level indent; a range
+ * that leaves the block is left to the default (multi-block) indent. */
 function indentCode(ctx: Parameters<Keymap[string]>[0], dir: 1 | -1): boolean {
   const sel = ctx.state.selection;
   if (!sel || sel.type !== "text") return false;
-  if (sel.anchor.blockId !== sel.focus.blockId) return true; // a cross-block range: swallow, never indent the block
+  if (sel.anchor.blockId !== sel.focus.blockId) return false;
   const blockId = sel.anchor.blockId;
   const rec = ctx.state.store.records.get(blockId);
   if (!rec) return false;

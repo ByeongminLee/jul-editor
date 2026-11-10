@@ -34,6 +34,41 @@ test("End moves the editor caret without scrolling the document to its bottom", 
   expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "p1", offset: 2 }, focus: { blockId: "p1", offset: 11 } });
 });
 
+test("a key that changes nothing leaves a page scrolled away from the caret where it is", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 580 });
+  await page.evaluate(() => {
+    window.__julEditor!.editor.setDoc({ version: 1, blocks: [
+      ...Array.from({ length: 100 }, (_, i) => ({ id: `line-${i}`, type: "paragraph", props: {}, content: [{ type: "text" as const, text: `line ${i}` }] })),
+      { id: "last", type: "paragraph", props: {}, content: [{ type: "text", text: "End" }] },
+    ] });
+    window.__julEditor!.setCaret("last", 3);
+  });
+  await page.keyboard.type("!");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  for (const key of ["Shift", "ControlOrMeta+c", "PageUp"]) {
+    await page.keyboard.press(key);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  }
+  await page.keyboard.type("!");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+});
+
+test("Shift+ArrowDown from a text range takes in the next void instead of jumping past it", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__julEditor!.editor.setDoc({ version: 1, blocks: [
+      { id: "head", type: "heading", props: {}, content: [{ type: "text", text: "Heading" }] },
+      { id: "one", type: "divider", props: {} }, { id: "two", type: "divider", props: {} },
+      { id: "end", type: "paragraph", props: {}, content: [{ type: "text", text: "end" }] },
+    ] });
+    window.__julEditor!.setCaret("head", 3);
+  });
+  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("Shift+ArrowDown");
+  expect(await getSelection(page)).toEqual({ type: "block", ids: ["head", "one"] });
+});
+
 async function modKey(page: import("@playwright/test").Page): Promise<"Meta" | "Control"> {
   const mac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
   return mac ? "Meta" : "Control";

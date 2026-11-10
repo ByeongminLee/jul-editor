@@ -31,6 +31,15 @@ beforeEach(() => {
 });
 
 describe("block selection and focus", () => {
+  it("does not clear a newer block selection when an earlier blur timer fires", async () => {
+    const { element, outside, editor } = setup();
+    outside.focus();
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["d1"] }));
+    await tick();
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["d1"] });
+    editor.destroy();
+    element.remove();
+  });
   it("clears a block selection when focus moves outside the editor", async () => {
     const { outside, editor } = setup();
     outside.focus();

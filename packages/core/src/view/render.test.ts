@@ -142,6 +142,24 @@ describe("renderAll", () => {
     expect(root.children[1]).toBe(aEl);
   });
 
+  it("reparents recursively while preserving sibling identity without indexing live children", () => {
+    const root = document.createElement("div");
+    const c = ctx();
+    renderAll(root, fromDoc(doc([para("a", "A"), para("b", "B"), para("c", "C")]), coreRegistry), c);
+    const a = c.blockEls.get("a")!.wrapper;
+    const b = c.blockEls.get("b")!.wrapper;
+    const comment = document.createComment("keep");
+    root.append(comment, document.createElement("aside"));
+    Object.defineProperty(root, "children", { get: () => { throw new Error("live children indexed"); } });
+
+    renderAll(root, fromDoc(doc([para("a", "A", [para("b", "B")]), para("c", "C")]), coreRegistry), c);
+    expect(root.firstElementChild).toBe(a);
+    expect(a.querySelector(`[${CHILDREN_ATTR}]`)!.firstElementChild).toBe(b);
+    expect(a.nextElementSibling).toBe(c.blockEls.get("c")!.wrapper);
+    expect(a.nextElementSibling!.nextElementSibling).toBeNull();
+    expect(comment.parentNode).toBe(root);
+  });
+
   it("skips DOM writes entirely for the block reported as composing", () => {
     const root = document.createElement("div");
     const store = fromDoc(doc([para("p1", "hello")]), coreRegistry);

@@ -6,8 +6,9 @@ import type { Registry } from "../model/schema.js";
 import { cellGridPosition, cellIdAt } from "../store/table.js";
 import { nearestIsolatingAncestor, siblingsOf, spannedTopBlocks } from "../store/store.js";
 import type { Point, Selection as StoreSelection, Store } from "../store/types.js";
-import { BLOCK_ATTR, CELL_SELECTED_ATTR, CONTENT_ATTR, ID_ATTR, MENTION_ATTR, SELECTED_ATTR, VOID_ATTR, WIDGET_ATTR, closestBlockId, closestContentEl, findContentEl } from "./dom.js";
+import { BLOCK_ATTR, CELL_SELECTED_ATTR, CONTENT_ATTR, ID_ATTR, LABEL_ATTR, MENTION_ATTR, SELECTED_ATTR, VOID_ATTR, WIDGET_ATTR, closestBlockId, closestContentEl, findContentEl } from "./dom.js";
 import type { BlockEls } from "./render.js";
+import { displayMention } from "./inline-dom.js";
 
 function measureNode(n: Node): number {
   if (n.nodeType === Node.TEXT_NODE) return n.nodeValue?.length ?? 0;
@@ -47,7 +48,10 @@ function measureBefore(contentEl: HTMLElement, targetNode: Node, targetOffset: n
     if (el.hasAttribute(MENTION_ATTR)) {
       if (el.contains(targetNode)) {
         const atStart = targetOffset === 0 && targetNode === el.firstChild;
-        result = total + (atStart ? 0 : 1);
+        const label = displayMention({ type: "mention", attrs: { kind: el.getAttribute("data-mention-kind") ?? "", id: "", label: el.getAttribute(LABEL_ATTR) ?? "" } });
+        const appended = targetNode === el.firstChild && targetNode.nodeType === Node.TEXT_NODE && (targetNode.nodeValue ?? "").startsWith(label)
+          ? Math.max(0, targetOffset - label.length) : 0;
+        result = total + (atStart ? 0 : 1 + appended);
         return true;
       }
       total += 1;
@@ -137,6 +141,25 @@ export interface ReadDOMSelectionOptions {
   registry?: Registry;
 }
 
+/** A void-inclusive selection may only replace whole siblings. The later end may not have children:
+ * they follow its text, outside the range. The earlier end's children lie inside the range. */
+export function safeVoidSelection(store: Store, aId: string, bId: string, fallback: Point): StoreSelection {
+  const a = store.records.get(aId);
+  const b = store.records.get(bId);
+  if (!a || !b || a.parentId !== b.parentId) return { type: "text", anchor: fallback, focus: fallback };
+  const ids = spannedTopBlocks(store, aId, bId);
+  if (store.records.get(ids[ids.length - 1]!)!.childIds.length > 0) return { type: "text", anchor: fallback, focus: fallback };
+  return { type: "block", ids };
+}
+
+function isVisibleVoid(el: HTMLElement, root: HTMLElement): boolean {
+  const win = root.ownerDocument.defaultView;
+  for (let node: HTMLElement | null = el; node && node !== root; node = node.parentElement) {
+    if (win?.getComputedStyle(node).display === "none" || node.hidden) return false;
+  }
+  return true;
+}
+
 /** Reads the live DOM selection as a model Selection, or null when either end doesn't resolve
  * (e.g. selection is outside the editor, or entirely inside a void block). Returns a 'text'
  * selection, or (only with `options.store`) a 'block' selection when one end reaches a void. */
@@ -153,11 +176,11 @@ export function readDOMSelection(root: HTMLElement, options: ReadDOMSelectionOpt
   // An entirely unresolved selection (caret inside a void) stays null.
   if (!anchor && focus) {
     const end = resolveDanglingEnd(root, sel.anchorNode, sel.anchorOffset, focus, store);
-    if (end && "voidId" in end) return { type: "block", ids: spannedTopBlocks(store!, end.voidId, focus.blockId) };
+    if (end && "voidId" in end) return safeVoidSelection(store!, end.voidId, focus.blockId, focus);
     anchor = end?.point ?? null;
   } else if (anchor && !focus) {
     const end = resolveDanglingEnd(root, sel.focusNode, sel.focusOffset, anchor, store);
-    if (end && "voidId" in end) return { type: "block", ids: spannedTopBlocks(store!, anchor.blockId, end.voidId) };
+    if (end && "voidId" in end) return safeVoidSelection(store!, anchor.blockId, end.voidId, anchor);
     focus = end?.point ?? null;
   }
   if (!anchor || !focus) return null;
@@ -168,9 +191,16 @@ export function readDOMSelection(root: HTMLElement, options: ReadDOMSelectionOpt
       const forward = !!(anchorEl.compareDocumentPosition(focusEl) & Node.DOCUMENT_POSITION_FOLLOWING);
       const [first, last, lastEl] = forward ? [anchor, focus, focusEl] : [focus, anchor, anchorEl];
       const iso = (id: string) => (store && options.registry ? nearestIsolatingAncestor(store, id, options.registry) : null);
+      if (store && last.offset > 0 && iso(first.blockId) === iso(last.blockId)) {
+        const firstEl = forward ? anchorEl : focusEl;
+        const crossedVoid = Array.from(root.querySelectorAll<HTMLElement>(`[${VOID_ATTR}]`)).some((voidEl) =>
+          isVisibleVoid(voidEl, root) && !!(firstEl.compareDocumentPosition(voidEl) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+          !!(lastEl.compareDocumentPosition(voidEl) & Node.DOCUMENT_POSITION_PRECEDING));
+        if (crossedVoid) return safeVoidSelection(store, first.blockId, last.blockId, anchor);
+      }
       if (last.offset === 0 && iso(last.blockId) === iso(first.blockId)) {
         const end = resolveDanglingEnd(root, lastEl, 0, first, store);
-        if (end && "voidId" in end) return { type: "block", ids: forward ? spannedTopBlocks(store!, first.blockId, end.voidId) : spannedTopBlocks(store!, end.voidId, first.blockId) };
+        if (end && "voidId" in end) return safeVoidSelection(store!, first.blockId, end.voidId, anchor);
         if (end) {
           if (forward) focus = end.point;
           else anchor = end.point;
@@ -226,6 +256,7 @@ function farthestVoid(root: HTMLElement, at: Range, node: Node, otherEl: HTMLEle
   let found: HTMLElement | null = null;
   for (const v of Array.from(root.querySelectorAll<HTMLElement>(`[${VOID_ATTR}]`))) {
     const wrapper = v.parentElement;
+    if (!isVisibleVoid(v, root)) continue;
     if (!wrapper?.hasAttribute(BLOCK_ATTR) || wrapper.querySelector(`:scope > [${CONTENT_ATTR}]`)) continue;
     if (otherBefore) {
       // after otherEl, before the boundary, and after the clamped text point
@@ -401,6 +432,15 @@ export function getSelectionRect(): DOMRect | null {
 
 export function promoteSelection(store: Store, registry: Registry, sel: StoreSelection): StoreSelection {
   if (sel.type !== "text" || sel.anchor.blockId === sel.focus.blockId) return sel;
+  const columnOf = (id: string): string | null => {
+    for (let cur: string | null = id; cur; cur = store.records.get(cur)?.parentId ?? null) {
+      if (store.records.get(cur)?.type === "column") return cur;
+    }
+    return null;
+  };
+  const columnA = columnOf(sel.anchor.blockId);
+  const columnB = columnOf(sel.focus.blockId);
+  if (columnA !== columnB && (columnA || columnB)) return { type: "text", anchor: sel.anchor, focus: sel.anchor };
   const a = cellPosition(store, registry, sel.anchor.blockId);
   const b = cellPosition(store, registry, sel.focus.blockId);
   if (a && b && a.tableId === b.tableId) {

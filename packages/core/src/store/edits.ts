@@ -225,7 +225,9 @@ export function buildSplitBlockOps(store: Store, point: Point, opts: { type?: st
   const backProps = backType === rec.type ? splitProps(rec.props) : {};
   const ops: Op[] = [{ type: "insertBlock", parentId, index: index + 1, block: { id: backId, type: backType, props: backProps, content: [] } }];
   let i = 0;
-  for (const childId of rec.childIds) ops.push(moveBlockOp(childId, backId, i++));
+  if (rec.type !== "toggle" || rec.props.open === true) {
+    for (const childId of rec.childIds) ops.push(moveBlockOp(childId, backId, i++));
+  }
   if (point.offset < len) ops.push(replaceContentOp(backId, 0, 0, sliceContent(rec.content ?? [], point.offset, len)));
   ops.push(replaceContentOp(point.blockId, point.offset, len, []));
   return ops;
@@ -315,10 +317,15 @@ export function buildOutdentOps(store: Store, id: string, registry: Registry): O
   const idSpec = registry.blocks.get(rec.type);
   let childIdx = rec.childIds.length;
   let sibIdx = parentIndex + 2; // right after id's own new position
+  let promote = false;
   for (const sibId of siblings.slice(index + 1)) {
     const sibType = store.records.get(sibId)?.type ?? "";
-    if (canAdmit(registry, sibType, rec.type, idSpec?.children ?? "none")) ops.push(moveBlockOp(sibId, id, childIdx++));
-    else ops.push(moveBlockOp(sibId, grandParentId, sibIdx++));
+    if (!promote && canAdmit(registry, sibType, rec.type, idSpec?.children ?? "none")) ops.push(moveBlockOp(sibId, id, childIdx++));
+    else {
+      promote = true;
+      if (!canAdmit(registry, sibType, container.type, container.children)) return [];
+      ops.push(moveBlockOp(sibId, grandParentId, sibIdx++));
+    }
   }
   return ops;
 }
@@ -403,6 +410,21 @@ export function buildToggleMarkOps(store: Store, selection: Selection, markType:
 }
 
 // ---- setBlockType -------------------------------------------------------------
+
+/** The blocks of `ids` a block-type change applies to: text blocks only (retyping a void would drop
+ * its data), minus anything hidden inside a closed toggle. */
+export function blockTypeTargets(store: Store, registry: Registry, ids: string[]): string[] {
+  return ids.filter((id) => {
+    const rec = store.records.get(id);
+    const content = rec && registry.blocks.get(rec.type)?.content;
+    if (!rec || (content !== "inline" && content !== "code")) return false;
+    for (let parent = rec.parentId; parent; parent = store.records.get(parent)?.parentId ?? null) {
+      const ancestor = store.records.get(parent);
+      if (ancestor?.type === "toggle" && ancestor.props.open !== true) return false;
+    }
+    return true;
+  });
+}
 
 export function buildSetBlockTypeOps(ids: string[], blockType: string, props?: Record<string, Json>): Op[] {
   return ids.map((id) => ({ type: "setType", id, blockType, props }));

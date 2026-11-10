@@ -7,6 +7,7 @@ import { attachBuiltinKeymaps } from "./builtins-keymap.js";
 import { getProp, normalizeDoc } from "../model/canonical.js";
 import type { Registry } from "../model/schema.js";
 import type { Block, Doc, Json, Mark } from "../model/types.js";
+import { blockTypeTargets } from "../store/edits.js";
 import { createHistory } from "../store/history.js";
 import { fromDoc, toDoc } from "../store/store.js";
 import { cellGridPosition, cellIdAt, cellPosition } from "../store/table.js";
@@ -18,6 +19,7 @@ import { BLOCK_ATTR, ID_ATTR, TYPE_ATTR } from "./dom.js";
 import type { Extensions } from "./interaction.js";
 import type { InputRuleEntry } from "./input-rules.js";
 import { buildDefaultKeymap } from "./keymap.js";
+import { structuralMove } from "./structural-move.js";
 import type { Keymap, KeymapEntry } from "./keymap.js";
 import { activeMarks, canApplyMarks, createMarksRef, textSelectionBlockIds, toggleMarkOrStore } from "./marks.js";
 import { getCaretRect, getSelectionRect } from "./selection.js";
@@ -197,6 +199,7 @@ export interface Editor {
    * whole moved set. An id whose own move is invalid is silently skipped
    * (same per-id rule as moveBlockTo) without aborting the rest. */
   moveBlocksTo(ids: string[], target: MoveBlockTarget): void;
+  moveSelectedBlocks(ids: string[], dir: 1 | -1): boolean;
   /** Transient (non-doc-model) upload status for a pasted/dropped image block. */
   getUploadState(blockId: string): UploadState | undefined;
   /** Re-attempts a failed upload with the same File. */
@@ -245,11 +248,16 @@ export interface Editor {
 // before) and by Transaction.moveBlockTo itself, which moveBlocksTo chains
 // inside one transaction to batch several moves into one undo step.)
 
-function mergeInfo(result: TransactionResult, typingIntent: boolean, callerMergeable?: boolean): { blockId?: string; mergeable?: boolean } {
+function mergeInfo(result: TransactionResult, typingIntent: boolean, callerMergeable?: boolean): { blockId?: string; mergeable?: boolean; startsGroup?: boolean } {
   if (typingIntent) {
     const ids = new Set<string>();
     for (const op of result.inverseOps) {
-      if (op.type !== "replaceContent") return { mergeable: false };
+      if (op.type !== "replaceContent") {
+        const selection = result.state.selection;
+        return selection?.type === "text" && selection.anchor.blockId === selection.focus.blockId && selection.anchor.offset === selection.focus.offset
+          ? { blockId: selection.anchor.blockId, mergeable: true, startsGroup: true }
+          : { mergeable: false };
+      }
       ids.add(op.id);
     }
     if (ids.size !== 1) return { mergeable: false };
@@ -328,12 +336,12 @@ export function createEditor(options: CreateEditorOptions): Editor {
     // ever called with a single tx.setProps(blockId, patch) (see
     // view/clipboard.ts's beginUpload/rehostExternalImagesIn), so its inverse
     // is always exactly one `setProps` op; patch the same (already-committed,
-    // already-normalized) prop values onto every stack snapshot that has it.
+    // already-normalized) prop values onto snapshots with the same previous source.
     for (const inv of result.inverseOps) {
       if (inv.type !== "setProps") continue;
       const patch: Record<string, Json | undefined> = {};
       for (const k of Object.keys(inv.patch)) patch[k] = result.state.store.records.get(inv.id)?.props[k];
-      history.patchSystemProps(inv.id, patch);
+      history.patchSystemProps(inv.id, patch, inv.patch);
     }
     return result;
   }
@@ -399,7 +407,9 @@ export function createEditor(options: CreateEditorOptions): Editor {
       toggleMarkOrStore(view.getState(), marksRef, commitAndSync, markType, attrs, registry);
     },
     setBlockType(blockType, props) {
-      const ids = currentBlockIds();
+      const state = view.getState();
+      const sel = state.selection;
+      const ids = blockTypeTargets(state.store, registry, sel?.type === "text" ? textSelectionBlockIds(state.store, sel) : currentBlockIds());
       if (ids.length === 0) return;
       commitAndSync((tx) => tx.setBlockType(ids, blockType, props));
     },
@@ -408,12 +418,12 @@ export function createEditor(options: CreateEditorOptions): Editor {
       commitAndSync((tx) => tx.insertBlock(parentId, index, block));
     },
     indent() {
-      const id = currentBlockIds()[0];
-      if (id) commitAndSync((tx) => tx.indent(id));
+      const move = structuralMove(view.getState(), registry, "indent", undefined, element);
+      if (move) commitAndSync(move);
     },
     outdent() {
-      const id = currentBlockIds()[0];
-      if (id) commitAndSync((tx) => tx.outdent(id));
+      const move = structuralMove(view.getState(), registry, "outdent", undefined, element);
+      if (move) commitAndSync(move);
     },
     insertTable(rows, cols, opts) {
       const { parentId, index } = insertPosition();
@@ -578,7 +588,11 @@ export function createEditor(options: CreateEditorOptions): Editor {
     const sel = state.selection;
     if (!sel) return null;
     if (sel.type === "cells") return sel.tableId ? { type: "tableCell", props: {} } : null; // every cell is always this type
-    const ids = sel.type === "block" ? sel.ids : textSelectionBlockIds(state.store, sel);
+    const all = sel.type === "block" ? sel.ids : textSelectionBlockIds(state.store, sel);
+    // Judge by the blocks commands.setBlockType would change, so a void inside the range never
+    // makes the result "mixed"; a selection of only voids still reports its own type.
+    const targets = blockTypeTargets(state.store, registry, all);
+    const ids = targets.length ? targets : all;
     const recs = ids.map((id) => state.store.records.get(id)).filter((r): r is BlockRecord => !!r);
     if (recs.length === 0) return null;
     const first = { type: recs[0]!.type, props: effectiveProps(recs[0]!) };
@@ -796,6 +810,11 @@ export function createEditor(options: CreateEditorOptions): Editor {
         }
         return tx.setSelection({ type: "block", ids });
       });
+    },
+    moveSelectedBlocks(ids, dir) {
+      const move = structuralMove(view.getState(), registry, dir === 1 ? "down" : "up", ids, element);
+      if (!move) return false;
+      return commitAndSync(move).changedIds.size > 0;
     },
     getUploadState: (blockId) => view.getUploadState(blockId),
     retryUpload: (blockId) => view.retryUpload(blockId),

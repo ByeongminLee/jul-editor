@@ -128,7 +128,7 @@ export function createSuggestionController(deps: SuggestionControllerDeps) {
           continue;
         }
         const query = text.slice(start + 1, point.offset);
-        if (!reg.config.allowSpaces && /\s/.test(query)) {
+        if (/^\s/.test(query) || (!reg.config.allowSpaces && /\s/.test(query))) {
           closeOne(reg);
           continue;
         }

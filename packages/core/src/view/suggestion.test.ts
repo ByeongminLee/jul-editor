@@ -43,6 +43,16 @@ function type(element: HTMLElement, text: string) {
 }
 
 describe("suggestion triggers", () => {
+  it("allows internal spaces but closes on leading whitespace", () => {
+    const { element, editor: ed } = setup({ id: "p1", type: "paragraph", props: {}, content: [] });
+    const slash = track(ed, { char: "/", startOfLine: true, allowSpaces: true });
+    caretAt(ed, "p1", 0);
+    type(element, "/ ");
+    expect(slash.isOpen()).toBe(false);
+    ed.update((tx) => tx.replaceContent("p1", 0, 2, []).setSelection({ type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 0 } }));
+    type(element, "/heading 1");
+    expect(slash.updates.at(-1)).toEqual({ open: true, query: "heading 1" });
+  });
   it("never opens inside a code block", () => {
     const { element, editor: ed } = setup({ id: "c1", type: "codeBlock", props: {}, content: [] });
     const slash = track(ed, { char: "/", startOfLine: true });

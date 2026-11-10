@@ -10,7 +10,7 @@ import { canAdmit, containerInfo, contentLength, orderPoints, extractFragment, n
 import { cellIdAt } from "../store/table.js";
 import type { Transaction, TransactionResult } from "../store/transaction.js";
 import type { EditorState, Point, Selection, Store } from "../store/types.js";
-import { BLOCK_ATTR, closestBlockId, CONTENT_ATTR, DECORATION_ATTR, ID_ATTR, isInsideVoid, isInsideVoidEvent } from "./dom.js";
+import { BLOCK_ATTR, closestBlockId, CONTENT_ATTR, DECORATION_ATTR, ID_ATTR, findContentEl, isInsideVoid, isInsideVoidEvent } from "./dom.js";
 import { syncBlockFromDOM } from "./ime.js";
 import type { ComposeRef } from "./ime.js";
 import { buildDefaultInputRules, clearCodeBlockLangGrab, currentBlockInputRules, runInputRules } from "./input-rules.js";
@@ -21,7 +21,7 @@ import { consumeInsertMarks } from "./marks.js";
 import type { MarksRef } from "./marks.js";
 import { isVoidSpec } from "./render.js";
 import type { BlockEls } from "./render.js";
-import { pointFromDOM, promoteSelection, readDOMSelection } from "./selection.js";
+import { domFromPoint, pointFromDOM, promoteSelection, readDOMSelection, safeVoidSelection } from "./selection.js";
 import type { SuggestionController } from "./suggestion.js";
 
 /** Extension-point state, owned by createEditor and shared with this
@@ -72,11 +72,12 @@ const DELETE_TYPES = new Set([
   "deleteContentBackward",
   "deleteWordBackward",
   "deleteSoftLineBackward",
+  "deleteHardLineBackward",
   "deleteContentForward",
   "deleteWordForward",
   "deleteByCut", // just delete here, clipboard data itself is handled in clipboard.ts
 ]);
-const BACKWARD_TYPES = new Set(["deleteContentBackward", "deleteWordBackward", "deleteSoftLineBackward"]);
+const BACKWARD_TYPES = new Set(["deleteContentBackward", "deleteWordBackward", "deleteSoftLineBackward", "deleteHardLineBackward"]);
 // A plain (non-word/line) delete's own getTargetRanges() is often NOT what we
 // want here: Chromium reports a range spanning from the end of the PREVIOUS
 // block into the start of the current one for a simple Backspace-at-offset-0
@@ -217,6 +218,8 @@ function onDocumentSelectionChange(): void {
       continue;
     }
     if (v.compose.active) continue; // never fight a live composition
+    const active = v.root.ownerDocument.activeElement;
+    if (!v.pointerSelecting && active instanceof Element && !v.root.contains(active) && active.closest(`[${KEEP_SELECTION_ATTRIBUTE}]`)) continue;
     if (!v.root.contains(domSel.anchorNode)) continue;
     const cur = v.getState().selection;
     // Root-cause fix ("arrow keys into a
@@ -282,6 +285,24 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   function isVoidBlock(id: string): boolean {
     const rec = getState().store.records.get(id);
     return !!rec && isVoidSpec(registry.blocks.get(rec.type));
+  }
+
+  /** Inside a closed toggle, whose children are not shown. */
+  function isHidden(store: Store, id: string): boolean {
+    for (let p = store.records.get(id)?.parentId; p; p = store.records.get(p)?.parentId) {
+      const rec = store.records.get(p);
+      if (rec?.type !== "toggle") continue;
+      const open = deps.blockEls.get(p)?.wrapper.getAttribute("data-jul-editor-open");
+      if (open === null || open === undefined ? rec.props.open !== true : open !== "true") return true;
+    }
+    return false;
+  }
+
+  /** The next (dir=1) or previous block in document order that is actually shown. */
+  function visibleNeighbor(store: Store, id: string, dir: 1 | -1): string | null {
+    let cur = dir === 1 ? nextBlockInPreOrder(store, id) : prevBlockInPreOrder(store, id);
+    while (cur && isHidden(store, cur)) cur = dir === 1 ? nextBlockInPreOrder(store, cur) : prevBlockInPreOrder(store, cur);
+    return cur;
   }
 
   /** flags the NEXT dispatch as a typing-burst candidate for history's
@@ -382,6 +403,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   function onInsertText(e: InputEvent): void {
     const sel = currentSelection(e);
     if (!sel) return;
+    if (!sameSelection(getState().selection, sel)) runDispatch((tx) => tx.setSelection(sel));
     const text = e.data ?? "";
     if (!text) return;
     inputRuleUndo = null; // a fresh edit always closes the previous rule's "undo window"
@@ -436,7 +458,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
       },
       registry,
       dispatch: runDispatch,
-      marksRef: extensions.marksRef, // a rule that fires a non-inclusive mark clears this right after
+      marksRef: extensions.marksRef,
     };
     inputRuleUndo = runInputRules(ruleCtx, caret, currentBlockInputRules(ruleCtx.state, registry, caret.blockId), extensions.inputRules, defaultInputRules);
   }
@@ -470,12 +492,14 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
       runDispatch((tx) => tx.setType(point.blockId, "paragraph").setSelection({ type: "text", anchor: point, focus: point }));
       return;
     }
-    const prevId = prevBlockInPreOrder(getState().store, point.blockId);
+    const prevId = visibleNeighbor(getState().store, point.blockId, -1);
     if (!prevId) return;
     if (isVoidBlock(prevId)) {
       runDispatch((tx) => tx.setSelection({ type: "block", ids: [prevId] }));
       return;
     }
+    // mergeBackward would merge into a closed toggle's hidden last child: only move the caret.
+    const hiddenBetween = prevId !== prevBlockInPreOrder(getState().store, point.blockId);
     // prevBlockInPreOrder resolves to `point.blockId`'s own PARENT when
     // it's the first child of its container (siblingsOf's index<=0 branch) --
     // for an ordinary nested block that parent has real inline content to
@@ -488,19 +512,21 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     const prevSpec = registry.blocks.get(getState().store.records.get(prevId)?.type ?? "");
     if (prevSpec?.content !== "inline" && prevSpec?.content !== "code") return;
     const caret: Point = { blockId: prevId, offset: contentLength(getState().store.records.get(prevId)?.content) };
-    runDispatch((tx) => tx.mergeBackward(point.blockId).setSelection({ type: "text", anchor: caret, focus: caret }));
+    runDispatch((tx) => (hiddenBetween ? tx : tx.mergeBackward(point.blockId)).setSelection({ type: "text", anchor: caret, focus: caret }));
   }
 
   /** Delete/deleteContentForward with a collapsed caret at the block's own
    * end: select an adjacent void instead of merging into it, or plain
    * mergeBackward(next). Same sharing rationale as runBackwardBoundary. */
   function runForwardBoundary(point: Point): void {
-    const nextId = nextBlockInPreOrder(getState().store, point.blockId);
+    const nextId = visibleNeighbor(getState().store, point.blockId, 1);
     if (!nextId) return;
     if (isVoidBlock(nextId)) {
       runDispatch((tx) => tx.setSelection({ type: "block", ids: [nextId] }));
       return;
     }
+    // Hidden children of a closed toggle sit in between: nothing visible to merge into this block.
+    if (nextId !== nextBlockInPreOrder(getState().store, point.blockId)) return;
     runDispatch((tx) => tx.mergeBackward(nextId).setSelection({ type: "text", anchor: point, focus: point }));
   }
 
@@ -600,7 +626,6 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     }
     const wasCollapsed = collapsed(sel);
     const point = wasCollapsed ? sel.anchor : preOrderStart(sel.anchor, sel.focus);
-    const atStart = point.offset === 0;
     // Enter at the very END of a heading starts a plain paragraph, not
     // another heading (Notion/Google Docs/BlockNote); a split mid-heading
     // keeps both halves headings.
@@ -610,16 +635,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     // Enter over a non-collapsed selection is ONE undo step -- the
     // delete and the split are the same user action, so they go in the same
     // transaction instead of two separate (separately-undoable) dispatches.
-    runDispatch((tx) => (wasCollapsed ? tx : tx.deleteRange(sel)).splitBlock(point, backType ? { type: backType } : undefined));
-    // offset 0 keeps `point` on the same (now-second) block; offset>0 moved
-    // the remainder into a freshly-generated id we can only find post-commit.
-    let caret: Point = point;
-    if (!atStart) {
-      const { siblings, index } = siblingsOf(getState().store, point.blockId);
-      const backId = siblings[index + 1];
-      if (backId) caret = { blockId: backId, offset: 0 };
-    }
-    runDispatch((tx) => tx.setSelection({ type: "text", anchor: caret, focus: caret }));
+    runDispatch((tx) => (wasCollapsed ? tx : tx.deleteRange(sel)).splitBlock(point, { type: backType, select: true }));
   }
 
   /** Whether the empty block `id` is the LAST child of a text container
@@ -689,33 +705,36 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     const newBlock: Block = { id: newId(), type: "paragraph", props: {}, content: [{ type: "text", text: char }] };
     const caret: Point = { blockId: newBlock.id, offset: char.length };
     // one user action, one undo step -- delete + insert in a single tx.
+    markTyping();
     runDispatch((tx) => tx.deleteRange({ type: "block", ids }).insertBlock(parentId, index, newBlock).setSelection({ type: "text", anchor: caret, focus: caret }), char);
   }
 
+  let blockExtend: { anchor: string; focus: string; ids: string[] } | null = null;
   function extendBlockSelection(sel: Extract<Selection, { type: "block" }>, dir: 1 | -1): void {
     if (sel.ids.length === 0) return;
     const store = getState().store;
-    const first = sel.ids[0]!;
-    const last = sel.ids[sel.ids.length - 1]!;
-    const { siblings } = siblingsOf(store, first);
-    const iFirst = siblings.indexOf(first);
-    const iLast = siblings.indexOf(last);
-    if (dir === 1) {
-      const next = iLast + 1;
-      if (next >= siblings.length) return;
-      runDispatch((tx) => tx.setSelection({ type: "block", ids: siblings.slice(iFirst, next + 1) }));
-    } else {
-      const prev = iFirst - 1;
-      if (prev < 0) return;
-      runDispatch((tx) => tx.setSelection({ type: "block", ids: siblings.slice(prev, iLast + 1) }));
+    const { siblings } = siblingsOf(store, sel.ids[0]!);
+    if (!blockExtend || blockExtend.ids.length !== sel.ids.length || blockExtend.ids.some((id, i) => id !== sel.ids[i])) {
+      blockExtend = { anchor: dir === 1 ? sel.ids[0]! : sel.ids[sel.ids.length - 1]!, focus: dir === 1 ? sel.ids[sel.ids.length - 1]! : sel.ids[0]!, ids: sel.ids };
     }
+    const anchor = siblings.indexOf(blockExtend.anchor);
+    const focus = siblings.indexOf(blockExtend.focus) + dir;
+    if (anchor < 0 || focus < 0 || focus >= siblings.length) return;
+    const ids = siblings.slice(Math.min(anchor, focus), Math.max(anchor, focus) + 1);
+    blockExtend = { anchor: siblings[anchor]!, focus: siblings[focus]!, ids };
+    runDispatch((tx) => tx.setSelection({ type: "block", ids }));
   }
 
   function moveOffBlockSelection(sel: Extract<Selection, { type: "block" }>, dir: 1 | -1): void {
     if (sel.ids.length === 0) return;
     const store = getState().store;
     const edgeId = dir === 1 ? sel.ids[sel.ids.length - 1]! : sel.ids[0]!;
-    const targetId = dir === 1 ? nextBlockInPreOrder(store, edgeId) : prevBlockInPreOrder(store, edgeId);
+    let targetId = visibleNeighbor(store, edgeId, dir);
+    while (targetId) {
+      const rec = store.records.get(targetId);
+      if (!rec || registry.blocks.get(rec.type)?.content !== "none" || isVoidBlock(targetId)) break;
+      targetId = visibleNeighbor(store, targetId, dir);
+    }
     if (!targetId) return;
     if (isVoidBlock(targetId)) {
       runDispatch((tx) => tx.setSelection({ type: "block", ids: [targetId] }));
@@ -745,25 +764,6 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
       }
     }
     runDispatch((tx) => tx.setSelection({ type: "block", ids: [...store.rootIds] }));
-  }
-
-  /** The adjacent (dir=1 next, dir=-1 prev) block id, if the collapsed caret
-   * in `sel` sits right at its own block's boundary AND that neighbor is a
-   * void -- shared by arrow-key entry and the Backspace/Delete keydown
-   * fallback (delete-into-a-void never fires beforeinput at all). */
-  function adjacentVoidAt(sel: Extract<Selection, { type: "text" }>, dir: 1 | -1): string | null {
-    if (!collapsed(sel)) return null;
-    const store = getState().store;
-    const point = sel.anchor;
-    if (dir === 1) {
-      const len = contentLength(store.records.get(point.blockId)?.content);
-      if (point.offset !== len) return null;
-      const nextId = nextBlockInPreOrder(store, point.blockId);
-      return nextId && isVoidBlock(nextId) ? nextId : null;
-    }
-    if (point.offset !== 0) return null;
-    const prevId = prevBlockInPreOrder(store, point.blockId);
-    return prevId && isVoidBlock(prevId) ? prevId : null;
   }
 
   // ---- copy/cut -------------------------------------------------
@@ -857,7 +857,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     // click behavior -- without an explicit focus() here, the root would stay
     // (or become) unfocused, so a subsequent Backspace/Delete/arrow keydown
     // would never even reach our own keydown listener.
-    root.focus();
+    root.focus({ preventScroll: true });
     justSelectedVoidId = blockId;
     runDispatch((tx) => tx.setSelection({ type: "block", ids: [blockId] }));
   }
@@ -950,7 +950,9 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
       const type = store.records.get(id)?.type;
       return type !== undefined && isVoidSpec(registry.blocks.get(type));
     });
-    return blocked ? { type: "block", ids: span } : null;
+    if (!blocked) return null;
+    const point = anchorNode ? pointFromDOM(root, anchorNode, root.ownerDocument.getSelection()?.anchorOffset ?? 0) : null;
+    return point ? safeVoidSelection(store, anchorId, targetId, point) : null;
   }
 
   /** The member of `span` (sibling ids) that is `id` or one of its ancestors. */
@@ -1031,19 +1033,106 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     runDispatch((tx) => tx.setSelection(promoted));
   }
 
+  /** An arrow key at a text block's edge next to a void selects the void instead of jumping past it.
+   * With Shift the selection becomes a block selection that takes in the void, so a text range never
+   * spans a void (it would delete the void without ever showing it as selected). */
   function handleVoidArrowEntry(e: KeyboardEvent): void {
     const sel = getState().selection;
-    if (!sel || sel.type !== "text" || e.shiftKey) return;
+    if (!sel || sel.type !== "text" || (!e.shiftKey && !collapsed(sel))) return;
     const dir = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
-    const voidId = adjacentVoidAt(sel, dir);
-    if (voidId) {
-      e.preventDefault();
-      runDispatch((tx) => tx.setSelection({ type: "block", ids: [voidId] }));
+    const store = getState().store;
+    const point = sel.focus;
+    const voidId = visibleNeighbor(store, point.blockId, dir);
+    if (!voidId || !isVoidBlock(voidId)) return;
+    const edgeOffset = dir === 1 ? contentLength(store.records.get(point.blockId)?.content) : 0;
+    let atEdge = point.offset === edgeOffset;
+    if (!atEdge && e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      // Shift+Up/Down from anywhere on the block's first/last visual line leaves the block too.
+      const content = findContentEl(root, point.blockId);
+      const native = root.ownerDocument.defaultView?.getSelection();
+      if (content && native?.focusNode) {
+        const lineTop = (node: Node, offset: number): DOMRect => {
+          const range = root.ownerDocument.createRange();
+          range.setStart(node, offset);
+          range.collapse(true);
+          return range.getBoundingClientRect();
+        };
+        const edge = domFromPoint(content, edgeOffset);
+        const current = lineTop(native.focusNode, native.focusOffset);
+        const boundary = lineTop(edge.node, edge.offset);
+        atEdge = !!current.height && !!boundary.height && Math.abs(current.top - boundary.top) < 2;
+      }
     }
+    if (!atEdge) return;
+    e.preventDefault();
+    if (!e.shiftKey) {
+      runDispatch((tx) => tx.setSelection({ type: "block", ids: [voidId] }));
+      return;
+    }
+    const next = safeVoidSelection(store, sel.anchor.blockId, voidId, point);
+    if (next.type !== "block") return;
+    blockExtend = { anchor: sel.anchor.blockId, focus: voidId, ids: next.ids };
+    runDispatch((tx) => tx.setSelection(next));
+  }
+
+  let caretScrollFrame: number | null = null;
+  function scheduleCaretScroll(): void {
+    const win = root.ownerDocument.defaultView;
+    if (!win || caretScrollFrame !== null) return;
+    // Only an input that changed something follows the caret: a bare modifier, a shortcut or PageUp
+    // must not pull a page the user scrolled away back to it.
+    const before = getState();
+    caretScrollFrame = win.requestAnimationFrame(() => {
+      caretScrollFrame = null;
+      if (getState() === before) return;
+      const selection = win.getSelection();
+      const modelSelection = getState().selection;
+      if (modelSelection?.type !== "text" || !collapsed(modelSelection)) return;
+      if (!root.contains(root.ownerDocument.activeElement) || !selection?.isCollapsed || !selection.focusNode || !root.contains(selection.focusNode)) return;
+      const range = root.ownerDocument.createRange();
+      range.setStart(selection.focusNode, selection.focusOffset);
+      range.collapse(true);
+      const caretRect = () => {
+        const rect = range.getBoundingClientRect();
+        if (rect.height || rect.width) return rect;
+        const node = selection.focusNode!;
+        return (node instanceof Element ? node : node.parentElement)?.getBoundingClientRect() ?? rect;
+      };
+      let rect = caretRect();
+      if (!rect.height && !rect.width) return;
+      for (let el: HTMLElement | null = root; el; el = el.parentElement) {
+        const style = win.getComputedStyle(el);
+        if (!/(auto|scroll)/.test(style.overflowY) || el.scrollHeight <= el.clientHeight) continue;
+        const bounds = el.getBoundingClientRect();
+        const delta = rect.bottom > bounds.bottom ? rect.bottom - bounds.bottom : rect.top < bounds.top ? rect.top - bounds.top : 0;
+        if (delta) { el.scrollTop += delta > 0 ? Math.ceil(delta) : Math.floor(delta); rect = caretRect(); }
+      }
+      const delta = rect.bottom > win.innerHeight ? rect.bottom - win.innerHeight : rect.top < 0 ? rect.top : 0;
+      if (delta) win.scrollBy(0, delta > 0 ? Math.ceil(delta) : Math.floor(delta));
+    });
+  }
+
+  let pendingCompositionParagraph: string | null = null;
+  let pendingCompositionTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingCompositionReplay: (() => void) | null = null;
+  function flushPendingParagraph(): void {
+    if (!pendingCompositionReplay) return;
+    if (pendingCompositionTimer !== null) clearTimeout(pendingCompositionTimer);
+    pendingCompositionTimer = null;
+    const replay = pendingCompositionReplay;
+    pendingCompositionReplay = null;
+    replay();
   }
 
   function onBeforeInput(e: InputEvent): void {
     if (isInsideVoidEvent(e)) return;
+    scheduleCaretScroll();
+    if (!compose.active) flushPendingParagraph();
+    if (compose.active && e.inputType === "insertParagraph") {
+      e.preventDefault();
+      pendingCompositionParagraph = compose.id;
+      return;
+    }
     if (e.isComposing) return; // composition owns the DOM; absorbed via 'input'/compositionend
     flushComposition();
     const type = e.inputType;
@@ -1096,9 +1185,15 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
 
   function onCompositionStart(e: CompositionEvent): void {
     if (isInsideVoidEvent(e)) return;
+    if (pendingCompositionTimer !== null) clearTimeout(pendingCompositionTimer);
+    pendingCompositionTimer = null;
+    pendingCompositionReplay = null;
+    pendingCompositionParagraph = null;
     flushComposition();
-    const sel = readDOMSelection(root);
+    const raw = readDOMSelection(root);
+    const sel = raw && promoteSelection(getState().store, registry, raw);
     if (!sel || sel.type !== "text") return;
+    if (!sameSelection(raw, sel)) runDispatch((tx) => tx.setSelection(sel));
     let point: Point;
     if (!collapsed(sel)) {
       // a composition can't span our block boundaries -- collapse first.
@@ -1129,12 +1224,31 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     }
   }
 
-  function onCompositionEnd(): void {
+  function onCompositionEnd(e: CompositionEvent): void {
     compose.active = false;
-    sync(compose.id); // best-effort immediate sync; compose.id stays set (pending)
-    // until the next command's flushComposition(), in case the browser's
-    // truly-final text arrives via a straggling 'input' after this event
-    // (Safari ordering).
+    sync(compose.id);
+    const blockId = pendingCompositionParagraph;
+    pendingCompositionParagraph = null;
+    if (blockId && e.data) {
+      // Some browsers send the final input after compositionend.
+      pendingCompositionReplay = () => {
+        if (compose.id !== blockId) return;
+        sync(blockId);
+        render(new Set([blockId]));
+        restoreSelection();
+        const selection = getState().selection;
+        if (!root.contains(root.ownerDocument.activeElement) || selection?.type !== "text" || selection.focus.blockId !== blockId) return;
+        const key = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+        root.dispatchEvent(key);
+        if (!key.defaultPrevented) onInsertParagraph(new InputEvent("beforeinput", { inputType: "insertParagraph" }));
+      };
+      pendingCompositionTimer = setTimeout(flushPendingParagraph, 0);
+      return;
+    }
+    if (compose.id) {
+      render(new Set([compose.id]));
+      restoreSelection();
+    }
   }
 
   /** Recompute text selection from the live DOM before each keydown, including
@@ -1168,14 +1282,16 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     // boundaries preserve keyboard navigation without a geometry engine.
     const text = (getState().store.records.get(blockId)?.content ?? []).map((inl) => isText(inl) ? inl.text : "\uFFFC").join("");
     const end = text.indexOf("\n", sel.focus.offset);
-    const offset = key === "End" ? (end < 0 ? text.length : end) : text.lastIndexOf("\n", sel.focus.offset - 1) + 1;
+    const offset = key === "End" ? (end < 0 ? text.length : end) : (sel.focus.offset === 0 ? 0 : text.lastIndexOf("\n", sel.focus.offset - 1) + 1);
     const point = { blockId, offset };
     runDispatch((tx) => tx.setSelection({ type: "text", anchor: extend ? sel.anchor : point, focus: point }));
   }
 
   function onKeyDown(e: KeyboardEvent): void {
     if (isInsideVoidEvent(e)) return;
+    scheduleCaretScroll();
     if (e.isComposing || e.keyCode === 229) return; // never double-process a composition-confirming key
+    flushPendingParagraph();
     flushComposition();
 
     // An open suggestion menu (slash/mention) gets first crack at navigation
@@ -1186,6 +1302,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     }
 
     const sel = syncedSelection();
+    if (e.key !== "Shift" && (!e.shiftKey || (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) || sel?.type !== "block")) blockExtend = null;
     const mod = e.metaKey || e.ctrlKey;
 
     // Backspace-undoes-an-auto-conversion: only when the caret sits exactly
@@ -1212,6 +1329,12 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
         e.preventDefault();
         return;
       }
+    }
+
+    if (e.key === "Enter" && e.shiftKey && !mod && !e.altKey) {
+      e.preventDefault();
+      onInsertLineBreak(new InputEvent("beforeinput", { inputType: "insertLineBreak" }));
+      return;
     }
 
     if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "a") {
@@ -1278,12 +1401,12 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
         onEnterOnBlockSelection(sel);
         return;
       }
-      if (e.key === "ArrowDown" && e.shiftKey) {
+      if ((e.key === "ArrowDown" || e.key === "ArrowRight") && e.shiftKey) {
         e.preventDefault();
         extendBlockSelection(sel, 1);
         return;
       }
-      if (e.key === "ArrowUp" && e.shiftKey) {
+      if ((e.key === "ArrowUp" || e.key === "ArrowLeft") && e.shiftKey) {
         e.preventDefault();
         extendBlockSelection(sel, -1);
         return;
@@ -1339,6 +1462,7 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
   });
   mo.observe(root, { childList: true, subtree: true, characterData: true });
 
+  root.addEventListener("paste", scheduleCaretScroll);
   root.addEventListener("beforeinput", onBeforeInput as EventListener);
   root.addEventListener("input", onInput);
   root.addEventListener("compositionstart", onCompositionStart as EventListener);
@@ -1424,9 +1548,10 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     // elsewhere (the host unmounts the handle right after a pointerdown outside too, and that is the user leaving).
     const lostKeepControl = isKeepSelectionTarget(lost) && !lostInsideRoot && !lastInputWasPointer;
     if (blurTimer !== null) clearTimeout(blurTimer);
+    const selectionAtBlur = getState().selection;
     blurTimer = setTimeout(() => {
       blurTimer = null;
-      if (getState().selection?.type !== "block") return;
+      if (getState().selection !== selectionAtBlur || getState().selection?.type !== "block") return;
       // A focused control that was unmounted (a renderer swapping its own controls) is not the user leaving.
       if (lostInsideRoot && lost instanceof Node && !lost.isConnected) return;
       const active = currentActiveElement();
@@ -1470,6 +1595,9 @@ export function attachInteraction(deps: InteractionDeps): Interaction {
     isPointerSelecting: () => registered.pointerSelecting,
     destroy() {
       mo.disconnect();
+      if (caretScrollFrame !== null) root.ownerDocument.defaultView?.cancelAnimationFrame(caretScrollFrame);
+      if (pendingCompositionTimer !== null) clearTimeout(pendingCompositionTimer);
+      root.removeEventListener("paste", scheduleCaretScroll);
       disarmOrphanWatch?.();
       stopPointerSelection?.();
       root.ownerDocument.removeEventListener("pointerdown", onPointerInput, true);

@@ -78,6 +78,21 @@ describe("history: typing merge within 500ms (mergeable, same block)", () => {
     expect(history.undo()).toBeNull();
   });
 
+  it("typing right after an undo starts a new step instead of merging into the entry below", () => {
+    const history = createHistory();
+    const state0: EditorState = { store: storeFrom([para("p1", "")]), selection: null };
+    const a = typeChar(state0, "p1", 0, "a");
+    history.push({ before: state0, after: a.state, changedIds: a.changedIds }, { blockId: "p1", mergeable: true });
+    const aligned = createTransaction(a.state, r).setProps("p1", { textAlign: "center" }).commit();
+    history.push({ before: a.state, after: aligned.state, changedIds: aligned.changedIds });
+    history.undo();
+    const b = typeChar(a.state, "p1", 1, "b");
+    history.push({ before: a.state, after: b.state, changedIds: b.changedIds }, { blockId: "p1", mergeable: true });
+
+    expect(history.undo()!.state.store.records.get("p1")!.content).toEqual([{ type: "text", text: "a" }]);
+    expect(history.undo()!.state.store.records.get("p1")!.content).toEqual([]);
+  });
+
   it("redo replays an undone entry, and a new push clears the redo stack", () => {
     const history = createHistory();
     const state0: EditorState = { store: storeFrom([para("p1", "")]), selection: null };
@@ -111,6 +126,16 @@ describe("history: patchSystemProps (a system commit outside history)", () => {
 
     const redone = history.redo()!;
     expect(redone.state.store.records.get("img1")!.props.src).toBe("https://cdn.example/x.png"); // not the stale ""
+  });
+
+  it("patches only snapshots matching the pending image source", () => {
+    const history = createHistory();
+    const before: EditorState = { store: storeFrom([{ id: "img1", type: "image", props: { src: "https://old.example/image.png" } }]), selection: null };
+    const result = createTransaction(before, r).setProps("img1", { src: undefined }).commit();
+    history.push({ before, after: result.state, changedIds: result.changedIds });
+    history.patchSystemProps("img1", { src: "https://new.example/image.png", assetId: "new" }, { src: undefined, assetId: undefined });
+    expect(history.undo()!.state.store.records.get("img1")!.props.src).toBe("https://old.example/image.png");
+    expect(history.redo()!.state.store.records.get("img1")!.props.src).toBe("https://new.example/image.png");
   });
 
   it("is a no-op for a stack entry whose snapshots never contained the block", () => {
