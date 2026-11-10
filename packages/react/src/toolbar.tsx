@@ -22,6 +22,8 @@ function useToolbarClasses(className?: string) {
 
 const TOOLBAR_ITEM_ATTR = "data-jul-editor-toolbar-item";
 const toolbarItemAttrs = { [TOOLBAR_ITEM_ATTR]: "" };
+const toolbarItems = (container: HTMLElement) => Array.from(container.querySelectorAll<HTMLElement>(`button, [${TOOLBAR_ITEM_ATTR}]`)).filter((item) => { const panel = item.closest("form, [role=dialog], [role=menu], [role=listbox]"); return !panel || !container.contains(panel); });
+const enabledToolbarItems = (container: HTMLElement) => toolbarItems(container).filter((item) => !item.matches(":disabled, [aria-disabled='true']"));
 
 export interface ToolbarButtonProps extends Omit<ComponentPropsWithoutRef<"button">, "type"> {
   asChild?: boolean;
@@ -32,7 +34,7 @@ export interface ToolbarButtonProps extends Omit<ComponentPropsWithoutRef<"butto
 // the document. mousedown's default action is what moves focus, so it is
 // prevented (the consumer's own onMouseDown still runs first and can opt
 // out by preventing nothing -- we only skip when THEY already prevented).
-function handleMouseDown(userOnMouseDown?: (e: MouseEvent<HTMLButtonElement>) => void) {
+export function handleMouseDown(userOnMouseDown?: (e: MouseEvent<HTMLButtonElement>) => void) {
   return (e: MouseEvent<HTMLButtonElement>) => {
     userOnMouseDown?.(e);
     if (e.button === 0) e.preventDefault();
@@ -57,7 +59,7 @@ function refocusEditor(editor: CoreEditor | null): void {
   editor.update((tx) => tx.setSelection(selection));
 }
 
-function handleClick(editor: CoreEditor | null, onCommand: () => void, userOnClick?: (e: MouseEvent<HTMLButtonElement>) => void) {
+export function handleClick(editor: CoreEditor | null, onCommand: () => void, userOnClick?: (e: MouseEvent<HTMLButtonElement>) => void) {
   return (e: MouseEvent<HTMLButtonElement>) => {
     userOnClick?.(e);
     if (e.defaultPrevented) return;
@@ -192,12 +194,10 @@ export interface HeadingButtonProps extends ToolbarButtonProps {
 }
 
 function useCurrentHeadingLevel(): number | null {
-  return useEditorState((state) => {
-    const sel = state.selection;
-    if (!sel || sel.type !== "text") return null;
-    const rec = state.store.records.get(sel.anchor.blockId);
-    if (rec?.type !== "heading") return null;
-    return typeof rec.props.level === "number" ? rec.props.level : 1;
+  const ctx = useEditorContext("Editor.Heading");
+  return useEditorState(() => {
+    const block = ctx.store.getEditor()?.getBlockType();
+    return block?.type === "heading" ? Number(block.props.level ?? 1) : null;
   });
 }
 
@@ -267,12 +267,24 @@ export const EditorToolbar = /* @__PURE__ */ forwardRef<HTMLDivElement, EditorTo
   useEffect(() => {
     const el = localRef.current;
     if (!el) return;
-    const items = Array.from(el.querySelectorAll<HTMLElement>(`[${TOOLBAR_ITEM_ATTR}]`));
+    const preventDisabledFocus = (event: globalThis.MouseEvent | PointerEvent) => {
+      if (event.button === 0 && event.target instanceof Element && event.target.closest(":disabled")) event.preventDefault();
+    };
+    el.addEventListener("pointerdown", preventDisabledFocus, true);
+    el.addEventListener("mousedown", preventDisabledFocus, true);
+    return () => { el.removeEventListener("pointerdown", preventDisabledFocus, true); el.removeEventListener("mousedown", preventDisabledFocus, true); };
+  }, []);
+
+  useEffect(() => {
+    const el = localRef.current;
+    if (!el) return;
+    const items = toolbarItems(el);
+    const enabled = enabledToolbarItems(el);
     // Runs after every render, so it must not undo onToolbarKeyDown's
     // choice: keep whichever item already holds tabindex=0 and only
     // initialise new items (or fall back to the first when the current
     // tab stop was removed).
-    const current = items.find((item) => item.getAttribute("tabindex") === "0") ?? items[0];
+    const current = enabled.find((item) => item.getAttribute("tabindex") === "0") ?? enabled[0];
     for (const item of items) item.setAttribute("tabindex", item === current ? "0" : "-1");
   });
 
@@ -281,9 +293,10 @@ export const EditorToolbar = /* @__PURE__ */ forwardRef<HTMLDivElement, EditorTo
     if (e.defaultPrevented) return;
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
     const container = e.currentTarget;
-    const items = Array.from(container.querySelectorAll<HTMLElement>(`[${TOOLBAR_ITEM_ATTR}]`));
+    const items = enabledToolbarItems(container);
     if (items.length === 0) return;
-    const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLElement));
+    const currentIndex = items.indexOf(e.target as HTMLElement);
+    if (currentIndex < 0) return;
     let nextIndex = currentIndex;
     if (e.key === "ArrowRight") nextIndex = (currentIndex + 1) % items.length;
     else if (e.key === "ArrowLeft") nextIndex = (currentIndex - 1 + items.length) % items.length;

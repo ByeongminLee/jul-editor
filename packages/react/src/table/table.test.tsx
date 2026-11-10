@@ -1,7 +1,7 @@
 import type { Doc } from "@jul-editor/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { act } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Editor, useEditor } from "..";
 import {
   AddColumnAfter,
@@ -179,6 +179,13 @@ describe("table toolbar atoms", () => {
     fireEvent.click(btn);
     expect(testEditor().getDoc().blocks[1]!.props.headerRow).toBe(false);
     expect(btn.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("ToggleHeaderRow keeps editor focus on a press and still calls the consumer's onMouseDown", () => {
+    const onMouseDown = vi.fn();
+    render(<Editor defaultValue={docWithTable()}><Editor.Content /><ToggleHeaderRow disabled={false} onMouseDown={onMouseDown} data-testid="toggle-header" /></Editor>);
+    expect(fireEvent.mouseDown(screen.getByTestId("toggle-header"))).toBe(false);
+    expect(onMouseDown).toHaveBeenCalledTimes(1);
   });
 });
 

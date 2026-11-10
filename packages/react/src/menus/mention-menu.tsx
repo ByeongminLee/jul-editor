@@ -74,18 +74,19 @@ export function MentionMenu({ onSearch, char = "@", className, children }: Menti
   const classes = typeof className === "object" ? className : {};
 
   return (
-    <div className={typeof className === "string" ? className : classes.container} data-jul-editor-mention-menu="" data-jul-editor-mention-kind={kind} aria-label={kindLabel} {...suggestion.getListboxProps()}>
-      {suggestion.loading && suggestion.items.length === 0 ? (
-        <div className={classes.loading} data-jul-editor-mention-loading="">{labels.mentionLoading}</div>
-      ) : suggestion.items.length === 0 ? (
-        <div className={classes.empty} data-jul-editor-mention-empty="">{labels.mentionNoResults}</div>
-      ) : (
-        suggestion.items.map((item, i) => (
+    <div className={typeof className === "string" ? className : classes.container} data-jul-editor-mention-menu="" data-jul-editor-mention-kind={kind} data-jul-editor-keep-selection="">
+      <div {...suggestion.getListboxProps()} aria-label={kindLabel}>
+        {suggestion.items.map((item, i) => (
           <div key={item.id} className={classes.item} data-jul-editor-mention-item="" data-jul-editor-mention-item-kind={item.kind} {...suggestion.getOptionProps(i)}>
             {classes.text ? <span className={classes.text}>{item.label}</span> : item.label}
           </div>
-        ))
-      )}
+        ))}
+      </div>
+      <div role="status">
+        {suggestion.items.length === 0 && (suggestion.loading
+          ? <div className={classes.loading} data-jul-editor-mention-loading="">{labels.mentionLoading}</div>
+          : <div className={classes.empty} data-jul-editor-mention-empty="">{labels.mentionNoResults}</div>)}
+      </div>
     </div>
   );
 }

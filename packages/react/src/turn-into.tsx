@@ -7,7 +7,7 @@
 // codeBlock buttons; `current`/`active` just read @jul-editor/core's own
 // `getBlockType()` (already the "uniform type+props across every touched
 // block, or null" computation, cached there for reference stability).
-import { canAdmit, orderPoints, containerInfo, nextBlockInPreOrder } from "@jul-editor/core";
+import { blockTypeTargets, canAdmit, containerInfo, textSelectionBlockIds } from "@jul-editor/core";
 import type { Editor as CoreEditor, Json, Registry, Store } from "@jul-editor/core";
 import type { ReactNode } from "react";
 import { useContext } from "react";
@@ -67,25 +67,13 @@ function isActive(spec: ItemSpec, current: { type: string; props: Record<string,
   return Object.entries(spec.props).every(([k, v]) => current.props[k] === v);
 }
 
-/** The ids a 'block'/'text' selection touches, in doc order -- same
- * pre-order block walk as useColorPicker.ts/useLinkEditor.ts's own copies
- * (small enough not to be worth sharing a fourth way). A 'cells' selection
- * has no single curated block type to turn into and is left empty. */
-function selectionBlockIds(editor: CoreEditor): string[] {
-  const sel = editor.getState().selection;
-  if (!sel) return [];
-  if (sel.type === "block") return sel.ids;
-  if (sel.type !== "text") return [];
-  const store = editor.getState().store;
-  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
-  const ids: string[] = [start.blockId];
-  let cur: string | null = start.blockId;
-  while (cur !== end.blockId) {
-    cur = nextBlockInPreOrder(store, cur);
-    if (cur === null) break;
-    ids.push(cur);
-  }
-  return ids;
+/** The blocks a 'block'/'text' selection would convert, in doc order (same targets as
+ * `commands.setBlockType`). A 'cells' selection has no single curated block type to turn into
+ * and is left empty. */
+function selectionBlockIds(editor: CoreEditor, registry: Registry): string[] {
+  const { selection: sel, store } = editor.getState();
+  if (!sel || sel.type === "cells") return [];
+  return blockTypeTargets(store, registry, sel.type === "block" ? sel.ids : textSelectionBlockIds(store, sel));
 }
 
 /** Predicts core's own opSetType noop rule (store/ops.ts) without applying
@@ -129,16 +117,13 @@ export function useTurnInto(): UseTurnIntoResult {
     current,
     turnInto(item) {
       if (!editor) return;
-      const ids = selectionBlockIds(editor);
+      const ids = selectionBlockIds(editor, ctx.registry);
       if (ids.length === 0) return;
       const store = editor.getState().store;
       // A multi-block selection converts ALL touched blocks or NONE --
       // never a half-converted mix silently left mid-selection (e.g. a list
       // item with nested children can't become a codeBlock, core's own
-      // opSetType noops it and nothing tells the user). Bypasses
-      // `commands.setBlockType` (which only ever resolves to the anchor
-      // block for a 'text' selection) so every touched id actually converts
-      // together, as one undo step.
+      // opSetType noops it and nothing tells the user).
       if (!ids.every((id) => canConvert(store, ctx.registry, id, item.type))) return;
       editor.update((tx) => tx.setBlockType(ids, item.type, item.props));
     },

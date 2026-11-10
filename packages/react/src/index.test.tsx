@@ -277,6 +277,64 @@ describe("@jul-editor/react", () => {
     }
   });
 
+  it("heading button reflects the full selection when levels differ", () => {
+    const value = { version: 1 as const, blocks: [
+      { id: "a", type: "heading", props: { level: 1 }, content: [{ type: "text" as const, text: "one" }] },
+      { id: "b", type: "heading", props: { level: 2 }, content: [{ type: "text" as const, text: "two" }] },
+    ] };
+    render(<Editor defaultValue={value}><Editor.Toolbar><Editor.Heading level={1} /></Editor.Toolbar><Editor.Content /><Probe /></Editor>);
+    act(() => testEditor().update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "a", offset: 0 }, focus: { blockId: "b", offset: 3 } })));
+    expect(screen.getByRole("button", { name: "Heading 1" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("heading button reflects a selected heading block", () => {
+    const value = { version: 1 as const, blocks: [{ id: "a", type: "heading", props: { level: 2 }, content: [{ type: "text" as const, text: "one" }] }] };
+    render(<Editor defaultValue={value}><Editor.Toolbar><Editor.Heading level={2} /></Editor.Toolbar><Editor.Content /><Probe /></Editor>);
+    act(() => testEditor().update((tx) => tx.setSelection({ type: "block", ids: ["a"] })));
+    expect(screen.getByRole("button", { name: "Heading 2" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("toolbar roving focus includes custom buttons and skips disabled items", () => {
+    render(<Editor defaultValue={makeDoc("hello")}><Editor.Toolbar>
+      <button disabled>Unavailable</button><button>Custom</button><Editor.Bold />
+    </Editor.Toolbar><Editor.Content /></Editor>);
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+    buttons[1]!.focus();
+    act(() => buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(buttons[2]);
+    act(() => buttons[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(buttons[1]);
+  });
+
+  it("leaves input navigation keys and popover buttons outside toolbar roving", () => {
+    render(<Editor defaultValue={makeDoc("hello")}><Editor.Toolbar>
+      <button>Link</button><form><input aria-label="URL" /><button>Apply</button></form><Editor.Bold />
+    </Editor.Toolbar><Editor.Content /></Editor>);
+    const input = screen.getByRole("textbox", { name: "URL" });
+    input.focus();
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(input);
+    expect(screen.getByRole("button", { name: "Apply" }).getAttribute("tabindex")).toBeNull();
+  });
+
+  it("roves toolbar buttons when the editor is inside a form", () => {
+    render(<form><Editor defaultValue={makeDoc("hello")}><Editor.Toolbar><Editor.Bold /><Editor.Italic /></Editor.Toolbar><Editor.Content /></Editor></form>);
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("tabindex"))).toEqual(["0", "-1"]);
+  });
+
+  it("a press on a disabled toolbar button does not take focus from the editor", () => {
+    render(<Editor defaultValue={makeDoc("hello")}><Editor.Toolbar><button disabled><span>Unavailable</span></button><Editor.Bold /></Editor.Toolbar><Editor.Content /></Editor>);
+    const press = (target: Element) => {
+      const event = new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(press(screen.getByText("Unavailable"))).toBe(true);
+    expect(press(screen.getByRole("button", { name: "Bold" }))).toBe(false);
+  });
+
   it("toolbar roving tabindex survives a re-render", () => {
     const doc = makeDoc("hello");
     const tree = (extra: string) => (

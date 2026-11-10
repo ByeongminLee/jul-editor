@@ -68,7 +68,7 @@ export function SlashMenu({ className, extraItems, items: configureItems, childr
   );
   const onSelect = useCallback((item: SlashItem, sctx: Parameters<typeof selectSlashItem>[1]) => selectSlashItem(item, sctx, registry), [registry]);
 
-  const suggestion = useSuggestion<SlashItem>({ char: "/", startOfLine: true, items, onSelect, allow });
+  const suggestion = useSuggestion<SlashItem>({ char: "/", startOfLine: true, allowSpaces: true, items, onSelect, allow });
 
   if (!suggestion.open) return null;
 
@@ -85,17 +85,21 @@ export function SlashMenu({ className, extraItems, items: configureItems, childr
   const classes = typeof className === "object" ? className : {};
 
   return (
-    <div className={typeof className === "string" ? className : classes.container} data-jul-editor-slash-menu="" {...suggestion.getListboxProps()}>
-      {suggestion.items.length === 0 ? (
-        <div className={classes.empty} data-jul-editor-slash-empty="">{labels.slashNoResults}</div>
-      ) : (
-        suggestion.items.map((item, i) => (
+    <div className={typeof className === "string" ? className : classes.container} data-jul-editor-slash-menu="" data-jul-editor-keep-selection="">
+      <div {...suggestion.getListboxProps()} aria-label={labels.slashMenuLabel}>
+        {suggestion.items.map((item, i) => (
           <div key={item.id} className={classes.item} data-jul-editor-slash-item="" {...suggestion.getOptionProps(i)}>
             {classes.text ? <span className={classes.text}>{item.title}</span> : item.title}
             {item.description && <small className={classes.description}>{item.description}</small>}
           </div>
-        ))
-      )}
+        ))}
+      </div>
+      {/* Mounted before it has text: a live region inserted together with its message is not reliably announced. */}
+      <div role="status">
+        {suggestion.items.length === 0 && (suggestion.loading
+          ? <div className={classes.loading} data-jul-editor-slash-loading="">{labels.slashLoading}</div>
+          : <div className={classes.empty} data-jul-editor-slash-empty="">{labels.slashNoResults}</div>)}
+      </div>
     </div>
   );
 }

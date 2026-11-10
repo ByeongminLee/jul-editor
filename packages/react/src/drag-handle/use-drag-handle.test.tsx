@@ -223,6 +223,18 @@ describe("useDragHandle keyboard pick-up/step/drop", () => {
     expect(testState().blockId).toBe("p1");
   });
 
+  it("announces each successive keyboard move", () => {
+    const doc = twoParas();
+    doc.blocks.push({ id: "p3", type: "paragraph", props: {}, content: [{ type: "text", text: "three" }] });
+    render(<Editor defaultValue={doc}><Editor.Content /><Probe /></Editor>);
+    const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+    act(() => fireEvent.keyDown(handle, { key: " " }));
+    act(() => fireEvent.keyDown(handle, { key: "ArrowDown" }));
+    const first = testState().announcement;
+    act(() => fireEvent.keyDown(handle, { key: "ArrowDown" }));
+    expect(testState().announcement).not.toBe(first);
+  });
+
   it("Space picks up the hovered block, ArrowDown commits one sibling-swap step, Space drops (no leftover state)", async () => {
     render(
       <Editor defaultValue={twoParas()}>
@@ -544,4 +556,62 @@ describe("useDragHandle pointer drop", () => {
     act(() => fireEvent.pointerUp(handle, { pointerId: 1 }));
     expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p1", "p2"]);
   });
+});
+
+it("moves selected runs in their own parents and cancels only successful steps", () => {
+  const p = (id: string, children?: Doc["blocks"]): Doc["blocks"][number] => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  render(<Editor defaultValue={{ version: 1, blocks: [p("a", [p("x"), p("y")]), p("b", [p("u"), p("v")])] }}><Editor.Content /><Probe /></Editor>);
+  const editor = testEditor();
+  act(() => editor.update(tx => tx.setSelection({ type: "block", ids: ["y", "v"] })));
+  const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+  act(() => fireEvent.keyDown(handle, { key: " " }));
+  act(() => fireEvent.keyDown(handle, { key: "ArrowUp" }));
+  expect(editor.getDoc().blocks.map(b => b.children?.map(c => c.id))).toEqual([["y", "x"], ["v", "u"]]);
+  act(() => fireEvent.keyDown(handle, { key: "ArrowUp" }));
+  expect(testState().announcement).toBe("Moved 1 step.");
+  act(() => fireEvent.keyDown(handle, { key: "Escape" }));
+  expect(editor.getDoc().blocks.map(b => b.children?.map(c => c.id))).toEqual([["x", "y"], ["u", "v"]]);
+});
+
+it("does not undo an earlier edit after a blocked keyboard step", () => {
+  render(<Editor defaultValue={twoParas()}><Editor.Content /><Probe /></Editor>);
+  const editor = testEditor();
+  act(() => editor.update(tx => tx.replaceContent("p1", 0, 3, [{ type: "text", text: "changed" }]).setSelection({ type: "block", ids: ["p1"] })));
+  const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+  act(() => fireEvent.keyDown(handle, { key: " " }));
+  act(() => fireEvent.keyDown(handle, { key: "ArrowUp" }));
+  act(() => fireEvent.keyDown(handle, { key: "Escape" }));
+  expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "changed" }]);
+});
+
+it("does not lift a single block out of its parent at a handle boundary", () => {
+  const p = (id: string, children?: Doc["blocks"]): Doc["blocks"][number] => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  render(<Editor defaultValue={{ version: 1, blocks: [p("a", [p("x"), p("y")]), p("end")] }}><Editor.Content /><Probe /></Editor>);
+  const editor = testEditor();
+  act(() => editor.update(tx => tx.setSelection({ type: "block", ids: ["x"] })));
+  const before = editor.getDoc();
+  const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+  act(() => fireEvent.keyDown(handle, { key: " " }));
+  act(() => fireEvent.keyDown(handle, { key: "ArrowUp" }));
+  expect(editor.getDoc()).toEqual(before);
+  act(() => fireEvent.keyDown(handle, { key: "Escape" }));
+  expect(editor.getDoc()).toEqual(before);
+});
+
+it("announces keyboard moves in Korean", () => {
+  render(<Editor defaultValue={twoParas()} locale="ko"><Editor.Content /><Probe /></Editor>);
+  const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+  act(() => fireEvent.keyDown(handle, { key: " " }));
+  expect(testState().announcement).toContain("블록을 선택했습니다");
+  act(() => fireEvent.keyDown(handle, { key: "ArrowDown" }));
+  expect(testState().announcement).toBe("1칸 이동했습니다.");
+});
+
+it("supports partial drag label overrides", () => {
+  render(<Editor defaultValue={twoParas()} locale="ko" labels={{ dragDropped: "완료" }}><Editor.Content /><Probe /></Editor>);
+  const handle = document.querySelector('[data-testid="handle"]') as HTMLElement;
+  act(() => fireEvent.keyDown(handle, { key: " " }));
+  expect(testState().announcement).toContain("블록을 선택했습니다");
+  act(() => fireEvent.keyDown(handle, { key: "Enter" }));
+  expect(testState().announcement).toBe("완료");
 });

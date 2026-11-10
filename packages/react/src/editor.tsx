@@ -231,9 +231,10 @@ export function Editor(props: EditorProps): ReactNode {
 
 export interface EditorContentProps {
   className?: string;
+  "aria-label"?: string;
 }
 
-export function EditorContent({ className }: EditorContentProps): ReactNode {
+export function EditorContent({ className, "aria-label": ariaLabel }: EditorContentProps): ReactNode {
   const ctx = useEditorContext("Editor.Content");
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CoreEditor | null>(null);
@@ -354,7 +355,7 @@ export function EditorContent({ className }: EditorContentProps): ReactNode {
   });
 
   return (
-    <div className={className} ref={containerRef}>
+    <div className={className} aria-label={ariaLabel} ref={containerRef}>
       <VoidPortals />
     </div>
   );

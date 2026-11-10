@@ -35,7 +35,9 @@ export interface Labels {
   slashDiagram: string;
   slashDataTable: string;
   slashCodeWorkspace: string;
+  slashMenuLabel: string;
   slashNoResults: string;
+  slashLoading: string;
 
   // ---- TurnInto's own curated item labels (turnInto.tsx) ----
   turnIntoText: string;
@@ -104,6 +106,17 @@ export interface Labels {
   embedTitle: string;
   embedTitlePlaceholder: string;
 
+  // ---- Drag handle announcements ----
+  dragPickedUp: string;
+  dragPickedUpMultiple: string;
+  dragInstructions: string;
+  dragMoved: string;
+  dragMovedMultiple: string;
+  dragCancelled: string;
+  dragDropped: string;
+  dragMovedStep: string;
+  dragMovedSteps: string;
+
   // ---- table atoms (table/TableCommands.tsx) ----
   tableInsertTable: string;
   tableAddRowBefore: string;
@@ -146,7 +159,9 @@ export const EN_LABELS: Labels = {
   slashDiagram: "Diagram",
   slashDataTable: "Data table",
   slashCodeWorkspace: "Code Workspace",
+  slashMenuLabel: "Block commands",
   slashNoResults: "No results",
+  slashLoading: "Loading…",
 
   turnIntoText: "Text",
   turnIntoHeading1: "Heading 1",
@@ -207,6 +222,16 @@ export const EN_LABELS: Labels = {
   embedTitle: "Embed title",
   embedTitlePlaceholder: "Add a title",
 
+  dragPickedUp: "Picked up block.",
+  dragPickedUpMultiple: "Picked up {count} blocks.",
+  dragInstructions: "Use arrow keys to move, space or enter to drop, escape to cancel.",
+  dragMoved: "Moved block.",
+  dragMovedMultiple: "Moved {count} blocks.",
+  dragCancelled: "Move cancelled.",
+  dragDropped: "Dropped.",
+  dragMovedStep: "Moved {count} step.",
+  dragMovedSteps: "Moved {count} steps.",
+
   tableInsertTable: "Table",
   tableAddRowBefore: "Add row above",
   tableAddRowAfter: "Add row below",
@@ -246,7 +271,9 @@ export const KO_LABELS: Labels = {
   slashDiagram: "다이어그램",
   slashDataTable: "데이터 표",
   slashCodeWorkspace: "코드 워크스페이스",
+  slashMenuLabel: "블록 명령",
   slashNoResults: "결과 없음",
+  slashLoading: "불러오는 중…",
 
   turnIntoText: "텍스트",
   turnIntoHeading1: "제목 1",
@@ -306,6 +333,16 @@ export const KO_LABELS: Labels = {
   embedInvalidUrl: "올바른 http(s) URL을 입력하세요",
   embedTitle: "임베드 제목",
   embedTitlePlaceholder: "제목 추가",
+
+  dragPickedUp: "블록을 선택했습니다.",
+  dragPickedUpMultiple: "블록 {count}개를 선택했습니다.",
+  dragInstructions: "화살표 키로 이동하고, 스페이스 또는 엔터로 놓거나 이스케이프로 취소하세요.",
+  dragMoved: "블록을 이동했습니다.",
+  dragMovedMultiple: "블록 {count}개를 이동했습니다.",
+  dragCancelled: "이동을 취소했습니다.",
+  dragDropped: "블록을 놓았습니다.",
+  dragMovedStep: "{count}칸 이동했습니다.",
+  dragMovedSteps: "{count}칸 이동했습니다.",
 
   tableInsertTable: "표",
   tableAddRowBefore: "위에 행 추가",

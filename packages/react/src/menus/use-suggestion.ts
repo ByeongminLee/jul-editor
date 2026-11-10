@@ -75,6 +75,8 @@ export interface UseSuggestionResult<Item> {
 
 const DEBOUNCE_MS = 100;
 let idSeq = 0;
+const ariaOwners = new WeakMap<HTMLElement, { owner: string; original: Map<string, string | null> }>();
+const ariaAttributes = ["role", "aria-multiline", "aria-expanded", "aria-controls", "aria-autocomplete", "aria-activedescendant"];
 
 export function useSuggestion<Item>(opts: UseSuggestionOptions<Item>): UseSuggestionResult<Item> {
   const editor = useEditor();
@@ -225,6 +227,11 @@ export function useSuggestion<Item>(opts: UseSuggestionOptions<Item>): UseSugges
       Promise.resolve(result).then(
         (resolved) => {
           if (requestIdRef.current !== requestId) return; // stale: a newer query has since been requested
+          // A multi-word query that matches nothing is ordinary text ("/usr/bin is a path"), not a search.
+          if (optsRef.current.allowSpaces && resolved.length === 0 && /\s/.test(query)) {
+            close();
+            return;
+          }
           setItems(resolved);
           setActiveIndex(0);
           setLoading(false);
@@ -240,31 +247,27 @@ export function useSuggestion<Item>(opts: UseSuggestionOptions<Item>): UseSugges
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, query, opts.items]);
 
-  // ARIA: aria-expanded/-controls/-autocomplete/-activedescendant on
-  // the editable root itself, not on this menu's own (possibly portaled,
-  // possibly-not-yet-mounted) markup.
+  // Only the open suggestion owns the editor's temporary combobox semantics.
   useEffect(() => {
-    // Context roots keep simultaneous editors isolated. Standalone headless
-    // hook consumers (including existing tests) keep the legacy fallback.
     const root = rootRef ? rootRef.current : (typeof document === "undefined" ? null : document.querySelector<HTMLElement>("[data-jul-editor-root]"));
-    if (!root) return;
-    if (open) {
-      root.setAttribute("aria-expanded", "true");
-      root.setAttribute("aria-controls", listboxId);
-      root.setAttribute("aria-autocomplete", "list");
-      if (items.length > 0) root.setAttribute("aria-activedescendant", `${listboxId}-option-${activeIndex}`);
-      else root.removeAttribute("aria-activedescendant");
-    } else {
-      root.removeAttribute("aria-expanded");
-      root.removeAttribute("aria-controls");
-      root.removeAttribute("aria-autocomplete");
-      root.removeAttribute("aria-activedescendant");
-    }
+    if (!root || !open) return;
+    const prior = ariaOwners.get(root);
+    const original = prior?.original ?? new Map(ariaAttributes.map((name) => [name, root.getAttribute(name)]));
+    ariaOwners.set(root, { owner: listboxId, original });
+    root.setAttribute("role", "combobox");
+    root.removeAttribute("aria-multiline");
+    root.setAttribute("aria-expanded", "true");
+    root.setAttribute("aria-controls", listboxId);
+    root.setAttribute("aria-autocomplete", "list");
+    if (items.length > 0) root.setAttribute("aria-activedescendant", `${listboxId}-option-${activeIndex}`);
+    else root.removeAttribute("aria-activedescendant");
     return () => {
-      root.removeAttribute("aria-expanded");
-      root.removeAttribute("aria-controls");
-      root.removeAttribute("aria-autocomplete");
-      root.removeAttribute("aria-activedescendant");
+      if (ariaOwners.get(root)?.owner !== listboxId) return;
+      for (const [name, value] of original) {
+        if (value === null) root.removeAttribute(name);
+        else root.setAttribute(name, value);
+      }
+      ariaOwners.delete(root);
     };
   }, [open, activeIndex, items.length, listboxId, rootRef]);
 
