@@ -111,3 +111,22 @@ describe("normalizeLinkHref", () => {
     },
   );
 });
+
+describe('embedded raster image sources', () => {
+  it('accepts strict raster base64 only for image blocks', () => {
+    const data = 'data:image/png;base64,aGVsbG8=';
+    expect(sanitizeUrl(data, 'image')).toBeNull();
+    expect(sanitizeBlockProps('image', { src: data }).src).toBe(data);
+    expect(sanitizeBlockProps('attachment', { src: data }).src).toBeUndefined();
+    for (const src of ['data:image/svg+xml;base64,PHN2Zz4=', 'data:text/html;base64,PHNjcmlwdD4=', 'data:image/png,raw', 'data:image/png;base64,@@@']) {
+      expect(sanitizeBlockProps('image', { src }).src).toBeUndefined();
+    }
+  });
+});
+
+it('accepts large embedded images without exhausting the regex stack', () => {
+  const src = 'data:image/png;base64,' + 'A'.repeat(10 * 1024 * 1024);
+  expect(sanitizeBlockProps('image', { src }).src).toBe(src);
+  expect(sanitizeBlockProps('image', { src: src + '!' }).src).toBeUndefined();
+  expect(sanitizeBlockProps('image', { src: 'data:image/png;base64,' }).src).toBeUndefined();
+});

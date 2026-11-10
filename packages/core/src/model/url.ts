@@ -65,6 +65,17 @@ export function sanitizeUrl(url: string, kind: "link" | "image", opts: { allowBl
   return null;
 }
 
+/** Image block sources may embed supported raster bytes; generic URL handling stays strict. */
+export function sanitizeImageSource(url: string): string | null {
+  const prefix = /^data:image\/(?:png|jpeg|gif|webp|bmp);base64,/i.exec(url);
+  if (prefix) {
+    const payload = url.slice(prefix[0].length);
+    if (payload.length > 0 && payload.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(payload)) return url;
+    return null;
+  }
+  return sanitizeUrl(url, "image");
+}
+
 // A bare host ("example.com", "www.a.co.kr:8080/x") -- a dotted name of letters,
 // digits and hyphens with an alphabetic last label, then a port, path, query,
 // fragment or the end. SCHEME_RE would otherwise read "example.com:8080" as a scheme.

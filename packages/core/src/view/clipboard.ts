@@ -68,7 +68,7 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
   let destroyed = false;
   function beginUpload(blockId: string, file: File): Promise<boolean> {
     const active = inflight.get(blockId);
-    if (active) return active;
+    if (active) return active.then((result) => uploadRegistry.getFile(blockId) === file && uploadRegistry.get(blockId)?.status === "queued" ? beginUpload(blockId, file) : result);
     if (destroyed || getState().store.records.get(blockId)?.type !== uploadTypes.get(blockId)) { uploadRegistry.succeed(blockId); return Promise.resolve(false); }
     if (!onUpload) { uploadRegistry.fail(blockId, "No upload handler configured."); return Promise.resolve(false); }
     const originalSrc = getState().store.records.get(blockId)?.props.src;
@@ -77,7 +77,7 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
       if (destroyed || !current || current.type !== uploadTypes.get(blockId)) throw new Error("The upload target was removed or changed.");
       if (current.props.src !== originalSrc) return; // A URL entered by the user wins over an older upload.
       runDispatchSystem(tx => tx.setProps(blockId, { src: result.src, assetId: result.assetId }));
-    }).finally(() => inflight.delete(blockId));
+    }, uploadTypes.get(blockId) === "image" ? "image" : "file").finally(() => inflight.delete(blockId));
     inflight.set(blockId, job);
     return job;
   }

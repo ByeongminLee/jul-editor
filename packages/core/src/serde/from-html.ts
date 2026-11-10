@@ -337,7 +337,7 @@ function splitOwnAndChildren(el: Element): { ownNodes: ChildNode[]; childNodes: 
   let breakIdx = -1;
   for (let i = 0; i < all.length; i++) {
     const n = all[i]!;
-    if (isElementNode(n) && BLOCK_TAGS.has(n.tagName)) {
+    if (isElementNode(n) && (BLOCK_TAGS.has(n.tagName) || (n.tagName === "FIGURE" && n.getAttribute("data-jul-editor-type") === "image"))) {
       breakIdx = i;
       break;
     }

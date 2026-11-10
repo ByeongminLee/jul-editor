@@ -18,7 +18,7 @@ import { ensureUniqueIds, newId } from "../model/id.js";
 import { CURRENT_VERSION } from "../model/migrate.js";
 import type { FromMarkdownBlockCtx, MarkdownBlockToken, ParseCtx, Registry } from "../model/schema.js";
 import type { Block, Inline, Json, Mark, TextInline } from "../model/types.js";
-import { sanitizeUrl } from "../model/url.js";
+import { sanitizeImageSource, sanitizeUrl } from "../model/url.js";
 import { CODE_TAB_PLACEHOLDER, EMPTY_MD_PLACEHOLDER } from "./escape.js";
 import type { FromMarkdownOptions, FromMarkdownResult, LossyEntry } from "./types.js";
 
@@ -64,10 +64,28 @@ function lexerFor(registry: Registry): { lexer(src: string): Token[] } {
 export function fromMarkdown(md: string, opts: FromMarkdownOptions = {}): FromMarkdownResult {
   const registry = opts.registry ?? coreRegistry;
   const lossy: LossyEntry[] = [];
-  const safe = capHostileInput(md, lossy);
+  // Marked's block lexer can overflow its stack on large inline data URLs. Keep those bytes
+  // out of the lexer and restore them everywhere, including literal code and ordinary text.
+  const embedded = new Map<string, string>();
+  const masked = md.replace(/data:image\/(?:png|jpeg|gif|webp|bmp);base64,[A-Za-z0-9+/=]+/gi, (src) => {
+    if (!sanitizeImageSource(src)) return src;
+    let key: string;
+    do { key = `jul-editor-image-${newId()}`; } while (md.includes(key));
+    embedded.set(key, src);
+    return key;
+  });
+  const safe = capHostileInput(masked, lossy);
   const tokens = lexerFor(registry).lexer(safe);
   const blocks = convertBlockTokens(tokens, registry, lossy);
-  const uniqued = ensureUniqueIds({ version: CURRENT_VERSION, blocks });
+  const restore = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      return value.replace(/jul-editor-image-[A-Za-z0-9]{10}/g, (key) => embedded.get(key) ?? key);
+    }
+    if (Array.isArray(value)) return value.map(restore);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, restore(item)]));
+    return value;
+  };
+  const uniqued = ensureUniqueIds({ version: CURRENT_VERSION, blocks: embedded.size ? restore(blocks) as Block[] : blocks });
   const doc = normalizeDoc(uniqued, registry);
   return { doc, lossy };
 }
@@ -295,7 +313,7 @@ function stripEmptyPlaceholder(content: Inline[]): Inline[] {
 }
 
 function imageTokenToBlock(img: Tokens.Image): Block {
-  const src = sanitizeUrl(img.href, "image") ?? "";
+  const src = sanitizeImageSource(img.href) ?? "";
   // img.text is the RAW (unescaped) source of the alt label --
   // img.tokens is the already-resolved form (an "escape" token's `\*`
   // decoded to a plain "*"), reusing the same plainText() helper `link`

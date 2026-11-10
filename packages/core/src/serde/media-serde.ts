@@ -16,6 +16,7 @@
 import { embed, image } from "../model/builtins.js";
 import { getProp } from "../model/canonical.js";
 import { embedIframeSrc, embedWatchUrl, parseEmbedIframeSrc, parseEmbedUrl, type EmbedProvider } from "../model/embed.js";
+import { sanitizeImageSource } from "../model/url.js";
 import { newId } from "../model/id.js";
 import type { ParseCtx } from "../model/schema.js";
 import type { Block, Json } from "../model/types.js";
@@ -49,7 +50,7 @@ image.toMarkdown = (block, ctx) => {
 };
 image.toHTML = (block, ctx) => {
   const alt = String(getProp(block, "alt", ctx.registry) ?? "");
-  const src = ctx.sanitizeUrl(String(getProp(block, "src", ctx.registry) ?? ""), "image") ?? "";
+  const src = sanitizeImageSource(String(getProp(block, "src", ctx.registry) ?? "")) ?? "";
   const width = block.props.width;
   const align = String(getProp(block, "align", ctx.registry) ?? "center");
   const caption = String(getProp(block, "caption", ctx.registry) ?? "");
@@ -71,7 +72,7 @@ image.fromHTML = {
     const img = el.querySelector("img");
     if (!img) return null;
     const alt = img.getAttribute("alt") ?? "";
-    const src = ctx.sanitizeUrl(img.getAttribute("src") ?? "", "image") ?? "";
+    const src = sanitizeImageSource(img.getAttribute("src") ?? "") ?? "";
     const props: Record<string, Json> = { src, alt };
     const align = el.getAttribute("data-align");
     if (align === "left" || align === "right") props.align = align;

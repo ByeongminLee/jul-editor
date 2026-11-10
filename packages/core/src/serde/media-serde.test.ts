@@ -61,6 +61,24 @@ describe("image serde: width/align/caption", () => {
     expect(img.props).toMatchObject({ src: "https://x/y.png", alt: "a cat", width: 240, align: "right", caption: "cap" });
   });
 
+  it.each(["bulletListItem", "quote"])("round-trips a nested image in a %s", (type) => {
+    const doc: Doc = { version: 1, blocks: [{ id: "parent", type, props: {}, content: [{ type: "text", text: "item" }], children: [
+      { id: "img", type: "image", props: { src: "https://x/y.png", alt: "photo", width: 240, align: "right" } },
+      { id: "child", type: "bulletListItem", props: {}, content: [{ type: "text", text: "child" }] },
+    ] }] };
+    const block = fromHTML(toHTML(doc)).doc.blocks[0]!;
+    expect(block.content).toEqual([{ type: "text", text: "item" }]);
+    expect(block.children).toHaveLength(2);
+    expect(block.children![0]).toMatchObject({ type: "image", props: { src: "https://x/y.png", alt: "photo", width: 240, align: "right" } });
+    expect(block.children![1]).toMatchObject({ type: "bulletListItem", content: [{ type: "text", text: "child" }] });
+  });
+
+  it("keeps bare inline images as alt text in lists", () => {
+    const block = fromHTML('<ul><li>before <img src="https://x/y.png" alt="photo"> after</li></ul>').doc.blocks[0]!;
+    expect(block.content?.map((inline) => inline.type === "text" && "text" in inline ? inline.text : "").join("")).toBe("before photo after");
+    expect(block.children).toBeUndefined();
+  });
+
   it("a bare third-party <img> (no figure wrapper) still parses via the generic path, ignoring width/align/caption", () => {
     const { doc } = fromHTML('<p><img src="https://x/y.png" alt="plain"></p>');
     expect(doc.blocks[0]).toMatchObject({ type: "image", props: { src: "https://x/y.png", alt: "plain" } });
