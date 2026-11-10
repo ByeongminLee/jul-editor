@@ -6,10 +6,10 @@ import { AboutEngineLegend } from "./about-engine-legend.js";
 import { useSiteSettings } from "../../app/site-settings.js";
 
 const bundle = [
-  ["JulEditor", 56.49], ["Lexical", 67.40], ["Quill", 58.65], ["ProseMirror", 55.44],
+  ["JulEditor", 70.50], ["Lexical", 67.54], ["Quill", 58.57], ["ProseMirror", 55.41],
 ] as const;
 const roundtrip = [
-  ["JulEditor", 0.279], ["Lexical", 0.433], ["Quill", 0.047], ["ProseMirror", 0.240],
+  ["JulEditor", 0.261], ["Lexical", 0.401], ["Quill", 0.051], ["ProseMirror", 0.187],
 ] as const;
 
 // Row order of both charts, so the palette (one fixed color per engine) lines up with the bars.

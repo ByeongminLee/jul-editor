@@ -20,16 +20,16 @@ Lexical's freedom is useful when a product wants to assemble every piece. It als
 
 ## Measured, with the scope visible
 
-These are measurements from this repository on **2026-10-04**, not vendor benchmarks. Each browser ESM editing entry was bundled with esbuild 0.28.2, `minify: true`, target `es2022`, then gzipped. The entries import JulEditor `createEditor` + `coreRegistry`, Lexical `createEditor` + base nodes, Quill's default entry, or ProseMirror `model` + `state` + `view`. They cover different amounts of functionality and exclude React UI, CSS, and visual plugins. Treat them as entry costs, not equal-feature product sizes.
+These are measurements from this repository, not vendor benchmarks. Each browser ESM editing entry was bundled with esbuild 0.28.2, `minify: true`, target `es2022`, then gzipped. The entries import JulEditor `createEditor` + `coreRegistry`, Lexical `createEditor` + base nodes, Quill's default entry, or ProseMirror `model` + `state` + `view`. They cover different amounts of functionality and exclude React UI, CSS, and visual plugins. Treat them as entry costs, not equal-feature product sizes.
 
-For storage, we generated **500 equal plain-text paragraphs** in each native format, then timed only `JSON.parse` followed by `JSON.stringify`: five warmups and the median of 20 runs on Node 25.2.1. It measures format processing, not typing, DOM paint, or full Markdown/HTML conversion. Quill can combine plain text into a single Delta insert, while node-tree formats preserve more explicit structure. Gzip and raw JSON sizes answer different storage questions.
+For storage, we generated **500 equal plain-text paragraphs** in each native format, then timed only `JSON.parse` followed by `JSON.stringify`: five warmups and the median of 20 runs on Node 24.22.1. It measures format processing, not typing, DOM paint, or full Markdown/HTML conversion. Quill can combine plain text into a single Delta insert, while node-tree formats preserve more explicit structure. Gzip and raw JSON sizes answer different storage questions.
 
 | Engine (version) | Edit entry gzip | 500-paragraph JSON | JSON parse + stringify |
 | --- | ---: | ---: | ---: |
-| JulEditor (workspace) | 56.49 KiB | 82.44 KiB | 0.279 ms |
-| Lexical 0.52.0 | 67.40 KiB | 141.69 KiB | 0.433 ms |
-| Quill 2.0.3 | 58.65 KiB | 43.48 KiB | 0.047 ms |
-| ProseMirror 1.25/1.4/1.42 | 55.44 KiB | 71.31 KiB | 0.240 ms |
+| JulEditor (workspace) | 70.50 KiB | 82.44 KiB | 0.261 ms |
+| Lexical 0.52.0 | 67.54 KiB | 141.69 KiB | 0.401 ms |
+| Quill 2.0.3 | 58.57 KiB | 43.48 KiB | 0.051 ms |
+| ProseMirror 1.25/1.4/1.42 | 55.41 KiB | 71.31 KiB | 0.187 ms |
 
 The charts below use JulEditor's own chart plugin and the same values as the table. Each engine keeps the same color as in the diagram below.
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { resolveMdx, type MdxModule, type MdxSources } from "../docs/localized-mdx.js";
 import { Code } from "../components/code-block.js";
 import { mdxComponents } from "../docs/mdx-components.js";
@@ -20,7 +20,27 @@ const sources: MdxSources<AboutMeta> = {
   ko: first(import.meta.glob<MdxModule<AboutMeta>>("../content/about/ko.mdx")),
 };
 
-const aboutComponents = { ...mdxComponents, AboutSwimlane, AboutWalkthrough, AboutSummary };
+function AboutTable(props: ComponentProps<"table">) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  useEffect(() => {
+    const el = ref.current!;
+    const update = () => setOverflow(el.scrollWidth > el.clientWidth);
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    update();
+    return () => observer.disconnect();
+  }, []);
+  return <div ref={ref} className="about-table-scroll" tabIndex={overflow ? 0 : undefined} onKeyDown={(event) => {
+    if (!overflow || event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.currentTarget.scrollBy({ left: event.key === "ArrowRight" ? 40 : -40, behavior: "instant" });
+  }}><table {...props} /></div>;
+}
+
+const aboutComponents = { ...mdxComponents, table: AboutTable, AboutSwimlane, AboutWalkthrough, AboutSummary };
 
 export default function About() {
   const { locale, t } = useSiteSettings();
