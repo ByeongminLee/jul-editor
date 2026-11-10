@@ -23,7 +23,7 @@ export function indentCodeText(value: string, start: number, end: number, dir: 1
   // a range ending right at a line's own start does not touch that line.
   const lastOffset = to > from && value[to - 1] === "\n" ? to - 1 : to;
   const starts: number[] = [];
-  let lineStart = value.lastIndexOf("\n", from - 1) + 1;
+  let lineStart = from === 0 ? 0 : value.lastIndexOf("\n", from - 1) + 1;
   while (lineStart <= lastOffset) {
     starts.push(lineStart);
     const nl = value.indexOf("\n", lineStart);

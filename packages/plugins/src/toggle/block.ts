@@ -156,7 +156,7 @@ export function setToggleOpen(editor: Editor, id: string, open: boolean, opts: {
     // persist:false (an openStore adapter owns the state) only repairs the selection.
     let next = opts.persist === false ? tx : tx.setProps(id, { open: open ? true : undefined });
     const sel = state.selection;
-    if (!open && sel && sel.type === "text" && sel.anchor.blockId !== id && ancestorChain(state.store, sel.anchor.blockId).includes(id)) {
+    if (!open && sel && sel.type === "text" && [sel.anchor.blockId, sel.focus.blockId].some((blockId) => blockId !== id && ancestorChain(state.store, blockId).includes(id))) {
       const caret = { blockId: id, offset: contentLength(state.store.records.get(id)?.content) };
       next = next.setSelection({ type: "text", anchor: caret, focus: caret });
     }

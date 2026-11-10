@@ -14,4 +14,7 @@ describe("indentCodeText", () => {
   it("Shift-Tab with nothing to remove returns null", () => {
     expect(indentCodeText("x", 1, 1, -1)).toBeNull();
   });
+  it("indents only the first line of a range starting at offset 0 before a newline", () => {
+    expect(indentCodeText("\nab", 0, 1, 1)?.value).toBe("  \nab");
+  });
 });

@@ -160,6 +160,14 @@ describe("toggle collapse (real editor)", () => {
     m.destroy();
   });
 
+  it("moves a range out of hidden children when its focus is inside the toggle", () => {
+    const m = mountEditor(doc([toggle("t", { open: true }, "title", [para("k", "kid")]), para("z", "end")]));
+    m.editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "z", offset: 1 }, focus: { blockId: "k", offset: 1 } }));
+    setToggleOpen(m.editor, "t", false);
+    expect(m.editor.getState().selection).toMatchObject({ anchor: { blockId: "t", offset: 5 }, focus: { blockId: "t", offset: 5 } });
+    m.destroy();
+  });
+
   it("collapsedToggleAncestors lists closed toggles hiding a block", () => {
     const m = mountEditor(doc([toggle("t", {}, "a", [toggle("u", { open: true }, "b", [para("k", "deep")])])]));
     expect(collapsedToggleAncestors(m.editor, "k")).toEqual(["t"]);
