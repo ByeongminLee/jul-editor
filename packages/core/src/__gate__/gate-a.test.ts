@@ -289,7 +289,7 @@ describe("partial render attrs / lifecycle / suggestions", () => {
   it("indenting a block with children updates its descendants' data-jul-editor-depth", () => {
     const { editor, root } = mk([para("p1", "a"), para("b2", "b", [para("c3", "c")])]);
     caret(editor, "b2", 0);
-    key(root, "Tab");
+    editor.commands.indent();
     expect(editor.getDoc().blocks[0]!.children?.[0]?.id).toBe("b2");
     expect(wrapper(root, "b2").getAttribute("data-jul-editor-depth")).toBe("1");
     expect(wrapper(root, "c3").getAttribute("data-jul-editor-depth")).toBe("2");

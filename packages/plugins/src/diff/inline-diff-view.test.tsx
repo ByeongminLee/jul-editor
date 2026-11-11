@@ -61,3 +61,12 @@ describe("SuggestionView", () => {
     expect(onResult.mock.calls.at(-1)![0]).toEqual(before);
   });
 });
+
+it("exposes heading levels (default level included) so hosts can size review headings", () => {
+  const h = (id: string, level?: number): Block => ({ id, type: "heading", props: level ? { level } : {}, content: [{ type: "text", text: id }] });
+  const d = doc([h("t"), h("s", 2), p("x", "body")]);
+  const { container } = render(<InlineDiffView before={d} after={d} />);
+  expect(container.querySelector("[data-id=t]")?.getAttribute("data-jul-editor-level")).toBe("1");
+  expect(container.querySelector("[data-id=s]")?.getAttribute("data-jul-editor-level")).toBe("2");
+  expect(container.querySelector("[data-id=x]")?.hasAttribute("data-jul-editor-level")).toBe(false);
+});

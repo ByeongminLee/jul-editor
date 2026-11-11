@@ -15,11 +15,11 @@
 // keyboard users can reach the handle before any pointer activity. The
 // selector stays equal while typing in the same block, avoiding rerenders.
 import type { Editor as CoreEditor, Store } from "@jul-editor/core";
-import { cellPosition, comparePreOrder, resolveMoveTarget, siblingsOf } from "@jul-editor/core";
+import { cellPosition, comparePreOrder, resolveMoveTarget } from "@jul-editor/core";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useEditor, useEditorState } from "../hooks.js";
-import { useEditorContext } from "../context.js";
+import { LabelsContext, useEditorContext } from "../context.js";
 import { computeDropTarget, dropIndicatorRect as computeIndicatorRect } from "./drop-target.js";
 import type { DropTarget } from "./drop-target.js";
 
@@ -93,15 +93,6 @@ function orderIdsByDoc(store: Store, ids: string[]): string[] {
   return [...ids].sort((a, b) => comparePreOrder(store, a, b));
 }
 
-/** The sibling immediately before/after `id` at its own level, as a
- * DropTarget -- null at a level boundary (already first/last). */
-function stepSibling(store: Store, id: string, dir: 1 | -1): DropTarget | null {
-  const { siblings, index } = siblingsOf(store, id);
-  const at = index + dir;
-  if (at < 0 || at >= siblings.length) return null;
-  return { targetId: siblings[at]!, placement: dir === -1 ? "before" : "after" };
-}
-
 /** Moves every id in `ids` (already in doc order) to land consecutively at
  * `target`, in order, as ONE undo step -- see core's `Editor.moveBlocksTo`
  * (a multi-block drag used to chain one `moveBlockTo` commit
@@ -109,6 +100,17 @@ function stepSibling(store: Store, id: string, dir: 1 | -1): DropTarget | null {
  * transaction in core now). */
 function movePreservingOrder(editor: CoreEditor, ids: string[], target: DropTarget): void {
   editor.moveBlocksTo(ids, target);
+}
+
+/** Moves focus from the handle back into the editor root, re-applying the model selection (a bare focus() may drop the
+ * caret at the root's start). Skipped when focus already moved elsewhere during the drag. */
+function refocusEditor(editor: CoreEditor, handle: HTMLElement): void {
+  const root = editor.getRoot();
+  const active = root.ownerDocument.activeElement;
+  if (active !== handle && active !== root.ownerDocument.body && active !== null) return;
+  const selection = editor.getState().selection;
+  root.focus({ preventScroll: true });
+  if (selection) editor.update((tx) => tx.setSelection(selection));
 }
 
 export function useDragHandle(): UseDragHandleResult {
@@ -139,6 +141,7 @@ export function useDragHandle(): UseDragHandleResult {
   const blockIdRef = useRef(blockId);
   blockIdRef.current = blockId;
 
+  const labels = useContext(LabelsContext);
   const [announcement, setAnnouncement] = useState("");
 
   // Hover tracking: pointermove on the editable root, rAF-throttled. Only
@@ -216,6 +219,7 @@ export function useDragHandle(): UseDragHandleResult {
     };
   }, [editor, rootRef]);
 
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
   const onPointerDown = useCallback((e: ReactPointerEvent<HTMLElement>) => {
     const ed = editorRef.current;
     const id = blockIdRef.current;
@@ -231,7 +235,7 @@ export function useDragHandle(): UseDragHandleResult {
     const next: DragState = { mode: "pointer", ids, dropTarget: null, steps: 0 };
     dragRef.current = next;
     setDragState(next);
-    setAnnouncement(ids.length > 1 ? `Picked up ${ids.length} blocks.` : "Picked up block.");
+    setAnnouncement(ids.length > 1 ? labels.dragPickedUpMultiple.replace("{count}", String(ids.length)) : labels.dragPickedUp);
 
     function onMove(ev: PointerEvent): void {
       const current = editorRef.current;
@@ -253,18 +257,21 @@ export function useDragHandle(): UseDragHandleResult {
       setDragState(next);
     }
     function finish(commit: boolean): void {
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onCancel);
+      if (pointerCleanupRef.current === detach) pointerCleanupRef.current = null;
+      detach();
       if (el.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId);
       const finalTarget = dragRef.current?.dropTarget ?? null;
       dragRef.current = null;
       setDragState(null);
-      if (commit && finalTarget && editorRef.current) {
-        movePreservingOrder(editorRef.current, ids, finalTarget);
-        setAnnouncement(ids.length > 1 ? `Moved ${ids.length} blocks.` : "Moved block.");
+      const current = editorRef.current;
+      if (commit && finalTarget && current) {
+        movePreservingOrder(current, ids, finalTarget);
+        setAnnouncement(ids.length > 1 ? labels.dragMovedMultiple.replace("{count}", String(ids.length)) : labels.dragMoved);
+        // The pointerdown focused the handle; hand focus back to the editor (on the moved block's selection) so
+        // Mod+Z undoes the move and keyboard editing continues there, instead of going to the handle.
+        refocusEditor(current, el);
       } else {
-        setAnnouncement("Move cancelled.");
+        setAnnouncement(labels.dragCancelled);
       }
     }
     function onUp(): void {
@@ -273,10 +280,31 @@ export function useDragHandle(): UseDragHandleResult {
     function onCancel(): void {
       finish(false);
     }
+    // Escape while the button is still held cancels the drag; the later pointerup then has no listener left.
+    function onEscape(ev: KeyboardEvent): void {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      finish(false);
+    }
+    function detach(): void {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onCancel);
+      el.ownerDocument.defaultView?.removeEventListener("keydown", onEscape, true);
+    }
+    pointerCleanupRef.current?.();
+    pointerCleanupRef.current = detach;
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onCancel);
-  }, [registry]);
+    el.ownerDocument.defaultView?.addEventListener("keydown", onEscape, true);
+  }, [registry, labels]);
+  // Unmounted mid pointer drag: drop the drag's listeners (the window keydown one would otherwise outlive the editor).
+  useEffect(() => () => {
+    pointerCleanupRef.current?.();
+    pointerCleanupRef.current = null;
+  }, []);
 
   const onKeyDown = useCallback((e: ReactKeyboardEvent<HTMLElement>) => {
     const ed = editorRef.current;
@@ -287,7 +315,7 @@ export function useDragHandle(): UseDragHandleResult {
       if (current?.mode === "keyboard") {
         dragRef.current = null;
         setDragState(null);
-        setAnnouncement("Dropped.");
+        setAnnouncement(labels.dragDropped);
         return;
       }
       const id = blockIdRef.current;
@@ -297,7 +325,16 @@ export function useDragHandle(): UseDragHandleResult {
       const next: DragState = { mode: "keyboard", ids, dropTarget: null, steps: 0 };
       dragRef.current = next;
       setDragState(next);
-      setAnnouncement(ids.length > 1 ? `Picked up ${ids.length} blocks. Use arrow keys to move, space or enter to drop, escape to cancel.` : "Picked up block. Use arrow keys to move, space or enter to drop, escape to cancel.");
+      setAnnouncement(`${ids.length > 1 ? labels.dragPickedUpMultiple.replace("{count}", String(ids.length)) : labels.dragPickedUp} ${labels.dragInstructions}`);
+      return;
+    }
+
+    // The handle keeps focus after a click or a keyboard drop; Mod+Z / Mod+Shift+Z must still reach editor history
+    // (same combos core's own keydown handles). Not mid keyboard move: Escape owns undoing those steps.
+    if (!current && ed && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) ed.commands.redo();
+      else ed.commands.undo();
       return;
     }
 
@@ -307,7 +344,7 @@ export function useDragHandle(): UseDragHandleResult {
       e.preventDefault();
       dragRef.current = null;
       setDragState(null);
-      setAnnouncement("Dropped.");
+      setAnnouncement(labels.dragDropped);
       return;
     }
     if (e.key === "Escape") {
@@ -315,23 +352,20 @@ export function useDragHandle(): UseDragHandleResult {
       for (let i = 0; i < current.steps; i++) ed?.commands.undo();
       dragRef.current = null;
       setDragState(null);
-      setAnnouncement("Move cancelled.");
+      setAnnouncement(labels.dragCancelled);
       return;
     }
     if ((e.key === "ArrowUp" || e.key === "ArrowDown") && ed) {
       e.preventDefault();
       const dir = e.key === "ArrowUp" ? -1 : 1;
-      const pivot = dir === -1 ? current.ids[0]! : current.ids[current.ids.length - 1]!;
-      const step = stepSibling(ed.getState().store, pivot, dir);
-      if (step) {
-        movePreservingOrder(ed, current.ids, step);
+      if (ed.moveSelectedBlocks(current.ids, dir)) {
         const next: DragState = { ...current, steps: current.steps + 1 };
         dragRef.current = next;
         setDragState(next);
-        setAnnouncement("Moved.");
+        setAnnouncement((next.steps === 1 ? labels.dragMovedStep : labels.dragMovedSteps).replace("{count}", String(next.steps)));
       }
     }
-  }, []);
+  }, [labels]);
 
   // A keyboard move re-renders the block, and a host that renders the handle conditionally (on rect) replaces it. The
   // replacement is a new element, so focus (and the Space/Arrow flow) would be lost; remember that the focused handle

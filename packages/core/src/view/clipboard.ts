@@ -17,7 +17,7 @@ import { BLOCK_ATTR, ID_ATTR, closestBlockId, isInsideVoidEvent } from "./dom.js
 import { tryEmbedPaste } from "./embed-paste.js";
 import { trimAutolinkTrailing } from "./input-rules.js";
 import type { MarksRef } from "./marks.js";
-import { pointFromDOM } from "./selection.js";
+import { pointFromDOM, promoteSelection, readDOMSelection } from "./selection.js";
 import { createUploadRegistry, dataUrlToFile, performUpload } from "./upload.js";
 import type { UploadFn, UploadRegistry, PendingUploadInfo } from "./upload.js";
 
@@ -51,6 +51,7 @@ export interface ClipboardHandle {
   uploadRegistry: UploadRegistry;
   retryUpload(blockId: string): void;
   insertFiles(files: File[]): string[];
+  attachUpload(blockId: string, file: File): boolean;
   uploadPending(): Promise<{ uploaded: string[]; failed: string[] }>;
   getPendingUploads(): PendingUploadInfo[];
   destroy(): void;
@@ -67,7 +68,7 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
   let destroyed = false;
   function beginUpload(blockId: string, file: File): Promise<boolean> {
     const active = inflight.get(blockId);
-    if (active) return active;
+    if (active) return active.then((result) => uploadRegistry.getFile(blockId) === file && uploadRegistry.get(blockId)?.status === "queued" ? beginUpload(blockId, file) : result);
     if (destroyed || getState().store.records.get(blockId)?.type !== uploadTypes.get(blockId)) { uploadRegistry.succeed(blockId); return Promise.resolve(false); }
     if (!onUpload) { uploadRegistry.fail(blockId, "No upload handler configured."); return Promise.resolve(false); }
     const originalSrc = getState().store.records.get(blockId)?.props.src;
@@ -76,7 +77,7 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
       if (destroyed || !current || current.type !== uploadTypes.get(blockId)) throw new Error("The upload target was removed or changed.");
       if (current.props.src !== originalSrc) return; // A URL entered by the user wins over an older upload.
       runDispatchSystem(tx => tx.setProps(blockId, { src: result.src, assetId: result.assetId }));
-    }).finally(() => inflight.delete(blockId));
+    }, uploadTypes.get(blockId) === "image" ? "image" : "file").finally(() => inflight.delete(blockId));
     inflight.set(blockId, job);
     return job;
   }
@@ -114,6 +115,15 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
     return [...getState().store.records.keys()].filter(id => !before.has(id) && uploadRegistry.getFile(id));
   }
 
+  /** Stages `file` as the pending upload of a block that is already in the doc (the same
+   * pipeline insertFiles and paste use, minus the insertion). */
+  function attachUpload(blockId: string, file: File): boolean {
+    if (!onUpload && deps.uploadMode !== "deferred") return false;
+    if (!getState().store.records.has(blockId)) return false;
+    stageUpload(blockId, file);
+    return true;
+  }
+
   function rehostExternalImagesIn(fragment: Doc): void {
     if (!rehostExternalImages) return; // keep src by default when no hook is configured
     function walk(blocks: Block[]): void {
@@ -148,13 +158,16 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
    * alone). */
   type InsertionTarget = { at: Selection } | { afterBlockId: string };
 
-  /** Notion-style: a paste whose caret sits in an EMPTY paragraph and whose
-   * first block is a non-paragraph type (heading, list item, quote, code,
-   * divider...) REPLACES that paragraph with the fragment, instead of
-   * pasteFragment's merge (which would pour the first block's inline content
-   * into the paragraph and silently lose its type -- a pasted "# Title" would
-   * land as plain "Title"). Non-empty targets and paragraph-first fragments
-   * keep the merge behaviour. The caret ends at the end of the last pasted
+  /** Notion-style: a paste whose caret sits in an EMPTY text block
+   * (paragraph, list item, quote, heading...) and whose first block is a
+   * non-paragraph type different from the target's (heading, list item,
+   * quote, code, divider...) REPLACES that block with the fragment, instead
+   * of pasteFragment's merge (which would pour the first block's inline
+   * content into the target and silently lose its type -- a pasted "# Title"
+   * would land as plain "Title", or as a bullet in an empty bullet). Non-empty
+   * targets, same-type and paragraph-first fragments keep the merge
+   * behaviour, and so does a parent-restricted target (a table cell can't be
+   * replaced by a heading). The caret ends at the end of the last pasted
    * block; if that block has no inline content slot (divider, table, image) a
    * fresh empty paragraph follows it so the caret has somewhere to live. */
   function replaceEmptyParagraph(at: Selection, blocks: Block[]): boolean {
@@ -164,7 +177,9 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
     const store = getState().store;
     const id = at.anchor.blockId;
     const rec = store.records.get(id);
-    if (!rec || rec.type !== "paragraph" || (rec.content ?? []).length > 0 || rec.childIds.length > 0) return false;
+    if (!rec || (rec.content ?? []).length > 0 || rec.childIds.length > 0 || rec.type === first.type) return false;
+    const recSpec = registry.blocks.get(rec.type);
+    if (recSpec?.content !== "inline" || recSpec.parent) return false;
     const { parentId, index } = siblingsOf(store, id);
     const last = blocks[blocks.length - 1]!;
     const lastHoldsCaret = registry.blocks.get(last.type)?.content === "inline";
@@ -306,9 +321,26 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
     shiftPaste = false;
   }
 
+  /** The selection a paste lands on. Block/cells selections have no DOM
+   * correlate and stay model-owned; a text (or missing) model selection is
+   * reconciled against the live DOM selection first, same as keydown's
+   * syncedSelection: a click can place the caret before the async
+   * selectionchange reaches the model -- e.g. right after a value
+   * replacement (setDoc/Restore) cleared the model selection, clicking the
+   * same empty block the caret was in before fires no selectionchange the
+   * editor acts on, and the first paste was then ignored outright (left to
+   * the browser's unmanaged native paste). */
+  function pasteSelection(): Selection | null {
+    const modelSel = getState().selection;
+    if (modelSel && modelSel.type !== "text") return modelSel;
+    const raw = readDOMSelection(root);
+    if (!raw) return modelSel;
+    return promoteSelection(getState().store, registry, raw);
+  }
+
   function onPaste(e: ClipboardEvent): void {
     if (isInsideVoidEvent(e)) return;
-    const sel = getState().selection;
+    const sel = pasteSelection();
     if (!sel) return;
     e.preventDefault();
     const plain = shiftPaste;
@@ -399,7 +431,7 @@ export function attachClipboard(deps: ClipboardDeps): ClipboardHandle {
 
   return {
     uploadRegistry,
-    retryUpload, insertFiles, uploadPending, getPendingUploads,
+    retryUpload, insertFiles, attachUpload, uploadPending, getPendingUploads,
     destroy() {
       destroyed = true;
       uploadRegistry.destroy();

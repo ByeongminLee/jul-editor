@@ -152,11 +152,19 @@ describe("toggle collapse (real editor)", () => {
     m.editor.update((tx) => tx.setSelection(caretAt("k", 1)));
     setToggleOpen(m.editor, "t", false);
     expect(m.editor.getState().store.records.get("t")!.props.open).toBeUndefined();
-    expect(m.editor.getState().selection).toMatchObject({ anchor: { blockId: "t" } });
+    expect(m.editor.getState().selection).toMatchObject({ anchor: { blockId: "t", offset: 5 }, focus: { blockId: "t", offset: 5 } }); // end of "title"
     setToggleOpen(m.editor, "t", true);
     expect(m.editor.getState().store.records.get("t")!.props.open).toBe(true);
     m.editor.commands.undo();
     expect(m.editor.getState().store.records.get("t")!.props.open).toBeUndefined();
+    m.destroy();
+  });
+
+  it("moves a range out of hidden children when its focus is inside the toggle", () => {
+    const m = mountEditor(doc([toggle("t", { open: true }, "title", [para("k", "kid")]), para("z", "end")]));
+    m.editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "z", offset: 1 }, focus: { blockId: "k", offset: 1 } }));
+    setToggleOpen(m.editor, "t", false);
+    expect(m.editor.getState().selection).toMatchObject({ anchor: { blockId: "t", offset: 5 }, focus: { blockId: "t", offset: 5 } });
     m.destroy();
   });
 

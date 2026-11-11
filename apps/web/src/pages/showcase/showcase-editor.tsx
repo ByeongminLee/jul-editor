@@ -3,8 +3,10 @@
 import type { Doc } from "@jul-editor/core";
 import { ChartView } from "@jul-editor/plugins/chart";
 import { createLowlightHighlighter, pluginCodeLanguages } from "@jul-editor/plugins/code";
-import { createCodeBlockRenderer, defaultRenderers, Editor, useBlockActions, useEditor } from "@jul-editor/react";
+import { createCodeBlockRenderer, defaultRenderers, Editor, useBlockActions, useCanApplyMarks, useEditor } from "@jul-editor/react";
 import { useEffect } from "react";
+import { useBubblePlacement } from "../../components/workspace/bubble-placement.js";
+import { PlacedMenu } from "../../components/workspace/menu-placement.js";
 
 const codeBlock = createCodeBlockRenderer({ languages: pluginCodeLanguages });
 
@@ -47,26 +49,34 @@ function BlockControls({ locale }: { locale: "en" | "ko" }) {
 }
 
 function SlashCommands({ locale }: { locale: "en" | "ko" }) {
-  return <Editor.SlashMenu>{({ items, activeIndex, rect, getListboxProps, getOptionProps }) =>
-    <div {...getListboxProps()} className="slash-menu" style={rect ? { left: Math.max(8, Math.min(rect.left, window.innerWidth - 260)), top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 300)) } : undefined}>
+  return <Editor.SlashMenu>{({ items, activeIndex, loading, rect, getListboxProps, getOptionProps }) =>
+    <PlacedMenu data-jul-editor-keep-selection="" className="slash-menu" rect={rect}>
       <div className="slash-menu-label">{locale === "ko" ? "블록 삽입" : "INSERT A BLOCK"}</div>
-      {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>{item.title}</div>) : <div className="slash-empty">{locale === "ko" ? "일치하는 블록이 없습니다" : "No matching blocks"}</div>}
-    </div>
+      <div {...getListboxProps()} aria-label={locale === "ko" ? "블록 명령" : "Block commands"}>{items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="slash-option" data-active={index === activeIndex || undefined}>{item.title}</div>)}</div>
+      <div role="status">{!items.length && <div className="slash-empty">{loading ? (locale === "ko" ? "불러오는 중…" : "Loading…") : (locale === "ko" ? "일치하는 블록이 없습니다" : "No matching blocks")}</div>}</div>
+    </PlacedMenu>
   }</Editor.SlashMenu>;
 }
 
-function BubbleTools({ locale }: { locale: "en" | "ko" }) {
-  return <Editor.BubbleMenu>{({ rect }) => <div className="bubble-tools" data-jul-editor-keep-selection="" style={{ left: Math.min(rect.left, window.innerWidth - 120), top: Math.max(8, rect.top - 45) }}>
+function BubbleBar({ rect, locale }: { rect: DOMRect; locale: "en" | "ko" }) {
+  const { ref, style } = useBubblePlacement(rect);
+  return <div ref={ref} className="bubble-tools" data-jul-editor-keep-selection="" style={style}>
     <Editor.Bold aria-label={locale === "ko" ? "굵게" : "Bold"} title={locale === "ko" ? "굵게" : "Bold"}>B</Editor.Bold>
     <Editor.Italic aria-label={locale === "ko" ? "기울임" : "Italic"} title={locale === "ko" ? "기울임" : "Italic"}>I</Editor.Italic>
     <Editor.Underline aria-label={locale === "ko" ? "밑줄" : "Underline"} title={locale === "ko" ? "밑줄" : "Underline"}>U</Editor.Underline>
-  </div>}</Editor.BubbleMenu>;
+  </div>;
+}
+
+function BubbleTools({ locale }: { locale: "en" | "ko" }) {
+  // the bubble only holds mark buttons: inside a code block there is nothing for them to format
+  if (!useCanApplyMarks()) return null;
+  return <Editor.BubbleMenu>{({ rect }) => <BubbleBar rect={rect} locale={locale} />}</Editor.BubbleMenu>;
 }
 
 export function ShowcaseEditor({ value, onChange, theme, mode, locale = "en" }: ShowcaseEditorProps) {
   const t = (en: string, ko: string) => locale === "ko" ? ko : en;
   return <div className={`jul-editor-theme jul-editor-theme--${theme}${mode !== "rich" ? " jul-editor-theme--blocks" : ""}`}>
-    <Editor value={value} onChange={onChange} locale={locale} renderers={{ ...defaultRenderers, codeBlock, chart: ChartView }} placeholder={mode === "rich" ? t("Start writing…", "글을 써 보세요…") : t("Type / for a block…", "블록을 추가하려면 /를 입력하세요…")} className="editor-instance">
+    <Editor value={value} onChange={onChange} locale={locale} renderers={{ ...defaultRenderers, codeBlock, chart: ChartView }} placeholder={(block) => block.type === "tableCell" ? "" : mode === "rich" ? t("Start writing…", "글을 써 보세요…") : t("Type / for a block…", "블록을 추가하려면 /를 입력하세요…")} className="editor-instance">
       <HighlightCode />
       {mode !== "block" && <Editor.Toolbar className="editor-toolbar" aria-label={t("Formatting", "서식 도구")}>
         <div className="toolbar-group">

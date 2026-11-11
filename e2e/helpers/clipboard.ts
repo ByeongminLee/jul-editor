@@ -19,6 +19,7 @@ async function dispatchClipboardEvent(
       for (const [format, value] of Object.entries(data)) dt.setData(format, value);
       const root = document.querySelector("[data-jul-editor-root]")!;
       const ev = new ClipboardEvent(type, { clipboardData: dt, bubbles: true, cancelable: true });
+      if (ev.clipboardData !== dt) Object.defineProperty(ev, "clipboardData", { value: dt });
       root.dispatchEvent(ev);
       return { html: dt.getData("text/html"), text: dt.getData("text/plain"), json: dt.getData("application/x-jul-editor+json") };
     },

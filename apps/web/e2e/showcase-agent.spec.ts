@@ -77,13 +77,16 @@ test("chat layout: composer pinned to the bottom, thread keeps history across tw
   await page.setViewportSize({ width: 1440, height: 1000 });
   await open(page);
   const panel = page.locator(".showcase-agent .agent-panel");
-  const composer = page.getByTestId("agent-composer");
   await expect(page.getByTestId("agent-empty")).toBeVisible();
   await expect(page.getByTestId("agent-turn")).toHaveCount(0);
   const near = async () => {
-    const p = (await panel.boundingBox())!, c = (await composer.boundingBox())!;
-    expect(Math.abs(p.y + p.height - (c.y + c.height))).toBeLessThanOrEqual(2);
-    expect(c.y).toBeGreaterThan(p.y + p.height / 2); // lower half of the panel
+    const { panelTop, panelBottom, composerTop, composerBottom } = await panel.evaluate((el) => {
+      const p = el.getBoundingClientRect();
+      const c = el.querySelector('[data-testid="agent-composer"]')!.getBoundingClientRect();
+      return { panelTop: p.top, panelBottom: p.bottom, composerTop: c.top, composerBottom: c.bottom };
+    });
+    expect(Math.abs(panelBottom - composerBottom)).toBeLessThanOrEqual(2);
+    expect(composerTop).toBeGreaterThan((panelTop + panelBottom) / 2); // lower half of the panel
   };
   await near();
 
@@ -233,4 +236,66 @@ test("Korean labels and a mobile layout without horizontal page scroll", async (
   await expect(page.getByTestId("agent-msg-user")).toContainText("짧게 줄이기");
   await page.getByTestId("agent-thread").scrollIntoViewIfNeeded();
   await page.locator(".showcase-agent .agent-panel").screenshot({ path: `${SHOTS}/agent-chat-ko-mobile.png` });
+});
+
+test("Review and Diff count the same suggestions as the editor, and Apply with no decisions accepts none", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await open(page);
+  await page.locator("[data-preset=fix]").click();
+  await expect(count(page)).toBeVisible();
+  const total = await pendingCount(page);
+  expect(total).toBeGreaterThan(1);
+  await page.locator(".agent-views [data-view=review]").click();
+  const review = page.getByTestId("agent-review");
+  await expect(review.locator("[data-jul-editor-suggestion]")).toBeVisible();
+  // the editor's normalized trailing paragraph is not a suggested insertion
+  await expect(count(page)).toContainText(`${total} change`);
+  await expect(review.locator("[data-suggestion-pending]")).toContainText(`${total} pending`);
+  await expect(review.locator("[data-jul-editor-diff-block][data-diff=insert]")).toHaveCount(0);
+  await page.locator(".agent-views [data-view=compare]").click();
+  await expect(count(page)).toContainText(`${total} change`);
+  await page.locator(".agent-views [data-view=review]").click();
+  await page.getByTestId("agent-apply").click();
+  await expect(page.getByTestId("agent-outcome")).toHaveText(`Accepted 0, rejected ${total}`);
+  expect(await docText(page, "ag-draft")).toContain("recieve");
+});
+
+test("the Review view keeps the document's formatting: headings, table grid and chart", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await open(page);
+  await page.locator("[data-preset=fix]").click();
+  await expect(count(page)).toBeVisible();
+  await page.locator(".agent-views [data-view=review]").click();
+  const review = page.getByTestId("agent-review");
+  await expect(review.locator("[data-jul-editor-suggestion]")).toBeVisible();
+  // heading level reaches the review markup and is sized above body text
+  const title = review.locator("[data-jul-editor-diff-block][data-id=ag-title]");
+  await expect(title).toHaveAttribute("data-jul-editor-level", "1");
+  const size = (sel: string) => review.locator(sel).first().evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(await size("[data-id=ag-title]")).toBeGreaterThan(await size("[data-id=ag-intro]"));
+  // one table row lays its cells out side by side
+  const cells = review.locator("[data-id=ag-r0] [data-type=tableCell]");
+  await expect(cells).toHaveCount(3);
+  const tops = await cells.evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  // the chart renders through the read-only ChartView instead of an empty placeholder
+  await expect(review.locator("[data-id=ag-chart] [data-jul-editor-plugin=chart], [data-id=ag-chart] svg").first()).toBeVisible();
+  await review.screenshot({ path: `${SHOTS}/agent-review-formatting.png` });
+});
+
+// Round 2: Undo after Accept all brought back the typo text but dropped the review, so the changes could
+// no longer be decided one at a time.
+test("Undo after Accept all reopens the pending suggestions", async ({ page }) => {
+  await open(page);
+  await page.locator("[data-preset=fix]").click();
+  await expect(count(page)).toBeVisible();
+  const total = await pendingCount(page);
+  expect(total).toBeGreaterThan(0);
+  await page.getByTestId("agent-accept-all").click();
+  await expect(page.locator(".showcase-agent .editor-content .jul-editor-suggest-del")).toHaveCount(0);
+  await page.locator(".showcase-agent .agent-toolbar").getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => docText(page, "ag-draft")).toContain("recieve");
+  await expect(count(page)).toBeVisible();
+  expect(await pendingCount(page)).toBe(total);
+  await expect(page.getByTestId("agent-accept-all")).toBeEnabled();
 });

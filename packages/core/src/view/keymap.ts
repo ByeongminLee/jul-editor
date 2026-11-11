@@ -8,10 +8,11 @@
 // priority via the exact same `registerKeymap` mechanism (no special path).
 
 import { isText } from "../model/canonical.js";
-import { sanitizeUrl } from "../model/url.js";
+import { normalizeLinkHref, sanitizeUrl } from "../model/url.js";
 import type { Registry } from "../model/schema.js";
 import type { Json, Mark } from "../model/types.js";
-import { canAdmit, containerInfo, siblingsOf } from "../store/store.js";
+import { structuralMove } from "./structural-move.js";
+import { textSelectionBlockIds } from "./marks.js";
 import type { Transaction, TransactionResult } from "../store/transaction.js";
 import type { EditorState } from "../store/types.js";
 import type { MarksRef } from "./marks.js";
@@ -90,23 +91,26 @@ function commit(ctx: KeymapCtx, build: (tx: Transaction) => Transaction): Transa
   return ctx.dispatch(build);
 }
 
-function currentBlockId(ctx: KeymapCtx): string | null {
-  const sel = ctx.state.selection;
-  if (!sel) return null;
-  if (sel.type === "text") return sel.anchor.blockId;
-  if (sel.type === "block") return sel.ids[0] ?? null;
-  return null;
-}
-
 function handleIndent(ctx: KeymapCtx, dir: 1 | -1): boolean {
-  const id = currentBlockId(ctx);
-  if (!id) return false;
-  commit(ctx, (tx) => (dir === 1 ? tx.indent(id) : tx.outdent(id)));
+  const sel = ctx.state.selection;
+  const ids = sel?.type === "text" ? textSelectionBlockIds(ctx.state.store, sel) : sel?.type === "block" ? sel.ids : [];
+  if (!ids.length) return false;
+  if (sel?.type === "text" && sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset) {
+    const rec = ctx.state.store.records.get(sel.anchor.blockId);
+    if (rec?.type === "paragraph" && rec.parentId === null) return false;
+  }
+  if (sel?.type === "block" && ids.length === 1) {
+    const rec = ctx.state.store.records.get(ids[0]!);
+    if (rec && ctx.registry.blocks.get(rec.type)?.content === "none") return false;
+  }
+  const move = structuralMove(ctx.state, ctx.registry, dir === 1 ? "indent" : "outdent", undefined, ctx.root);
+  if (!move) return false;
+  commit(ctx, move);
   return true;
 }
 
 function handleToggleMark(markType: string, attrs?: Record<string, Json>): KeymapFn {
-  return (ctx) => toggleMarkOrStore(ctx.state, ctx.marksRef, ctx.dispatch, markType, attrs);
+  return (ctx) => toggleMarkOrStore(ctx.state, ctx.marksRef, ctx.dispatch, markType, attrs, ctx.registry);
 }
 
 function handleLink(ctx: KeymapCtx): boolean {
@@ -125,7 +129,7 @@ function handleLink(ctx: KeymapCtx): boolean {
   })();
   void ctx.onLinkRequest(currentHref).then((href) => {
     if (href === null) return; // cancelled
-    const cleaned = sanitizeUrl(href, "link"); // every model write of a link href goes through sanitizeUrl
+    const cleaned = sanitizeUrl(normalizeLinkHref(href), "link"); // every model write of a link href goes through sanitizeUrl
     if (cleaned === null) return; // rejected scheme -- silently drop, same as fromMarkdown/fromHTML's link handling
     commit(ctx, (tx) => tx.toggleMark(sel, "link", { href: cleaned }));
   });
@@ -138,24 +142,9 @@ function handleLink(ctx: KeymapCtx): boolean {
  * behavior) is NOT implemented (swap-with-sibling + step-out-of-
  * parent covers the common case; add drop-into-neighbor if it's ever asked for). */
 function handleMove(ctx: KeymapCtx, dir: 1 | -1): boolean {
-  const id = currentBlockId(ctx);
-  if (!id) return false;
-  const store = ctx.state.store;
-  const { parentId, siblings, index } = siblingsOf(store, id);
-  if (dir === -1 && index > 0) {
-    commit(ctx, (tx) => tx.moveBlock(id, parentId, index - 1));
-    return true;
-  }
-  if (dir === 1 && index < siblings.length - 1) {
-    commit(ctx, (tx) => tx.moveBlock(id, parentId, index + 1));
-    return true;
-  }
-  if (parentId === null) return true; // already at a top-level boundary: no-op, but handled
-  const { parentId: grandParentId, index: parentIndex } = siblingsOf(store, parentId);
-  const container = containerInfo(store, grandParentId, ctx.registry);
-  const rec = store.records.get(id);
-  if (!rec || !canAdmit(ctx.registry, rec.type, container.type, container.children)) return true;
-  commit(ctx, (tx) => tx.moveBlock(id, grandParentId, dir === -1 ? parentIndex : parentIndex + 1));
+  if (!ctx.state.selection || ctx.state.selection.type === "cells") return false;
+  const move = structuralMove(ctx.state, ctx.registry, dir === 1 ? "down" : "up", undefined, ctx.root);
+  if (move) commit(ctx, move);
   return true;
 }
 

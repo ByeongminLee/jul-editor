@@ -9,7 +9,6 @@
 .unified-view-tabs button:hover { color: var(--text, #f4f4f5); }
 .unified-view-tabs button[aria-selected=true] { border-bottom-color: var(--accent, #f97316); color: var(--accent, #f97316); }
 .unified-view-tabs button:focus-visible, .unified-workspace button:focus-visible, .unified-workspace textarea:focus-visible { outline: 2px solid var(--accent, #f97316); outline-offset: -2px; }
-.unified-editor-view[hidden] { display: none; }
 .unified-workspace .unified-editor-view .editor-content { min-height: 480px; }
 .unified-workspace[data-variant=home] .unified-editor-view .editor-content { min-height: 380px; }
 .unified-workspace .unified-editor-view .panel-foot { justify-content: space-between; gap: 12px; padding: 9px 18px; border-color: var(--line, #34343a); }
@@ -18,6 +17,9 @@
 .unified-workspace .unified-source-view textarea { display: block; width: 100%; height: clamp(380px, 45vw, 560px); padding: 24px max(22px, 7%); resize: vertical; border: 0; border-radius: 0; background: var(--surface, #111114); color: var(--code-ink, #dedee3); font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
 .unified-workspace .source-actions { border-color: var(--line, #34343a); }
 .unified-workspace .conversion-message { min-height: 44px; color: var(--muted, #a1a1aa); }
+.unified-workspace .source-stale { display: flex; align-items: flex-start; gap: 7px; padding: 11px 18px; border-top: 1px solid var(--line, #34343a); color: var(--accent, #f97316); font-size: 11px; line-height: 1.5; }
+.unified-workspace .source-stale svg { flex: none; margin-top: 2px; }
+.unified-view-tabs button[data-unapplied]::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--accent, #f97316); vertical-align: middle; }
 .unified-feedback { display: flex; align-items: flex-start; gap: 7px; padding: 11px 18px; border-top: 1px solid var(--line, #34343a); color: var(--accent, #f97316); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .unified-workspace .playground-diff-panel { min-height: 500px; }
 .unified-workspace .playground-diff-files { min-width: 0; }
@@ -33,3 +35,5 @@
   .unified-workspace .unified-source-view textarea { padding: 17px; }
   .unified-workspace .playground-diff-panel { min-height: 0; }
 }
+/* Every tab panel stays mounted (tabs point aria-controls at it); hidden ones take no space. */
+.unified-workspace [role=tabpanel][hidden] { display: none; }

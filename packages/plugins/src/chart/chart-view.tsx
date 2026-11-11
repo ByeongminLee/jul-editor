@@ -8,7 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
 import type { Json } from "@jul-editor/core";
 import { MissingResolverError, MissingUrlResolverError, applyRange, readDataSource, type RangeSpec, type Table } from "../data";
 import { useResolveData } from "../resolve-data-context.js";
-import type { PluginViewProps } from "../view-props.js";
+import { usePluginControls, type PluginViewProps } from "../view-props.js";
 import { ChartEditor, KINDS } from "./chart-editor.js";
 import type { ChartKind } from "./recharts-chart.js";
 import { PALETTE_SIZE, readColorBy, readPalette } from "./palette.js";
@@ -105,9 +105,10 @@ export function chooseChartColumns(table: Table, savedX?: string, savedY?: strin
   return { x, y: ys[0] ?? "", ys, yColumns };
 }
 
-export function ChartView({ block, selected, updateProps, readOnly, locale = "en", className, theme }: ChartViewProps): ReactNode {
+export function ChartView({ block, editor, selected, updateProps, readOnly, locale = "en", className, theme }: ChartViewProps): ReactNode {
   const t = (en: string, ko: string) => locale === "ko" ? ko : en;
   const classes = typeof className === "string" ? { container: className } : className ?? {};
+  const controls = usePluginControls(editor, selected);
   const props = block.props;
   const kind = readKind(props.kind);
   const source = readDataSource(props.source);
@@ -142,7 +143,7 @@ export function ChartView({ block, selected, updateProps, readOnly, locale = "en
   const { x, y, ys, yColumns } = chooseChartColumns(table, typeof props.x === "string" ? props.x : undefined, readYColumns(props.y));
 
   return (
-    <div data-jul-editor-plugin="chart" data-jul-editor-chart-kind={kind} className={classes.container} style={chartThemeStyle(theme)}>
+    <div onKeyDown={controls.onKeyDown} onPointerDown={controls.onPointerDown} data-jul-editor-plugin="chart" data-jul-editor-chart-kind={kind} className={classes.container} style={chartThemeStyle(theme)}>
       {state.status === "loading" && <div data-jul-editor-plugin="chart-loading" className={classes.status} role="status">{t("Loading chart…", "차트 불러오는 중…")}</div>}
       {state.status === "missing-resolver" && <div data-jul-editor-plugin="missing-resolver" className={classes.status}>{t(state.message ?? "Add a data resolver.", "외부 데이터를 사용하려면 ResolveDataProvider를 연결하세요.")}</div>}
       {state.status === "error" && <div data-jul-editor-plugin="chart-error" className={classes.status}>{t(state.message ?? "Could not load chart data.", `차트 데이터를 불러오지 못했습니다: ${state.message ?? ""}`)}</div>}
@@ -153,7 +154,7 @@ export function ChartView({ block, selected, updateProps, readOnly, locale = "en
           <LazyRechartsChart kind={kind} table={table} x={x} y={ys} colorBy={colorBy} palette={palette} classNames={classes} />
         </Suspense></div>
       ))}
-      {selected && !readOnly && updateProps && <div className={classes.controls}><ChartEditor locale={locale} kind={kind} source={source} range={range} x={x} y={y} ys={ys} palette={palette} colorBy={colorBy} columnTypes={table.columnTypes} columns={table.columns} yColumns={yColumns} updateProps={updateProps} /></div>}
+      {controls.open && !readOnly && updateProps && <div className={classes.controls}><ChartEditor locale={locale} kind={kind} source={source} range={range} x={x} y={y} ys={ys} palette={palette} colorBy={colorBy} columnTypes={table.columnTypes} columns={table.columns} yColumns={yColumns} updateProps={updateProps} /></div>}
     </div>
   );
 }

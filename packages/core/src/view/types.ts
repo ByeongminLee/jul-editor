@@ -102,6 +102,8 @@ export interface View {
    * a no-op if `blockId` never had a tracked upload (nothing to retry). */
   retryUpload(blockId: string): void;
   insertFiles(files: File[]): string[];
+  /** Stages `file` as the pending upload of an image/file block that is already in the doc. */
+  attachUpload(blockId: string, file: File): boolean;
   getUploadPreview(blockId: string): string | undefined;
   getPendingUploads(): PendingUploadInfo[];
   uploadPending(): Promise<{uploaded: string[]; failed: string[]}>;

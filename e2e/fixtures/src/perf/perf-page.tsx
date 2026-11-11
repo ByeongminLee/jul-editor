@@ -29,6 +29,7 @@ export interface PerfWindow {
    * overhead): ms from just before createEditor() to just after its
    * synchronous first render()+restoreSelection(). */
   mountMs?: number;
+  mountInitialChildCount?: number;
   /** "Big paste" bench (e2e/perf.spec.ts): decodes `markdown` as a clipboard
    * text/plain payload (core's own decodeClipboard) and inserts it at the
    * current selection via the `pasteFragment` transaction op -- this
@@ -64,7 +65,7 @@ function parseParams(): PerfParams {
  * strictly AFTER that dispatch's render() + restoreSelection(), so
  * `performance.now()` taken there already is "commit incl. DOM patch +
  * selection restore" -- no microtask-after-change approximation needed. */
-function attachPerfWindow(editor: CoreEditor, doc: Doc, element: HTMLElement, extra?: { mountMs?: number; toolbarRenders?: number }): () => void {
+function attachPerfWindow(editor: CoreEditor, doc: Doc, element: HTMLElement, extra?: { mountMs?: number; mountInitialChildCount?: number; toolbarRenders?: number }): () => void {
   const commitTimes: number[] = [];
   let lastTriggerTs = 0;
   const onTrigger = (e: Event) => {
@@ -89,6 +90,7 @@ function attachPerfWindow(editor: CoreEditor, doc: Doc, element: HTMLElement, ex
     editor,
     commitTimes,
     mountMs: extra?.mountMs,
+    mountInitialChildCount: extra?.mountInitialChildCount,
     toolbarRenders: extra?.toolbarRenders,
     reset() {
       commitTimes.length = 0;
@@ -122,6 +124,7 @@ function VanillaPerf({ doc, autosave }: { doc: Doc; autosave: boolean }): ReactN
     const element = ref.current;
     if (!element) return;
 
+    const mountInitialChildCount = element.childNodes.length;
     const mountStart = performance.now();
     const editor = createEditor({ element, registry: coreRegistry, defaultValue: doc, renderVoid: renderVoidGeneric });
     const mountMs = performance.now() - mountStart;
@@ -129,12 +132,13 @@ function VanillaPerf({ doc, autosave }: { doc: Doc; autosave: boolean }): ReactN
     let autosaveHandle: AutosaveHandle | undefined;
     if (autosave) autosaveHandle = createAutosave(editor, { key: "jul-editor-perf-draft-vanilla", save: async () => {} });
 
-    const detach = attachPerfWindow(editor, doc, element, { mountMs });
+    const detach = attachPerfWindow(editor, doc, element, { mountMs, mountInitialChildCount });
 
     return () => {
       detach();
       autosaveHandle?.destroy();
       editor.destroy();
+      element.replaceChildren();
     };
     // Mount-once by design (doc/autosave are fixed for this page's lifetime,
     // read off the URL once).

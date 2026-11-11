@@ -1,7 +1,8 @@
-import type { Doc } from "@jul-editor/core";
+import { coreBlocks, coreInlines, coreMarks, createRegistry } from "@jul-editor/core";
+import type { Block, Doc } from "@jul-editor/core";
 import { fromHTML } from "@jul-editor/core/serde";
-import { exportDocx, importDocx } from "@jul-editor/plugins/pages";
-import type { DocumentSettings, DocxLib, MammothLib } from "@jul-editor/plugins/pages";
+import { exportDocx, importDocx, pageBreak } from "@jul-editor/plugins/pages";
+import type { DocumentSettings, DocxLib, DocxPendingImage, MammothLib } from "@jul-editor/plugins/pages";
 
 // Browser glue for the pages plugin's docx adapters. `docx` and `mammoth` are large, so they are
 // loaded on first use (dynamic import) and injected into the plugin, which itself imports neither.
@@ -13,15 +14,18 @@ export const LOGO_SRC = `data:image/svg+xml;utf8,${encodeURIComponent(
 
 /** docx cannot embed SVG, so the logo is rasterised to PNG at export time. */
 async function resolveImage(src: string) {
-  const img = new Image();
-  img.src = src;
-  await img.decode();
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 128;
-  canvas.getContext("2d")!.drawImage(img, 0, 0, 128, 128);
-  const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/png"));
-  if (!blob) return null;
-  return { data: new Uint8Array(await blob.arrayBuffer()), type: "png" as const, width: 128, height: 128 };
+  try {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || 128;
+    canvas.height = img.naturalHeight || 128;
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/png"));
+    if (!blob) return null;
+    return { data: new Uint8Array(await blob.arrayBuffer()), type: "png" as const, width: canvas.width, height: canvas.height };
+  } catch { return null; }
 }
 
 export interface DocxExportInfo {
@@ -39,9 +43,53 @@ async function looksLikeDocx(blob: Blob): Promise<boolean> {
   return new TextDecoder("latin1").decode(bytes).includes("word/document.xml");
 }
 
-export async function buildDocx(doc: Doc, settings: DocumentSettings): Promise<DocxExportInfo> {
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((ok, fail) => {
+    const reader = new FileReader();
+    reader.onload = () => ok(String(reader.result));
+    reader.onerror = () => fail(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+const DOCX_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/bmp"]);
+
+async function rasterise(src: string): Promise<string | null> {
+  try {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || 400;
+    canvas.height = img.naturalHeight || 300;
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
+
+/** Images inserted or imported in this session have no permanent URL (the demo has no upload server):
+ * their bytes live in the editor's pending uploads. Export reads them from there. */
+async function withPendingImages(doc: Doc, files: ReadonlyMap<string, File>): Promise<Doc> {
+  const srcs = new Map<string, string>();
+  for (const [id, file] of files) {
+    const url = await fileToDataUrl(file);
+    // docx embeds png/jpeg/gif/bmp only: anything else (webp, svg ...) is rasterised to png first.
+    srcs.set(id, DOCX_IMAGE_TYPES.has(file.type) ? url : (await rasterise(url)) ?? url);
+  }
+  const walk = async (blocks: Block[]): Promise<Block[]> => Promise.all(blocks.map(async (b) => {
+    let src = b.type === "image" && !b.props.src ? srcs.get(b.id) : undefined;
+    if (b.type === "image" && typeof b.props.src === "string" && /^data:image\/webp;base64,/i.test(b.props.src)) src = (await rasterise(b.props.src)) ?? undefined;
+    const next = src ? { ...b, props: { ...b.props, src } } : b;
+    return b.children?.length ? { ...next, children: await walk(b.children) } : next;
+  }));
+  return { ...doc, blocks: await walk(doc.blocks) };
+}
+
+export async function buildDocx(doc: Doc, settings: DocumentSettings, pendingFiles: ReadonlyMap<string, File> = new Map()): Promise<DocxExportInfo> {
   const docxLib = (await import("docx")) as unknown as DocxLib;
-  const { file, lossy } = await exportDocx(doc, settings, { docxLib, resolveImage });
+  const { file, lossy } = await exportDocx(await withPendingImages(doc, pendingFiles), settings, { docxLib, resolveImage });
   const blob = file as Blob;
   return { blob, bytes: blob.size, validZip: await looksLikeDocx(blob), lossy: lossy.length };
 }
@@ -57,9 +105,12 @@ export function downloadBlob(blob: Blob, name: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function readDocx(file: File): Promise<{ doc: Doc; messages: string[] }> {
+/** The editor's schema (core blocks plus pageBreak) so imported page breaks parse back as blocks. */
+const registry = createRegistry({ blocks: [...coreBlocks, pageBreak], inlines: coreInlines, marks: coreMarks });
+
+export async function readDocx(file: File): Promise<{ doc: Doc; messages: string[]; images: DocxPendingImage[] }> {
   const mammoth = ((await import("mammoth")) as unknown as { default?: MammothLib } & MammothLib);
   const mammothLib: MammothLib = mammoth.default ?? mammoth;
-  const { doc, messages } = await importDocx(await file.arrayBuffer(), { mammothLib, fromHTML: (html) => fromHTML(html) });
-  return { doc, messages };
+  const { doc, messages, images } = await importDocx(await file.arrayBuffer(), { mammothLib, fromHTML: (html) => fromHTML(html, { registry }) });
+  return { doc, messages, images };
 }

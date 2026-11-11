@@ -1,0 +1,65 @@
+JulEditor ships an agent skill: one instruction file that teaches an AI coding agent how to install and use the editor. With it, asking "add a JulEditor editor with a toolbar and Markdown export" produces working code that follows the rules on this site. The same skill works in Claude Code and in OpenAI Codex.
+
+## What the skill covers
+
+- Installing the packages and the optional plugin peers
+- A minimal `<Editor>` with an explicit toolbar and slash menu
+- Saving and loading documents, controlled and uncontrolled
+- Markdown, HTML, and text conversion
+- Images and uploads, plugins, styling, and Korean labels
+
+## Claude Code
+
+Add the repository as a plugin marketplace, then install the plugin.
+
+```sh
+claude plugin marketplace add ByeongminLee/jul-editor
+claude plugin install jul-editor@jul-editor
+```
+
+Inside a session, `/plugin marketplace add ByeongminLee/jul-editor` does the same. Claude uses the skill on its own when a task mentions JulEditor, or you can call it with `/jul-editor:jul-editor`.
+
+## OpenAI Codex
+
+Add the repository as a plugin marketplace, then install the plugin.
+
+```sh
+codex plugin marketplace add ByeongminLee/jul-editor
+codex plugin add jul-editor@jul-editor
+```
+
+To use the skill in one project without the plugin, copy the folder into `.agents/skills`, which Codex reads from your project:
+
+```sh
+git clone --depth 1 https://github.com/ByeongminLee/jul-editor.git /tmp/jul-editor
+mkdir -p .agents/skills
+cp -r /tmp/jul-editor/plugins/jul-editor/skills/jul-editor .agents/skills/
+```
+
+Restart Codex if the skill does not appear.
+
+## Any agent
+
+The `skills` CLI installs the same folder for Claude Code, Codex, and other agents that read `SKILL.md` files.
+
+```sh
+npx skills add ByeongminLee/jul-editor
+```
+
+<Note>
+
+The skill is plain Markdown at `plugins/jul-editor/skills/jul-editor/` in the repository: a short `SKILL.md` plus topic files the agent opens only when a task needs them. Read it before you install it, and copy its rules into your own agent instructions if your tool does not support skills.
+
+</Note>
+
+## Try it
+
+After installing, ask your agent for something concrete:
+
+```text
+Add a JulEditor editor to the settings page. Use a toolbar with bold, italic,
+heading, and lists, save the document to localStorage, and add a button that
+copies the content as Markdown.
+```
+
+Next: [Getting started](/docs/getting-started) shows the same API by hand.

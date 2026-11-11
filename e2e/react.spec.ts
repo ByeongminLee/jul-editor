@@ -75,6 +75,46 @@ test("react toolbar: typing 100 plain chars causes no Toolbar re-renders; toggli
   expect(textOf(doc, "r-p2")).toBe("a".repeat(100));
 });
 
+test("react toolbar: clicking Bold at a collapsed caret shows it pressed and keeps focus, so the next typed text is bold", async ({ page }) => {
+  const p1 = page.locator('[data-id="r-p1"]');
+  const box = (await p1.boundingBox())!;
+  await page.mouse.click(box.x + 4, box.y + box.height / 2); // caret near the start of r-p1
+  await page.keyboard.press("End");
+  const bold = page.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Bold" });
+  await bold.click();
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => !!document.activeElement?.closest("[data-jul-editor-root]"))).toBe(true);
+  await page.keyboard.type("Q");
+  const doc = (await page.evaluate(() => window.__julEditorReact!.getDoc())) as DocLike;
+  const content = doc.blocks.find((b) => b.id === "r-p1")!.content!;
+  expect(content.at(-1)).toMatchObject({ text: "Q", marks: [{ type: "bold" }] });
+
+  // The pending mark is dropped once the caret moves elsewhere.
+  await page.mouse.click(box.x + 4, box.y + box.height / 2);
+  await page.keyboard.press("ControlOrMeta+b");
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+});
+
+test("react toolbar: clicking a block-type button keeps focus in the converted block; clicking it again reverts", async ({ page }) => {
+  const p1 = page.locator('[data-id="r-p1"]');
+  const box = (await p1.boundingBox())!;
+  await page.mouse.click(box.x + 4, box.y + box.height / 2);
+  await page.keyboard.press("End");
+  const h1 = page.getByRole("toolbar", { name: "Formatting" }).getByRole("button", { name: "Heading 1" });
+  await h1.click();
+  await expect(h1).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.type("ZZ");
+  let doc = (await page.evaluate(() => window.__julEditorReact!.getDoc())) as DocLike;
+  expect(doc.blocks.find((b) => b.id === "r-p1")!.type).toBe("heading");
+  expect(textOf(doc, "r-p1")).toBe("Hello from the React demo.ZZ");
+  await h1.click();
+  await expect(h1).toHaveAttribute("aria-pressed", "false");
+  doc = (await page.evaluate(() => window.__julEditorReact!.getDoc())) as DocLike;
+  expect(doc.blocks.find((b) => b.id === "r-p1")!.type).toBe("paragraph");
+});
+
 test("react void renderer: mounts via portal into the same DOM node and survives typing elsewhere", async ({ page }) => {
   const before = await page.evaluate(() => {
     const el = document.querySelector('[data-testid="void-image"]');

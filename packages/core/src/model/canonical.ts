@@ -2,7 +2,7 @@ import { newId } from "./id.js";
 import type { BlockSpec, ChildrenKind, Registry } from "./schema.js";
 import type { Block, Doc, Inline, Json, Mark, TextInline } from "./types.js";
 import { sanitizeFontFamily, sanitizeFontSize } from "./font-style.js";
-import { sanitizeUrl } from "./url.js";
+import { sanitizeImageSource, sanitizeUrl } from "./url.js";
 
 /** Sorted-key, undefined-omitting JSON stringify. Two logically-equal values
  * (different key order, different `undefined` presence) produce identical output. */
@@ -91,9 +91,9 @@ function sanitizeLinkMarks(marks: Mark[] | undefined): Mark[] | undefined {
 // (a single op's own write path). Also covers embed.url (the
 // link-card href for x/link providers, and the source url stored alongside
 // an iframe embed) -- same treatment as image.src, one shared choke point.
-function sanitizeUrlProp(props: Record<string, Json>, key: string, kind: "link" | "image"): Record<string, Json> {
+function sanitizeUrlProp(props: Record<string, Json>, key: string, kind: "link" | "image", embedded = false): Record<string, Json> {
   if (typeof props[key] !== "string") return props;
-  const safe = sanitizeUrl(props[key] as string, kind);
+  const safe = embedded ? sanitizeImageSource(props[key] as string) : sanitizeUrl(props[key] as string, kind);
   if (safe === props[key]) return props;
   const out = { ...props };
   if (!safe) delete out[key];
@@ -125,7 +125,7 @@ function sanitizeStyleProps(props: Record<string, Json>): Record<string, Json> {
 
 export function sanitizeBlockProps(type: string, props: Record<string, Json>): Record<string, Json> {
   props = sanitizeStyleProps(props);
-  if (type === "image" || type === "attachment") return sanitizeUrlProp(props, "src", "image");
+  if (type === "image" || type === "attachment") return sanitizeUrlProp(props, "src", "image", type === "image");
   if (type === "embed") return sanitizeUrlProp(props, "url", "link");
   return props;
 }

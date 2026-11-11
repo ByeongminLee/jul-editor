@@ -32,6 +32,9 @@ export const todoListItem = defineBlock({
   content: "inline",
   children: "any",
   props: { checked: false },
+  // mirrored onto the block wrapper so a host's CSS marker can show the
+  // checked state (`[data-jul-editor-checked="true"]`); omitted when unchecked.
+  wrapperAttrs: (block) => ({ "data-jul-editor-checked": block.props.checked === true ? "true" : undefined }),
 });
 
 export const quote = defineBlock({ type: "quote", content: "inline", children: "any", props: {} });

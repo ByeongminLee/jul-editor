@@ -9,7 +9,8 @@
 import { isText } from "../model/canonical.js";
 import type { Registry } from "../model/schema.js";
 import type { Json, Mark, TextInline } from "../model/types.js";
-import { comparePreOrder, contentLength, nextBlockInPreOrder, sliceContent } from "../store/store.js";
+import { markRanges } from "../store/edits.js";
+import { orderPoints, contentLength, nextBlockInPreOrder, sliceContent } from "../store/store.js";
 import type { EditorState, Point, Selection, Store } from "../store/types.js";
 import type { Dispatch } from "./types.js";
 
@@ -17,8 +18,24 @@ export interface MarksRef {
   stored: Mark[] | null;
 }
 
-export function createMarksRef(): MarksRef {
-  return { stored: null };
+/** `onChange` (optional) fires whenever `stored` is assigned a different
+ * value -- stored marks live outside EditorState (no commit, no `change`
+ * emit), so this is the seam createEditor uses to tell UI (a toolbar's
+ * pressed Bold) that the pending marks changed, and to remember where the
+ * caret was when they were set (they are discarded once it moves). */
+export function createMarksRef(onChange?: () => void): MarksRef {
+  if (!onChange) return { stored: null };
+  let stored: Mark[] | null = null;
+  return {
+    get stored() {
+      return stored;
+    },
+    set stored(next: Mark[] | null) {
+      if (next === stored) return;
+      stored = next;
+      onChange();
+    },
+  };
 }
 
 function sameMark(a: Mark, b: Mark): boolean {
@@ -50,8 +67,7 @@ export function marksAtPoint(state: EditorState, point: Point): Mark[] {
  * touches -- same divergence-free walk store/edits.ts's buildToggleMarkOps
  * uses to decide which blocks a range spans. */
 export function textSelectionBlockIds(store: Store, sel: Extract<Selection, { type: "text" }>): string[] {
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   const ids: string[] = [start.blockId];
   let cur: string | null = start.blockId;
   while (cur !== end.blockId) {
@@ -69,16 +85,16 @@ export function textSelectionBlockIds(store: Store, sel: Extract<Selection, { ty
  * block(s), and not just the anchor's own block (bug found in review: a
  * partially-selected run outside the range, or a second/third spanned block,
  * must not affect the result). */
-export function activeMarks(state: EditorState, marksRef: MarksRef): Mark[] {
+export function activeMarks(state: EditorState, marksRef: MarksRef, registry?: Registry): Mark[] {
   if (marksRef.stored !== null) return marksRef.stored;
   const sel = state.selection;
+  if (sel?.type === "cells" && registry) return commonMarks(state.store, markRanges(state.store, sel, registry));
   if (!sel || sel.type !== "text") return [];
   if (sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset) {
     return marksAtPoint(state, sel.anchor);
   }
   const store = state.store;
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   const blockIds = textSelectionBlockIds(store, sel);
 
   const overlapped: TextInline[] = [];
@@ -96,13 +112,46 @@ export function activeMarks(state: EditorState, marksRef: MarksRef): Mark[] {
   return (overlapped[0]!.marks ?? []).filter((m) => overlapped.every((r) => (r.marks ?? []).some((m2) => sameMark(m, m2))));
 }
 
+function commonMarks(store: Store, ranges: { blockId: string; from: number; to: number }[]): Mark[] {
+  const runs: TextInline[] = [];
+  for (const { blockId, from, to } of ranges) {
+    if (from >= to) continue;
+    for (const inl of sliceContent(store.records.get(blockId)?.content ?? [], from, to)) if (isText(inl) && inl.text.length > 0) runs.push(inl);
+  }
+  if (runs.length === 0) return [];
+  return (runs[0]!.marks ?? []).filter((m) => runs.every((r) => (r.marks ?? []).some((m2) => sameMark(m, m2))));
+}
+
+/** Whether a mark command has text it can format: false when the selection sits only in blocks that
+ * hold no marks (a codeBlock's `content: "code"`), or is a block selection / no selection. A `cells`
+ * rectangle formats every selected cell. Toolbars use this to disable their mark buttons. */
+export function canApplyMarks(state: EditorState, registry: Registry): boolean {
+  const sel = state.selection;
+  if (!sel) return false;
+  if (sel.type === "cells") return markRanges(state.store, sel, registry).length > 0;
+  if (sel.type !== "text") return false;
+  if (sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset) {
+    const type = state.store.records.get(sel.anchor.blockId)?.type;
+    return type !== undefined && registry.blocks.get(type)?.content === "inline";
+  }
+  return markRanges(state.store, sel, registry).length > 0;
+}
+
 /** Toggles `markType` for the current selection: a real range dispatches
  * `tx.toggleMark` as usual; a collapsed caret instead flips `marksRef.stored`
  * (no store mutation, no history entry -- nothing to toggle yet). Returns
  * true either way (the key is considered handled). */
-export function toggleMarkOrStore(state: EditorState, marksRef: MarksRef, dispatch: Dispatch, markType: string, attrs?: Record<string, Json>): boolean {
+export function toggleMarkOrStore(state: EditorState, marksRef: MarksRef, dispatch: Dispatch, markType: string, attrs?: Record<string, Json>, registry?: Registry): boolean {
   const sel = state.selection;
+  if (sel?.type === "cells") {
+    // every selected cell's whole content (the transaction's registry resolves the rectangle)
+    dispatch((tx) => tx.toggleMark(sel, markType, attrs));
+    marksRef.stored = null;
+    return true;
+  }
   if (!sel || sel.type !== "text") return false;
+  // a caret or range only inside blocks that hold no marks (a codeBlock): nothing to format
+  if (registry && !canApplyMarks(state, registry)) return true;
   const collapsed = sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset;
   if (!collapsed) {
     dispatch((tx) => tx.toggleMark(sel, markType, attrs));

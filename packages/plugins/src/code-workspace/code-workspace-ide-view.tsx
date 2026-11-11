@@ -4,8 +4,9 @@ import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, ReactNode } from "react";
 import type { HighlightRange, Json } from "@jul-editor/core";
 import { createLowlightHighlighter } from "../code/highlighter.js";
-import type { PluginViewProps } from "../view-props.js";
+import { usePluginControls, type PluginViewProps } from "../view-props.js";
 import { lineChange, readCodeWorkspaceFiles, setLineChange, setMarkedLines, type CodeWorkspaceFile } from "./block.js";
+import { indentCodeText } from "./code-indent.js";
 import { inferLanguage, moveWorkspaceEntry, parseLineRanges, remapWorkspacePath, validWorkspacePath } from "./workspace-paths.js";
 
 const DRAG_TYPE = "application/x-jul-editor-workspace-path";
@@ -131,7 +132,9 @@ function fileTree(files: CodeWorkspaceFile[], folders: string[]): Folder {
 }
 
 /** A second, self-styled renderer for the same serializable codeWorkspace block. */
-export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, locale = "en", theme, className, defaultOpenPaths, defaultActivePath }: CodeWorkspaceIDEViewProps): ReactNode {
+export function CodeWorkspaceIDEView({ block, editor, selected, readOnly, updateProps, locale = "en", theme, className, defaultOpenPaths, defaultActivePath }: CodeWorkspaceIDEViewProps): ReactNode {
+  const controls = usePluginControls(editor, selected);
+  const t = (en: string, ko: string) => locale === "ko" ? ko : en;
   const files = readCodeWorkspaceFiles(block.props);
   const folders = Array.isArray(block.props.folders) ? block.props.folders.filter((path): path is string => typeof path === "string") : [];
   const pinnedPaths = Array.isArray(block.props.pinnedPaths) ? block.props.pinnedPaths.filter((path): path is string => typeof path === "string") : [];
@@ -146,15 +149,24 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
   const activeFile = files.find((file) => file.path === activePath) ?? files[0];
   const tabs = [...new Set([...openPaths.filter((path) => paths.includes(path)), ...pinnedPaths.filter((path) => paths.includes(path)), activeFile?.path ?? ""])].filter(Boolean);
   const panelId = useId();
-  // Edit controls only while the block is selected (same rule as ChartView and CodeWorkspaceView).
-  // The editor clears a block selection when focus leaves it, and interacting with the controls
-  // keeps focus inside the block, so no local "armed" state is needed.
-  const editable = !!selected && !readOnly && !!updateProps;
+  const editable = controls.open && !readOnly && !!updateProps;
   const asideRef = useRef<HTMLElement>(null);
   const createTriggerRef = useRef<HTMLButtonElement | null>(null);
   const focusPathRef = useRef<string | null>(null);
   const previewRef = useRef<HTMLPreElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const codeRef = useRef<HTMLTextAreaElement>(null);
+  // the selection a Tab/Shift-Tab indent should leave behind once the
+  // controlled textarea re-renders with the new value (React resets the
+  // caret to the end when `value` changes under it).
+  const pendingCodeSelection = useRef<{ value: string; start: number; end: number } | null>(null);
+  useLayoutEffect(() => {
+    const pending = pendingCodeSelection.current;
+    const textarea = codeRef.current;
+    if (!pending || !textarea || textarea.value !== pending.value) return;
+    pendingCodeSelection.current = null;
+    textarea.setSelectionRange(pending.start, pending.end);
+  });
   const [highlight, setHighlight] = useState<{ code: string; language: string; ranges: HighlightRange[] } | null>(null);
   useLayoutEffect(() => {
     if (creating || renaming) return;
@@ -220,6 +232,12 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
     setError("");
   }
 
+  function nameError(name: string): string | null {
+    if (!name) return t("Enter a name.", "이름을 입력하세요.");
+    if (!validWorkspacePath(name) || name.includes("/")) return t("Names cannot contain slashes or be . or ..", "슬래시, . 또는 .. 없이 올바른 이름을 입력하세요.");
+    return null;
+  }
+
   function commitCreate(): void {
     if (!creating || !editable) return;
     const name = nameDraft.trim();
@@ -233,8 +251,9 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
       const parts = file.path.split("/");
       for (let count = 1; count < parts.length; count++) allFolders.add(parts.slice(0, count).join("/"));
     }
-    if (!name || name.includes("/") || !validWorkspacePath(path) || paths.includes(path) || allFolders.has(path)) {
-      setError("Name is empty or already in use.");
+    const invalid = nameError(name) ?? (paths.includes(path) || allFolders.has(path) ? t("That name is already in use.", "이미 사용 중인 이름입니다.") : null);
+    if (invalid) {
+      setError(invalid);
       return;
     }
     focusPathRef.current = path;
@@ -249,11 +268,11 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
 
   function creationInput(parent: string): ReactNode {
     if (!creating || creating.parent !== parent) return null;
-    return <input autoFocus aria-label={creating.kind === "folder" ? "New folder name" : "New file name"} value={nameDraft}
+    return <input autoFocus aria-label={creating.kind === "folder" ? t("New folder name", "새 폴더 이름") : t("New file name", "새 파일 이름")} value={nameDraft}
       onChange={(event) => setNameDraft(event.target.value)}
       onKeyDown={(event) => {
         if (event.key === "Enter") { event.preventDefault(); commitCreate(); }
-        if (event.key === "Escape") setCreating(null);
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setCreating(null); }
       }} />;
   }
 
@@ -276,7 +295,7 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
   function moveEntry(from: string, to: string): boolean {
     if (!editable) return false;
     const moved = moveWorkspaceEntry(files, folders, from, to);
-    if (!moved) { setError("That path is already in use or cannot be moved there."); return false; }
+    if (!moved) { setError(t("That path is already in use or cannot be moved there.", "이미 사용 중이거나 옮길 수 없는 경로입니다.")); return false; }
     const sourceFile = files.find((file) => file.path === from);
     const nextFiles = sourceFile
       ? moved.files.map((file) => file.path === to ? { ...file, language: inferLanguage(to) } : file)
@@ -293,17 +312,18 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
     if (!renaming) return;
     const name = renameDraft.trim();
     const parent = renaming.split("/").slice(0, -1).join("/");
-    if (!name || name.includes("/") || name === "." || name === "..") { setError("Enter a valid name."); return; }
+    const invalid = nameError(name);
+    if (invalid) { setError(invalid); return; }
     const nextPath = parent ? `${parent}/${name}` : name;
     if (moveEntry(renaming, nextPath)) { focusPathRef.current = nextPath; setRenaming(null); }
   }
 
   function renameInput(path: string): ReactNode {
-    return renaming === path && <input autoFocus aria-label={`Rename ${path}`} value={renameDraft}
+    return renaming === path && <input autoFocus aria-label={t(`Rename ${path}`, `${path} 이름 변경`)} value={renameDraft}
       onChange={(event) => setRenameDraft(event.target.value)}
       onKeyDown={(event) => {
         if (event.key === "Enter") { event.preventDefault(); commitRename(); }
-        if (event.key === "Escape") setRenaming(null);
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) { event.stopPropagation(); setRenaming(null); }
       }} />;
   }
 
@@ -325,7 +345,7 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
             onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData(DRAG_TYPE, child.path); event.dataTransfer.effectAllowed = "move"; }}
             onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); }} onDrop={(event) => dragTo(event, child.path)}
             style={{ flex: 1, minWidth: 0, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</button>}
-          {editable && <><button type="button" aria-label={`New folder in ${child.path}`} title={`New folder in ${child.path}`} onClick={(event) => beginCreate("folder", child.path, event.currentTarget)} style={{ flex: "0 0 22px", padding: 1 }}>▣</button><button type="button" aria-label={`New file in ${child.path}`} title={`New file in ${child.path}`} onClick={(event) => beginCreate("file", child.path, event.currentTarget)} style={{ flex: "0 0 22px", padding: 1 }}>＋</button></>}
+          {editable && <><button type="button" aria-label={t(`New folder in ${child.path}`, `${child.path}에 새 폴더`)} title={t(`New folder in ${child.path}`, `${child.path}에 새 폴더`)} onClick={(event) => beginCreate("folder", child.path, event.currentTarget)} style={{ flex: "0 0 22px", padding: 1 }}>▣</button><button type="button" aria-label={t(`New file in ${child.path}`, `${child.path}에 새 파일`)} title={t(`New file in ${child.path}`, `${child.path}에 새 파일`)} onClick={(event) => beginCreate("file", child.path, event.currentTarget)} style={{ flex: "0 0 22px", padding: 1 }}>＋</button></>}
         </div>
         {creationInput(child.path)}{renderFolder(child)}
       </li>)}
@@ -336,19 +356,19 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
           onDoubleClick={() => beginRename(file.path)} onKeyDown={(event) => { if (event.key === "F2") beginRename(file.path); }} draggable={editable}
           onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.setData(DRAG_TYPE, file.path); event.dataTransfer.effectAllowed = "move"; }}
           style={{ flex: 1, textAlign: "left" }}>{file.path.split("/").at(-1)}</button>}
-        {editable && <input type="checkbox" aria-label={`Pin ${file.path}`} checked={pinnedPaths.includes(file.path)} onChange={() => togglePin(file.path)} style={{ marginLeft: "auto" }} />}
+        {editable && <input type="checkbox" aria-label={t(`Pin ${file.path}`, `${file.path} 고정`)} checked={pinnedPaths.includes(file.path)} onChange={() => togglePin(file.path)} style={{ marginLeft: "auto" }} />}
       </li>)}
     </ul>;
   }
 
-  return <section className={classes.container} data-jul-editor-plugin="code-workspace-ide" aria-label={locale === "ko" ? "코드 작업 공간" : "Code Workspace"} style={style}>
+  return <section className={classes.container} data-jul-editor-plugin="code-workspace-ide" aria-label={locale === "ko" ? "코드 작업 공간" : "Code Workspace"} style={style} onKeyDown={controls.onKeyDown} onPointerDown={controls.onPointerDown}>
     <style>{IDE_CSS}</style>
     <aside className={classes.tree} ref={asideRef} aria-label={locale === "ko" ? "파일" : "Files"} style={{ background: "var(--jul-editor-code-sidebar)", borderRight: "1px solid var(--jul-editor-code-border)", padding: 10, minWidth: 0 }}
       onDragOver={(event) => { if (event.dataTransfer.types.includes(DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); } }}
       onDrop={(event) => dragTo(event, "")}>
       <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, whiteSpace: "nowrap" }}>
         <strong style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{locale === "ko" ? "탐색기" : "Explorer"}</strong>
-        {editable && <><button type="button" aria-label="New folder" title={locale === "ko" ? "새 폴더" : "New folder"} onClick={(event) => beginCreate("folder", "", event.currentTarget)} style={{ flex: "0 0 26px", padding: 2 }}>▣</button><button type="button" aria-label="New file" title={locale === "ko" ? "새 파일" : "New file"} onClick={(event) => beginCreate("file", "", event.currentTarget)} style={{ flex: "0 0 26px", padding: 2 }}>＋</button></>}
+        {editable && <><button type="button" aria-label={t("New folder", "새 폴더")} title={locale === "ko" ? "새 폴더" : "New folder"} onClick={(event) => beginCreate("folder", "", event.currentTarget)} style={{ flex: "0 0 26px", padding: 2 }}>▣</button><button type="button" aria-label={t("New file", "새 파일")} title={locale === "ko" ? "새 파일" : "New file"} onClick={(event) => beginCreate("file", "", event.currentTarget)} style={{ flex: "0 0 26px", padding: 2 }}>＋</button></>}
       </div>
       {creationInput("")}
       {error && <p role="alert">{error}</p>}
@@ -362,8 +382,8 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
         <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={activeFile.path}>{activeFile.path}</span>
         <span>{activeFile.language}</span>
         {editable && <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "5px 12px" }}>
-          <label style={{ whiteSpace: "nowrap" }}>{locale === "ko" ? "추가" : "Added"} <RangeInput key={`added-${activeFile.path}`} label="Added line ranges" lines={activeFile.addedLines} maxLine={codeLines.length} onValid={(addedLines) => { setError(""); updateFile(setMarkedLines(activeFile, "addedLines", addedLines)); }} onInvalid={() => setError("Invalid line range.")} /></label>
-          <label style={{ whiteSpace: "nowrap" }}>{locale === "ko" ? "삭제" : "Deleted"} <RangeInput key={`removed-${activeFile.path}`} label="Deleted line ranges" lines={activeFile.removedLines} maxLine={codeLines.length} onValid={(removedLines) => { setError(""); updateFile(setMarkedLines(activeFile, "removedLines", removedLines)); }} onInvalid={() => setError("Invalid line range.")} /></label>
+          <label style={{ whiteSpace: "nowrap" }}>{locale === "ko" ? "추가" : "Added"} <RangeInput key={`added-${activeFile.path}`} label={t("Added line ranges", "추가된 줄 범위")} lines={activeFile.addedLines} maxLine={codeLines.length} onValid={(addedLines) => { setError(""); updateFile(setMarkedLines(activeFile, "addedLines", addedLines)); }} onInvalid={() => setError(t("Invalid line range.", "올바른 줄 범위를 입력하세요."))} /></label>
+          <label style={{ whiteSpace: "nowrap" }}>{locale === "ko" ? "삭제" : "Deleted"} <RangeInput key={`removed-${activeFile.path}`} label={t("Deleted line ranges", "삭제된 줄 범위")} lines={activeFile.removedLines} maxLine={codeLines.length} onValid={(removedLines) => { setError(""); updateFile(setMarkedLines(activeFile, "removedLines", removedLines)); }} onInvalid={() => setError(t("Invalid line range.", "올바른 줄 범위를 입력하세요."))} /></label>
         </div>}
       </div>}
       <div className={classes.panel} id={`${panelId}-panel`} role="tabpanel" aria-labelledby={activeFile ? `${panelId}-tab-${tabs.indexOf(activeFile.path)}` : undefined} style={{ display: "flex", minHeight: 280, height: 320, overflow: "hidden" }}>
@@ -377,7 +397,7 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
               // In edit mode both toggles are always visible on every row; the active one is colored and bold, the inactive one is muted.
               const markerStyle = (active: boolean, color: string) => ({ color: active ? color : "var(--jul-editor-code-muted)", fontWeight: active ? 700 : 400, width: 18, padding: 0, lineHeight: "18px", opacity: 1 });
               return <div key={line} data-jul-editor-code-line={line} data-change={change} style={{ height: 20, minHeight: 0, margin: "0 -8px", padding: "0 8px", display: "grid", gridTemplateColumns: editable ? "18px 18px minmax(0, 1fr)" : "14px minmax(0, 1fr)", columnGap: 4, alignItems: "center", whiteSpace: "nowrap" }}>
-                {editable && <><button type="button" data-jul-editor-code-marker="added" aria-label={`Mark line ${line} added`} aria-pressed={added} onClick={() => toggleLine("addedLines", line)} style={markerStyle(added, "var(--jul-editor-code-added)")}>+</button><button type="button" data-jul-editor-code-marker="deleted" aria-label={`Mark line ${line} deleted`} aria-pressed={removed} onClick={() => toggleLine("removedLines", line)} style={markerStyle(removed, "var(--jul-editor-code-removed)")}>−</button></>}
+                {editable && <><button type="button" data-jul-editor-code-marker="added" aria-label={t(`Mark line ${line} added`, `${line}번째 줄 추가로 표시`)} aria-pressed={added} onClick={() => toggleLine("addedLines", line)} style={markerStyle(added, "var(--jul-editor-code-added)")}>+</button><button type="button" data-jul-editor-code-marker="deleted" aria-label={t(`Mark line ${line} deleted`, `${line}번째 줄 삭제로 표시`)} aria-pressed={removed} onClick={() => toggleLine("removedLines", line)} style={markerStyle(removed, "var(--jul-editor-code-removed)")}>−</button></>}
                 {/* Read-only gutters have no toggles, so changed lines get a static +/- marker like a diff view. */}
                 {/* The marker column is reserved on every row (empty when unchanged) so the number never moves; the number column is fixed-width and right-aligned. */}
                 {!editable && (added || removed ? <span data-jul-editor-code-change-marker={change} aria-hidden="true" style={{ color: added ? "var(--jul-editor-code-added)" : "var(--jul-editor-code-removed)", textAlign: "center" }}>{added ? "+" : "\u2212"}</span> : <span aria-hidden="true" />)}
@@ -396,7 +416,43 @@ export function CodeWorkspaceIDEView({ block, selected, readOnly, updateProps, l
               })}</code>
             </pre>
             {editable && <textarea className={[classes.code, classes.input].filter(Boolean).join(" ") || undefined} aria-label={locale === "ko" ? "코드" : "Code"} value={activeFile.code} spellCheck={false} wrap="off"
+              ref={codeRef}
               onChange={(event) => updateFile({ code: event.target.value })}
+              onKeyDown={(event) => {
+                // Home / End move the caret to the line's start / end, as in a code editor. Left to the
+                // browser, macOS treats them as "scroll to the top / bottom", and inside the editable
+                // document that scrolls the whole page while the caret stays put.
+                if ((event.key === "Home" || event.key === "End") && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  const textarea = event.currentTarget;
+                  const caret = textarea.selectionDirection === "backward" ? textarea.selectionStart : textarea.selectionEnd;
+                  const next = event.key === "Home" ? (caret === 0 ? 0 : textarea.value.lastIndexOf("\n", caret - 1) + 1) : ((end) => (end < 0 ? textarea.value.length : end))(textarea.value.indexOf("\n", caret));
+                  if (event.shiftKey) {
+                    const fixed = textarea.selectionDirection === "backward" ? textarea.selectionEnd : textarea.selectionStart;
+                    textarea.setSelectionRange(Math.min(fixed, next), Math.max(fixed, next), next < fixed ? "backward" : "forward");
+                  } else textarea.setSelectionRange(next, next);
+                  // Chromium and WebKit do not scroll a caret moved by setSelectionRange into view.
+                  const row = event.key === "End" ? previewRef.current?.querySelector(`[data-jul-editor-code-row="${textarea.value.slice(0, next).split("\n").length}"]`) : null;
+                  let lineWidth = 0;
+                  if (row) {
+                    const range = row.ownerDocument.createRange();
+                    range.selectNodeContents(row);
+                    lineWidth = range.getBoundingClientRect?.().width ?? 0; // jsdom has no Range geometry
+                  }
+                  textarea.scrollLeft = Math.max(0, lineWidth + 20 - textarea.clientWidth);
+                  return;
+                }
+                // Tab indents the code instead of moving focus out of the editor (the browser default).
+                if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const textarea = event.currentTarget;
+                const result = indentCodeText(textarea.value, textarea.selectionStart, textarea.selectionEnd, event.shiftKey ? -1 : 1);
+                if (!result) return;
+                pendingCodeSelection.current = result;
+                updateFile({ code: result.value });
+              }}
               onScroll={(event) => { if (previewRef.current) { previewRef.current.scrollTop = event.currentTarget.scrollTop; previewRef.current.scrollLeft = event.currentTarget.scrollLeft; } if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop; }}
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%", boxSizing: "border-box", resize: "none", padding: 10, border: 0, background: "transparent", color: "transparent", WebkitTextFillColor: "transparent", caretColor: "var(--jul-editor-code-accent)", font: classes.code || classes.input ? undefined : "inherit", lineHeight: "20px", whiteSpace: "pre", overflow: "auto" }} />}
           </div>

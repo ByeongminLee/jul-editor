@@ -20,6 +20,8 @@ export interface SlashItem {
   /** Includes Korean synonyms so a Korean IME query still matches. */
   keywords: string[];
   create: () => Block;
+  /** `@jul-editor/react` label key that localizes `title` (e.g. "slashChart"). */
+  labelKey?: string;
 }
 
 export const pluginSlashItems: SlashItem[] = [

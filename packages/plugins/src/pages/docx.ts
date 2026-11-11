@@ -17,6 +17,7 @@ import type { Block, Doc, Inline } from "@jul-editor/core";
 import { PAGE_SIZES_MM, mmToTwips, normalizeSettings } from "./settings.js";
 import type { DocumentSettings } from "./settings.js";
 import { splitPageTokens } from "./tokens.js";
+import { PAGE_BREAK_HTML } from "./page-break.js";
 
 type Ctor = new (...args: any[]) => unknown; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -308,20 +309,56 @@ function blockToDocx(b: Block, ctx: Ctx, depth: number): unknown[] {
 // ---- import (optional) ------------------------------------------------------------
 
 export interface MammothLib {
-  convertToHtml(input: { arrayBuffer: ArrayBuffer }): Promise<{ value: string; messages: { type: string; message: string }[] }>;
+  convertToHtml(input: { arrayBuffer: ArrayBuffer }, options?: { styleMap?: string | string[] }): Promise<{ value: string; messages: { type: string; message: string }[] }>;
+}
+
+/** A data: image fromHTML could not keep in the doc (core never stores data: URLs): the image
+ * block is left with an empty src, and the host stages the bytes as an upload
+ * (`editor.attachUpload(blockId, dataUrlToFile(dataUrl))` once the doc is loaded). */
+export interface DocxPendingImage {
+  blockId: string;
+  dataUrl: string;
 }
 
 export interface ImportDocxOptions {
   mammothLib: MammothLib;
-  /** `fromHTML` from @jul-editor/core/serde (injected to keep this module DOM/serde free). Needs a DOM or a `parser` the host binds into it. */
-  fromHTML: (html: string) => { doc: Doc };
+  /** `fromHTML` from @jul-editor/core/serde (injected to keep this module DOM/serde free). Needs a DOM or a `parser` the host binds into it.
+   * Pass a registry that includes `pageBreak` so page breaks come back as blocks. */
+  fromHTML: (html: string) => { doc: Doc; pendingUploads?: DocxPendingImage[] };
+  /** Extra mammoth style map lines (run after the page break mapping). */
+  styleMap?: string[];
+}
+
+export interface ImportDocxResult {
+  doc: Doc;
+  settings: DocumentSettings;
+  messages: string[];
+  /** Embedded images (mammoth emits them as data: URLs), keyed by the image block they belong to. */
+  images: DocxPendingImage[];
+}
+
+// mammoth drops <w:br w:type="page"/> unless a style map names it. It is mapped to a marker <hr>
+// (mammoth writes it inside the paragraph that held the break) and swapped for the pageBreak html.
+const PAGE_BREAK_CLASS = "jul-page-break";
+const PAGE_BREAK_STYLE = `br[type='page'] => hr.${PAGE_BREAK_CLASS}`;
+const MARKER = new RegExp(`<hr class="${PAGE_BREAK_CLASS}"\\s*/?>`, "g");
+
+/** Replaces mammoth's page break markers with the pageBreak block's html. A paragraph that holds
+ * only breaks becomes the breaks; a break inside text splits that paragraph around it. */
+export function restoreDocxPageBreaks(html: string): string {
+  if (!html.includes(PAGE_BREAK_CLASS)) return html;
+  return html
+    .replace(/<p>([^]*?)<\/p>/g, (m, inner: string) => {
+      if (!inner.includes(PAGE_BREAK_CLASS)) return m;
+      return inner.split(MARKER).map((part) => (part.trim() ? `<p>${part}</p>` : "")).join(PAGE_BREAK_HTML);
+    })
+    .replace(MARKER, PAGE_BREAK_HTML);
 }
 
 /** DOCX -> Doc via mammoth's HTML output. Page size/margins/header/footer are
  * NOT recovered (mammoth ignores section properties): returns default settings. */
-export async function importDocx(data: ArrayBuffer, opts: ImportDocxOptions): Promise<{ doc: Doc; settings: DocumentSettings; messages: string[] }> {
-  const res = await opts.mammothLib.convertToHtml({ arrayBuffer: data });
-  // mammoth emits page breaks as `<p><br></p>`-ish w/o a marker unless the host adds a style map; keep as is.
-  const { doc } = opts.fromHTML(res.value);
-  return { doc, settings: normalizeSettings(), messages: res.messages.map((m) => `${m.type}: ${m.message}`) };
+export async function importDocx(data: ArrayBuffer, opts: ImportDocxOptions): Promise<ImportDocxResult> {
+  const res = await opts.mammothLib.convertToHtml({ arrayBuffer: data }, { styleMap: [PAGE_BREAK_STYLE, ...(opts.styleMap ?? [])] });
+  const { doc, pendingUploads } = opts.fromHTML(restoreDocxPageBreaks(res.value));
+  return { doc, settings: normalizeSettings(), messages: res.messages.map((m) => `${m.type}: ${m.message}`), images: pendingUploads ?? [] };
 }

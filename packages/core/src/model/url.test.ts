@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeUrl } from "./url.js";
+import { normalizeLinkHref, sanitizeUrl } from "./url.js";
 import { sanitizeBlockProps } from "./canonical.js";
 
 describe("sanitizeUrl", () => {
@@ -90,4 +90,43 @@ it("never persists temporary or unsafe attachment URLs", () => {
   expect(sanitizeBlockProps("attachment", { src: "blob:https://example.com/temporary", name: "report.pdf" })).toEqual({ name: "report.pdf" });
   expect(sanitizeBlockProps("attachment", { src: "data:text/html,bad", name: "report.pdf" })).toEqual({ name: "report.pdf" });
   expect(sanitizeBlockProps("attachment", { src: "https://cdn.example.com/report.pdf", name: "report.pdf" })).toEqual({ src: "https://cdn.example.com/report.pdf", name: "report.pdf" });
+});
+
+describe("normalizeLinkHref", () => {
+  it.each([
+    ["example.com", "https://example.com"],
+    ["www.example.com/path?q=1#x", "https://www.example.com/path?q=1#x"],
+    ["sub.example.co.kr", "https://sub.example.co.kr"],
+    ["example.com:8080/x", "https://example.com:8080/x"],
+    ["  example.com  ", "https://example.com"],
+    ["me@example.com", "mailto:me@example.com"],
+  ])("adds a scheme to a bare domain or email: %s", (input, expected) => {
+    expect(normalizeLinkHref(input)).toBe(expected);
+  });
+
+  it.each(["https://example.com", "http://a.b", "mailto:x@y.z", "/docs/a", "#section", "?q=1", "./page", "../up", "javascript:alert(1)", "notes", ""])(
+    "leaves %s unchanged (after trimming)",
+    (input) => {
+      expect(normalizeLinkHref(input)).toBe(input.trim());
+    },
+  );
+});
+
+describe('embedded raster image sources', () => {
+  it('accepts strict raster base64 only for image blocks', () => {
+    const data = 'data:image/png;base64,aGVsbG8=';
+    expect(sanitizeUrl(data, 'image')).toBeNull();
+    expect(sanitizeBlockProps('image', { src: data }).src).toBe(data);
+    expect(sanitizeBlockProps('attachment', { src: data }).src).toBeUndefined();
+    for (const src of ['data:image/svg+xml;base64,PHN2Zz4=', 'data:text/html;base64,PHNjcmlwdD4=', 'data:image/png,raw', 'data:image/png;base64,@@@']) {
+      expect(sanitizeBlockProps('image', { src }).src).toBeUndefined();
+    }
+  });
+});
+
+it('accepts large embedded images without exhausting the regex stack', () => {
+  const src = 'data:image/png;base64,' + 'A'.repeat(10 * 1024 * 1024);
+  expect(sanitizeBlockProps('image', { src }).src).toBe(src);
+  expect(sanitizeBlockProps('image', { src: src + '!' }).src).toBeUndefined();
+  expect(sanitizeBlockProps('image', { src: 'data:image/png;base64,' }).src).toBeUndefined();
 });

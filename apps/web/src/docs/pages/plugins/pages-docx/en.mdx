@@ -28,17 +28,20 @@ The `docx` and `mammoth` libraries are injected by you, so the plugin has no har
 ```ts
 import * as docx from "docx";
 import mammoth from "mammoth";
+import { dataUrlToFile } from "@jul-editor/core";
 import { fromHTML } from "@jul-editor/core/serde";
 import { exportDocx, importDocx } from "@jul-editor/plugins/pages";
 
 const { file: blob, lossy } = await exportDocx(doc, settings, { docxLib: docx });
-const { doc: imported, settings: s, messages } = await importDocx(await file.arrayBuffer(), {
+const { doc: imported, settings: s, messages, images } = await importDocx(await file.arrayBuffer(), {
   mammothLib: mammoth,
-  fromHTML,
+  fromHTML: (html) => fromHTML(html, { registry }), // a registry with pageBreak
 });
+editor.setDoc(imported);
+for (const { blockId, dataUrl } of images) editor.attachUpload(blockId, dataUrlToFile(dataUrl)!);
 ```
 
-`exportDocx` returns a Blob by default (`output: "buffer"` for Node) and a `lossy` list of blocks that were degraded. Pass `resolveImage` to embed a header logo, since the module does no network. `importDocx` goes through mammoth's HTML output and `fromHTML`, which needs a DOM or a parser bound into it.
+`exportDocx` returns a Blob by default (`output: "buffer"` for Node) and a `lossy` list of blocks that were degraded. Pass `resolveImage` to embed a header logo, since the module does no network. `importDocx` goes through mammoth's HTML output and `fromHTML`, which needs a DOM or a parser bound into it. Page breaks come back as `pageBreak` blocks when the registry you parse with includes `pageBreak`. Embedded pictures arrive as data URLs, which the document never stores, so each one is returned in `images` with its empty image block: hand the bytes to the editor with `editor.attachUpload` and they preview at once and upload through your `onUpload`.
 
 ## Limits
 

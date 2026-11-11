@@ -1,4 +1,4 @@
-import { comparePreOrder, contentLength, isText, nextBlockInPreOrder, sliceContent } from "@jul-editor/core";
+import { orderPoints, contentLength, isText, nextBlockInPreOrder, sliceContent } from "@jul-editor/core";
 import type { Editor as CoreEditor, Json } from "@jul-editor/core";
 
 // Editor commands the DOCX toolbar needs on top of core's toggleMark/setBlockType: set a mark with a
@@ -11,7 +11,7 @@ export function selectedBlockIds(editor: CoreEditor): string[] {
   const sel = state.selection;
   if (!sel || sel.type !== "text") return [];
   const store = state.store;
-  const [start, end] = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId) <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   const ids = [start.blockId];
   let cur: string | null = start.blockId;
   while (cur !== end.blockId) {
@@ -27,7 +27,7 @@ function selectedRuns(editor: CoreEditor): { blockId: string; from: number; to: 
   const state = editor.getState();
   const sel = state.selection;
   if (!sel || sel.type !== "text") return [];
-  const [start, end] = comparePreOrder(state.store, sel.anchor.blockId, sel.focus.blockId) <= 0 ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(state.store, sel.anchor, sel.focus);
   return selectedBlockIds(editor).map((blockId) => {
     const len = contentLength(state.store.records.get(blockId)?.content ?? []);
     return { blockId, from: blockId === start.blockId ? start.offset : 0, to: blockId === end.blockId ? end.offset : len };

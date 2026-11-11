@@ -1,6 +1,6 @@
 import type { Doc } from "@jul-editor/core";
 import { ArrowRight, Code2, Copy, Eye } from "lucide-react";
-import { useEffect, useState, type ComponentType, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { ShowcaseEditor } from "./showcase/showcase-editor.js";
 import { CustomThemeControls, DEFAULT_CUSTOM_CONFIG, SAMPLE_IDS, customThemeExtra, customThemeFontImport, customThemeTokens, fontsHref, type CustomThemeConfig } from "./showcase/custom-theme.js";
 import { AgentEditor } from "./showcase/agent-editor.js";
@@ -63,7 +63,7 @@ type EditorCase = {
   name: string;
   concept: [string, string];
   description: [string, string];
-  Component: ComponentType<{ locale: "en" | "ko" }>;
+  Component: ComponentType<{ locale: "en" | "ko"; drafts?: Partial<Record<"en" | "ko", Doc>>; onDraftChange?: (locale: "en" | "ko", doc: Doc) => void; onImportDraft?: (locale: "en" | "ko", doc: Doc, expected: Doc | undefined) => boolean; pendingFiles?: Partial<Record<"en" | "ko", Map<string, File>>> }>;
   source: string;
   css: string;
 };
@@ -174,12 +174,21 @@ function reactFor(theme: Theme, sampleId: string) {
 export default function Showcase() {
   const { locale, t } = useSiteSettings();
   const [selected, setSelected] = useState("custom");
+  const docxPendingFiles = useRef<Partial<Record<"en" | "ko", Map<string, File>>>>({});
   const [customConfig, setCustomConfig] = useState<CustomThemeConfig>(DEFAULT_CUSTOM_CONFIG);
   // One document per sample id and locale, so edits survive switching presets, samples, and cases.
   const [docs, setDocs] = useState<Record<string, Doc>>(() => Object.fromEntries(["shadcn", ...SAMPLE_IDS].flatMap((id) => [
     [`en:${id}`, sampleDoc(id, "en")], [`ko:${id}`, sampleDoc(id, "ko")],
   ])));
   const [panel, setPanel] = useState<string>("preview");
+  // The editor cases unmount when another card is picked; their documents live here so edits survive.
+  const [caseDrafts, setCaseDrafts] = useState<Record<string, Partial<Record<"en" | "ko", Doc>>>>({});
+  const caseDraftsRef = useRef(caseDrafts);
+  function saveCaseDraft(id: string, lang: "en" | "ko", doc: Doc) {
+    const next = { ...caseDraftsRef.current, [id]: { ...caseDraftsRef.current[id], [lang]: doc } };
+    caseDraftsRef.current = next;
+    setCaseDrafts(next);
+  }
   const [copied, setCopied] = useState("");
   const customTheme = { ...themes[themes.length - 1]!, tokens: customThemeTokens(customConfig), extra: customThemeExtra(customConfig) };
   const activeCase = editorCases.find((item) => item.id === selected);
@@ -219,7 +228,11 @@ export default function Showcase() {
     {activeCase ? <section className="showcase-active wrap" aria-label={t(`${activeCase.name} live editor`, `${activeCase.name} 실제 에디터`)} data-theme={activeCase.id} data-mode="case">
       <div className="showcase-active-heading"><div><span className="showcase-concept">{activeCase.concept[locale === "ko" ? 1 : 0]}</span><h2>{activeCase.name}</h2><p>{activeCase.description[locale === "ko" ? 1 : 0]}</p></div></div>
       <div className="showcase-switches" role="group" aria-label={t(`${activeCase.name} view`, `${activeCase.name} 보기`)}><button type="button" aria-pressed={panel === "preview"} onClick={() => setPanel("preview")}><Eye size={14} /> {t("Preview", "미리보기")}</button><button type="button" aria-pressed={panel !== "preview"} onClick={() => setPanel("react")}><Code2 size={14} /> {t("Code", "코드")}</button></div>
-      {panel === "preview" ? <activeCase.Component locale={locale} /> : <div className="showcase-code-pane"><div className="showcase-code-tabs" role="group" aria-label={t(`${activeCase.name} code`, `${activeCase.name} 코드`)}><button type="button" aria-pressed={panel === "react"} onClick={() => setPanel("react")}>React</button><button type="button" onClick={() => setPanel("css")} aria-pressed={panel === "css"}>CSS</button>{caseFiles(activeCase.id).map((file) => <button type="button" key={file.name} onClick={() => setPanel(`file:${file.name}`)} aria-pressed={panel === `file:${file.name}`}>{file.name}</button>)}</div><Code key={`${activeCase.id}-${panel}`} title={panel === "css" || panel.endsWith(".css") ? "css" : "tsx"} locale={locale}>{panel === "css" ? activeCase.css : panel.startsWith("file:") ? caseFiles(activeCase.id).find((file) => `file:${file.name}` === panel)?.source ?? "" : activeCase.source}</Code></div>}
+      {panel === "preview" ? <activeCase.Component locale={locale} pendingFiles={activeCase.id === "docx" ? docxPendingFiles.current : undefined} drafts={caseDrafts[activeCase.id]} onDraftChange={(lang, doc) => saveCaseDraft(activeCase.id, lang, doc)} onImportDraft={(lang, doc, expected) => {
+        if (caseDraftsRef.current[activeCase.id]?.[lang] !== expected) return false;
+        saveCaseDraft(activeCase.id, lang, doc);
+        return true;
+      }} /> : <div className="showcase-code-pane"><div className="showcase-code-tabs" role="group" aria-label={t(`${activeCase.name} code`, `${activeCase.name} 코드`)}><button type="button" aria-pressed={panel === "react"} onClick={() => setPanel("react")}>React</button><button type="button" onClick={() => setPanel("css")} aria-pressed={panel === "css"}>CSS</button>{caseFiles(activeCase.id).map((file) => <button type="button" key={file.name} onClick={() => setPanel(`file:${file.name}`)} aria-pressed={panel === `file:${file.name}`}>{file.name}</button>)}</div><Code key={`${activeCase.id}-${panel}`} title={panel === "css" || panel.endsWith(".css") ? "css" : "tsx"} locale={locale}>{panel === "css" ? activeCase.css : panel.startsWith("file:") ? caseFiles(activeCase.id).find((file) => `file:${file.name}` === panel)?.source ?? "" : activeCase.source}</Code></div>}
     </section> : <section className="showcase-active wrap" aria-label={t(`${theme.name} live editor`, `${theme.name} 실제 에디터`)} data-theme={theme.id} data-mode={theme.mode}>
       <div className="showcase-active-heading"><div><span className="showcase-concept">{locale === "ko" ? koCopy[theme.id]!.concept : theme.concept}</span><h2>{theme.name}</h2><p>{locale === "ko" ? koCopy[theme.id]!.description : theme.description}</p></div><a href="/docs/core/styling-i18n-performance">{t("Styling guide", "스타일 설정") } <ArrowRight size={15} /></a></div>
       <div className="showcase-switches" role="group" aria-label={t(`${theme.name} view`, `${theme.name} 보기`)}><button type="button" aria-pressed={panel === "preview"} onClick={() => setPanel("preview")}><Eye size={14} /> {t("Preview", "미리보기")}</button><button type="button" aria-pressed={panel !== "preview"} onClick={() => setPanel("react")}><Code2 size={14} /> {t("Code", "코드")}</button><span>{modeLabel}</span></div>

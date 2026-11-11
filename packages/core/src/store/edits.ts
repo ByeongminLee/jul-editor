@@ -11,7 +11,7 @@ import type { Block, Inline, Json, Mark, MentionInline } from "../model/types.js
 import {
   ancestorChain,
   canAdmit,
-  comparePreOrder,
+  orderPoints,
   containerInfo,
   contentLength,
   nearestIsolatingAncestor,
@@ -83,22 +83,10 @@ function emitDeleteToEnd(store: Store, id: string, path: string[], offset: numbe
 // through the same grid a merged cell's covered positions are marked with
 // (cellsSelectionIds/the table keymap), or it clears the wrong neighbor.
 function buildCellsClearOps(store: Store, registry: Registry, selection: Extract<Selection, { type: "cells" }>): Op[] {
-  const grid = tableGrid(store, registry, selection.tableId);
-  const minR = Math.min(selection.anchor[0], selection.focus[0]);
-  const maxR = Math.max(selection.anchor[0], selection.focus[0]);
-  const minC = Math.min(selection.anchor[1], selection.focus[1]);
-  const maxC = Math.max(selection.anchor[1], selection.focus[1]);
-  const seen = new Set<string>();
   const ops: Op[] = [];
-  for (let r = minR; r <= maxR && r < grid.length; r++) {
-    const row = grid[r] ?? [];
-    for (let c = minC; c <= maxC && c < row.length; c++) {
-      const g = row[c];
-      if (!g || seen.has(g.cellId)) continue;
-      seen.add(g.cellId);
-      const cell = store.records.get(g.cellId);
-      if (cell && (cell.content ?? []).length > 0) ops.push(replaceContentOp(cell.id, 0, contentLength(cell.content), []));
-    }
+  for (const id of cellSelectionIds(store, registry, selection)) {
+    const cell = store.records.get(id);
+    if (cell && (cell.content ?? []).length > 0) ops.push(replaceContentOp(cell.id, 0, contentLength(cell.content), []));
   }
   return ops;
 }
@@ -113,8 +101,7 @@ export function buildDeleteRangeOps(store: Store, selection: Selection, registry
   if (selection.type === "block") return selection.ids.map(removeBlockOp);
   if (selection.type === "cells") return buildCellsClearOps(store, registry, selection);
 
-  const order = comparePreOrder(store, selection.anchor.blockId, selection.focus.blockId);
-  const [start, end] = order <= 0 ? [selection.anchor, selection.focus] : [selection.focus, selection.anchor];
+  const [start, end] = orderPoints(store, selection.anchor, selection.focus);
 
   if (start.blockId === end.blockId) {
     const from = Math.min(start.offset, end.offset);
@@ -206,24 +193,41 @@ export function buildDeleteRangeOps(store: Store, selection: Selection, registry
 
 // ---- splitBlock -------------------------
 
+/** Props the freshly created half of a split starts with: the source
+ * block's own props minus per-item STATE that must never be duplicated onto
+ * a new item -- a checked to-do splits into a checked one and a fresh,
+ * UNchecked one (Notion/Docs/GitHub task lists alike). */
+function splitProps(props: Block["props"]): Block["props"] {
+  if (!props || !("checked" in props)) return props;
+  const { checked: _checked, ...rest } = props;
+  return rest;
+}
+
 /** offset 0: inserts a new empty block BEFORE, original keeps its id and
  * children. Otherwise: front keeps the original id, back gets a new id and
- * takes the original's children. */
-export function buildSplitBlockOps(store: Store, point: Point): Op[] {
+ * takes the original's children. The new block never inherits per-item
+ * state (`checked`, see splitProps). `opts.type` gives the BACK block (the
+ * one created after the caret, offset > 0 only) a different type with
+ * default props -- e.g. Enter at the end of a heading starts a paragraph. */
+export function buildSplitBlockOps(store: Store, point: Point, opts: { type?: string } = {}): Op[] {
   const rec = store.records.get(point.blockId);
   if (!rec) return [];
   const { parentId, index } = siblingsOf(store, point.blockId);
 
   if (point.offset === 0) {
-    const newBlock: Block = { id: newId(), type: rec.type, props: rec.props, content: [] };
+    const newBlock: Block = { id: newId(), type: rec.type, props: splitProps(rec.props), content: [] };
     return [{ type: "insertBlock", parentId, index, block: newBlock }];
   }
 
   const len = contentLength(rec.content);
   const backId = newId();
-  const ops: Op[] = [{ type: "insertBlock", parentId, index: index + 1, block: { id: backId, type: rec.type, props: rec.props, content: [] } }];
+  const backType = opts.type ?? rec.type;
+  const backProps = backType === rec.type ? splitProps(rec.props) : {};
+  const ops: Op[] = [{ type: "insertBlock", parentId, index: index + 1, block: { id: backId, type: backType, props: backProps, content: [] } }];
   let i = 0;
-  for (const childId of rec.childIds) ops.push(moveBlockOp(childId, backId, i++));
+  if (rec.type !== "toggle" || rec.props.open === true) {
+    for (const childId of rec.childIds) ops.push(moveBlockOp(childId, backId, i++));
+  }
   if (point.offset < len) ops.push(replaceContentOp(backId, 0, 0, sliceContent(rec.content ?? [], point.offset, len)));
   ops.push(replaceContentOp(point.blockId, point.offset, len, []));
   return ops;
@@ -313,33 +317,74 @@ export function buildOutdentOps(store: Store, id: string, registry: Registry): O
   const idSpec = registry.blocks.get(rec.type);
   let childIdx = rec.childIds.length;
   let sibIdx = parentIndex + 2; // right after id's own new position
+  let promote = false;
   for (const sibId of siblings.slice(index + 1)) {
     const sibType = store.records.get(sibId)?.type ?? "";
-    if (canAdmit(registry, sibType, rec.type, idSpec?.children ?? "none")) ops.push(moveBlockOp(sibId, id, childIdx++));
-    else ops.push(moveBlockOp(sibId, grandParentId, sibIdx++));
+    if (!promote && canAdmit(registry, sibType, rec.type, idSpec?.children ?? "none")) ops.push(moveBlockOp(sibId, id, childIdx++));
+    else {
+      promote = true;
+      if (!canAdmit(registry, sibType, container.type, container.children)) return [];
+      ops.push(moveBlockOp(sibId, grandParentId, sibIdx++));
+    }
   }
   return ops;
 }
 
 // ---- toggleMark --------------------------------------------------------------
 
-export function buildToggleMarkOps(store: Store, selection: Selection, markType: string, attrs: Record<string, Json> | undefined): Op[] {
-  if (selection.type !== "text") return [];
-  const order = comparePreOrder(store, selection.anchor.blockId, selection.focus.blockId);
-  const [start, end] = order <= 0 ? [selection.anchor, selection.focus] : [selection.focus, selection.anchor];
-
-  const blockIds: string[] = [start.blockId];
-  let cur: string | null = start.blockId;
-  while (cur !== end.blockId) {
-    cur = nextBlockInPreOrder(store, cur);
-    if (cur === null) break;
-    blockIds.push(cur);
+/** The cell ids a `cells` selection rectangle covers (each merged cell once), in grid order. */
+export function cellSelectionIds(store: Store, registry: Registry, selection: Extract<Selection, { type: "cells" }>): string[] {
+  const grid = tableGrid(store, registry, selection.tableId);
+  const minR = Math.min(selection.anchor[0], selection.focus[0]);
+  const maxR = Math.max(selection.anchor[0], selection.focus[0]);
+  const minC = Math.min(selection.anchor[1], selection.focus[1]);
+  const maxC = Math.max(selection.anchor[1], selection.focus[1]);
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (let r = minR; r <= maxR && r < grid.length; r++) {
+    const row = grid[r] ?? [];
+    for (let c = minC; c <= maxC && c < row.length; c++) {
+      const g = row[c];
+      if (!g || seen.has(g.cellId)) continue;
+      seen.add(g.cellId);
+      ids.push(g.cellId);
+    }
   }
+  return ids;
+}
 
-  const ranges = blockIds.map((blockId) => {
-    const len = contentLength(store.records.get(blockId)?.content);
-    return { blockId, from: blockId === start.blockId ? start.offset : 0, to: blockId === end.blockId ? end.offset : len };
+/** The per-block content ranges a selection formats: a text range block by block, or every selected
+ * cell's whole content for a `cells` rectangle. With a registry, blocks whose content is not rich
+ * inline text (a codeBlock's `content: "code"`) are left out: they hold no marks. */
+export function markRanges(store: Store, selection: Selection, registry?: Registry): { blockId: string; from: number; to: number }[] {
+  let ranges: { blockId: string; from: number; to: number }[];
+  if (selection.type === "cells") {
+    if (!registry) return [];
+    ranges = cellSelectionIds(store, registry, selection).map((blockId) => ({ blockId, from: 0, to: contentLength(store.records.get(blockId)?.content) }));
+  } else if (selection.type === "text") {
+    const [start, end] = orderPoints(store, selection.anchor, selection.focus);
+    const blockIds: string[] = [start.blockId];
+    let cur: string | null = start.blockId;
+    while (cur !== end.blockId) {
+      cur = nextBlockInPreOrder(store, cur);
+      if (cur === null) break;
+      blockIds.push(cur);
+    }
+    ranges = blockIds.map((blockId) => {
+      const len = contentLength(store.records.get(blockId)?.content);
+      return { blockId, from: blockId === start.blockId ? start.offset : 0, to: blockId === end.blockId ? end.offset : len };
+    });
+  } else return [];
+  if (!registry) return ranges;
+  return ranges.filter(({ blockId }) => {
+    const type = store.records.get(blockId)?.type;
+    return type !== undefined && registry.blocks.get(type)?.content === "inline";
   });
+}
+
+export function buildToggleMarkOps(store: Store, selection: Selection, markType: string, attrs: Record<string, Json> | undefined, registry?: Registry): Op[] {
+  const ranges = markRanges(store, selection, registry);
+  if (ranges.length === 0) return [];
 
   const isMarked = (inl: Inline): boolean => isText(inl) && (inl.marks ?? []).some((m) => m.type === markType);
   const allMarked = ranges.every(({ blockId, from, to }) => {
@@ -365,6 +410,21 @@ export function buildToggleMarkOps(store: Store, selection: Selection, markType:
 }
 
 // ---- setBlockType -------------------------------------------------------------
+
+/** The blocks of `ids` a block-type change applies to: text blocks only (retyping a void would drop
+ * its data), minus anything hidden inside a closed toggle. */
+export function blockTypeTargets(store: Store, registry: Registry, ids: string[]): string[] {
+  return ids.filter((id) => {
+    const rec = store.records.get(id);
+    const content = rec && registry.blocks.get(rec.type)?.content;
+    if (!rec || (content !== "inline" && content !== "code")) return false;
+    for (let parent = rec.parentId; parent; parent = store.records.get(parent)?.parentId ?? null) {
+      const ancestor = store.records.get(parent);
+      if (ancestor?.type === "toggle" && ancestor.props.open !== true) return false;
+    }
+    return true;
+  });
+}
 
 export function buildSetBlockTypeOps(ids: string[], blockType: string, props?: Record<string, Json>): Op[] {
   return ids.map((id) => ({ type: "setType", id, blockType, props }));
@@ -465,7 +525,7 @@ export function buildInsertFragmentOps(store: Store, registry: Registry, point: 
       if (point.offset < len) ops.push(replaceContentOp(point.blockId, point.offset, len, []));
       ops.push({ type: "insertBlock", parentId, index: index + 1, block: only });
       const backId = newId();
-      ops.push({ type: "insertBlock", parentId, index: index + 2, block: { id: backId, type: rec.type, props: rec.props, content: [] } });
+      ops.push({ type: "insertBlock", parentId, index: index + 2, block: { id: backId, type: rec.type, props: splitProps(rec.props), content: [] } });
       if (originalTailContent.length > 0) ops.push(replaceContentOp(backId, 0, 0, originalTailContent));
       let i = 0;
       for (const childId of originalChildIds) ops.push({ type: "moveBlock", id: childId, newParentId: backId, index: i++ });

@@ -134,12 +134,29 @@ test("drag handle: dragging a paragraph above an earlier one reorders the model,
   expect(ids.indexOf(gamma)).toBeLessThan(ids.indexOf(alpha));
   expect(ids.indexOf(alpha)).toBeLessThan(ids.indexOf(beta));
 
-  // Undo (Cmd/Ctrl+Z) is handled by core's own beforeinput listener on the
-  // CONTENTEDITABLE root -- the drag handle is a plain (non-editable) button
-  // that just had focus, so refocus the root first, same as a real user
-  // clicking back into the document before undoing.
-  await blockLocator(page, gamma).click();
+  // The drop hands focus back to the editor root, so Cmd/Ctrl+Z right after
+  // the drag (no click back into the document first) undoes the move.
+  await expect(page.locator("[data-jul-editor-root]")).toBeFocused();
   await page.keyboard.press("ControlOrMeta+z");
+  expect((await getDoc(page)).blocks.map((b) => b.id)).toEqual(before);
+});
+
+test("drag handle: Escape with the button still held cancels a pointer drag", async ({ page }) => {
+  const { alpha, gamma } = await setupThreeParagraphs(page);
+  const before = (await getDoc(page)).blocks.map((b) => b.id);
+
+  await hoverBlock(page, gamma);
+  const handleBox = (await page.getByTestId("drag-handle").boundingBox())!;
+  const hx = handleBox.x + handleBox.width / 2;
+  const hy = handleBox.y + handleBox.height / 2;
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  const targetBox = (await blockLocator(page, alpha).boundingBox())!;
+  await page.mouse.move(targetBox.x + 5, targetBox.y + targetBox.height * 0.1, { steps: 15 });
+  await page.waitForTimeout(30);
+  await page.keyboard.press("Escape");
+  await page.mouse.move(targetBox.x + 5, targetBox.y + targetBox.height * 0.1 + 2, { steps: 2 });
+  await page.mouse.up();
   expect((await getDoc(page)).blocks.map((b) => b.id)).toEqual(before);
 });
 

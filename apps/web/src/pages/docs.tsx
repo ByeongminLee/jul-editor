@@ -2,8 +2,9 @@ import { Copy, Check, ArrowRight } from "lucide-react";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSiteSettings } from "../app/site-settings.js";
 import { groups, pages, resolveDocsPath, type DocPage, type Locale } from "../docs/nav.js";
-import { mdxComponents } from "../docs/mdx-components.js";
+import { DemoSlotsProvider, mdxComponents } from "../docs/mdx-components.js";
 import { lazyMdx, prefetchMdx, resolveMdx, type MdxSources } from "../docs/localized-mdx.js";
+import { NotFound } from "../components/not-found.js";
 import { withBase } from "../lib/base.js";
 import "../styles/docs-live.css";
 import "../styles/docs.css";
@@ -23,11 +24,11 @@ function ReadySignal({ onReady }: { onReady: (ready: boolean) => void }) {
   return null;
 }
 
-function DocsNav({ current, locale, mobile = false }: { current: DocPage; locale: Locale; mobile?: boolean }) {
+function DocsNav({ current, locale, mobile = false }: { current?: DocPage; locale: Locale; mobile?: boolean }) {
   return <nav className="mdx-doc-nav" aria-label={mobile ? locale === "ko" ? "모바일 개발 문서" : "Mobile documentation" : locale === "ko" ? "개발 문서" : "Documentation"}>
     {groups.map((group) => <div className="mdx-doc-group" key={group.en}>
       <div className="mdx-doc-group-label">{group[locale]}</div>
-      {group.pages.map((page) => <a key={page.path} href={page.path} onPointerEnter={() => prefetchDoc(page.path, locale)} onFocus={() => prefetchDoc(page.path, locale)} aria-current={page.path === current.path ? "page" : undefined}>{page[locale]}</a>)}
+      {group.pages.map((page) => <a key={page.path} href={page.path} onPointerEnter={() => prefetchDoc(page.path, locale)} onFocus={() => prefetchDoc(page.path, locale)} onClick={(event) => { if (mobile) event.currentTarget.closest("details")?.removeAttribute("open"); }} aria-current={page.path === current?.path ? "page" : undefined}>{page[locale]}</a>)}
     </div>)}
   </nav>;
 }
@@ -51,9 +52,35 @@ function copyableMarkdown(article: HTMLElement): string {
     }).filter(Boolean).join("\n\n");
 }
 
-export default function Docs({ path }: { path: string }) {
+function DocsSidebar({ current, locale }: { current?: DocPage; locale: Locale }) {
+  const { t } = useSiteSettings();
+  return <aside className="mdx-doc-sidebar">
+    <div className="mdx-doc-sidebar-head"><span className="mdx-doc-mark">{`{ }`}</span><span>{t("Developer docs", "개발 문서")}</span></div>
+    <DocsNav current={current} locale={locale} />
+    <a className="mdx-doc-playground" href="/playground">{t("Open the playground", "플레이그라운드 열기")} <ArrowRight size={14} /></a>
+  </aside>;
+}
+
+function DocsNotFound() {
   const { locale, t } = useSiteSettings();
+  useEffect(() => { document.title = t("Guide not found | JulEditor", "문서를 찾을 수 없음 | JulEditor"); }, [locale]);
+  return <main className="interior-page docs-page mdx-docs">
+    <div className="mdx-doc-mobile-nav wrap"><details><summary>{t("Browse documentation", "문서 목차 열기")}</summary><DocsNav locale={locale} mobile /></details></div>
+    <div className="mdx-doc-layout wrap">
+      <DocsSidebar locale={locale} />
+      <div className="mdx-doc-main"><NotFound docs /></div>
+    </div>
+  </main>;
+}
+
+/** `path` is the router path; `onRedirect` tells the router when `/docs` or an old `/docs#hash` link is rewritten to its page URL. */
+export default function Docs({ path, onRedirect }: { path: string; onRedirect?: (path: string) => void }) {
   const page = resolveDocsPath(path, window.location.hash);
+  return page ? <DocsArticle page={page} onRedirect={onRedirect} /> : <DocsNotFound />;
+}
+
+function DocsArticle({ page, onRedirect }: { page: DocPage; onRedirect?: (path: string) => void }) {
+  const { locale, t } = useSiteSettings();
   const index = pages.findIndex((item) => item.path === page.path);
   const previous = pages[index - 1];
   const next = pages[index + 1];
@@ -68,9 +95,12 @@ export default function Docs({ path }: { path: string }) {
   useEffect(() => { prefetchDoc(page.path, otherLocale); }, [page.path, otherLocale]);
 
   useEffect(() => {
-    if (window.location.pathname !== withBase(page.path)) window.history.replaceState(null, "", withBase(page.path));
+    if (window.location.pathname !== withBase(page.path)) {
+      window.history.replaceState(window.history.state, "", withBase(page.path));
+      onRedirect?.(page.path);
+    }
     document.title = `${headingTitle} | JulEditor`;
-  }, [page.path, headingTitle]);
+  }, [page.path, headingTitle, onRedirect]);
 
   async function copyPage() {
     const article = document.querySelector<HTMLElement>(".mdx-doc-article");
@@ -85,11 +115,7 @@ export default function Docs({ path }: { path: string }) {
   return <main className="interior-page docs-page mdx-docs">
     <div className="mdx-doc-mobile-nav wrap"><details><summary>{t("Browse documentation", "문서 목차 열기")}</summary><DocsNav current={page} locale={locale} mobile /></details></div>
     <div className="mdx-doc-layout wrap">
-      <aside className="mdx-doc-sidebar">
-        <div className="mdx-doc-sidebar-head"><span className="mdx-doc-mark">{`{ }`}</span><span>{t("Developer docs", "개발 문서")}</span></div>
-        <DocsNav current={page} locale={locale} />
-        <a className="mdx-doc-playground" href="/playground">{t("Open the playground", "플레이그라운드 열기")} <ArrowRight size={14} /></a>
-      </aside>
+      <DocsSidebar current={page} locale={locale} />
       <div className="mdx-doc-main">
         <div className="mdx-doc-breadcrumb"><span>{t("Docs", "문서")}</span><span aria-hidden="true">/</span><span>{groups.find((group) => group.pages.includes(page))?.[locale]}</span></div>
         <article id={page.id} className="mdx-doc-article">
@@ -97,7 +123,7 @@ export default function Docs({ path }: { path: string }) {
             <div><span className="mdx-doc-eyebrow">JulEditor / {page.path.slice("/docs/".length)}</span><h1>{headingTitle}</h1></div>
             <button className="docs-copy-page" type="button" onClick={copyPage} disabled={!contentReady}>{copyState === "done" ? <Check size={15} /> : <Copy size={15} />}{copyState === "done" ? t("Copied", "복사됨") : copyState === "error" ? t("Copy failed. Try again", "복사 실패. 다시 시도하세요") : t("Copy page", "페이지 내용 복사")}</button>
           </header>
-          <div className="mdx-doc-content"><Suspense fallback={<div className="page-loading" role="status">{t("Opening the guide…", "문서를 여는 중…")}</div>}><Content components={mdxComponents} /><ReadySignal onReady={() => setReadyPath(modulePath)} /></Suspense></div>
+          <div className="mdx-doc-content"><DemoSlotsProvider key={page.path}><Suspense fallback={<div className="page-loading" role="status">{t("Opening the guide…", "문서를 여는 중…")}</div>}><Content components={mdxComponents} /><ReadySignal onReady={() => setReadyPath(modulePath)} /></Suspense></DemoSlotsProvider></div>
         </article>
         <nav className="mdx-doc-pager" aria-label={t("Adjacent pages", "앞뒤 문서")}>
           {previous ? <a href={previous.path}><small>{t("Previous", "이전")}</small><span>← {previous[locale]}</span></a> : <span />}

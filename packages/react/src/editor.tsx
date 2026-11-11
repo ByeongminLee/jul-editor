@@ -231,9 +231,10 @@ export function Editor(props: EditorProps): ReactNode {
 
 export interface EditorContentProps {
   className?: string;
+  "aria-label"?: string;
 }
 
-export function EditorContent({ className }: EditorContentProps): ReactNode {
+export function EditorContent({ className, "aria-label": ariaLabel }: EditorContentProps): ReactNode {
   const ctx = useEditorContext("Editor.Content");
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<CoreEditor | null>(null);
@@ -285,6 +286,9 @@ export function EditorContent({ className }: EditorContentProps): ReactNode {
     // and never reach onChange (a caret move must not re-render a
     // controlled parent).
     let lastStore = editor.getState().store;
+    // Pending stored marks (Bold at a collapsed caret) change without a
+    // commit; re-run the hook selectors so the toolbar shows them pressed.
+    const offMarks = editor.on("marks", () => ctx.store.notify());
     const off = editor.on("change", (state) => {
       ctx.store.setState(state);
       if (state.store === lastStore) return;
@@ -308,6 +312,7 @@ export function EditorContent({ className }: EditorContentProps): ReactNode {
 
     return () => {
       off();
+      offMarks();
       for (const unusePlugin of unuse) unusePlugin();
       editor.destroy();
       ctx.store.detach();
@@ -350,7 +355,7 @@ export function EditorContent({ className }: EditorContentProps): ReactNode {
   });
 
   return (
-    <div className={className} ref={containerRef}>
+    <div className={className} aria-label={ariaLabel} ref={containerRef}>
       <VoidPortals />
     </div>
   );

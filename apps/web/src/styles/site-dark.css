@@ -318,7 +318,7 @@ html[data-theme="light"] ::highlight(jul-editor-number), html[data-theme="light"
 html[data-theme="light"] ::highlight(jul-editor-title), html[data-theme="light"] ::highlight(jul-editor-function) { color: #176b91; }
 html[data-theme="light"] ::highlight(jul-editor-type), html[data-theme="light"] ::highlight(jul-editor-built_in) { color: #8d6417; }
 
-.editor-content [data-jul-editor-image] { max-width: 100%; width: fit-content; margin: 18px auto; text-align: center; }
+.editor-content [data-jul-editor-image] { position: relative; max-width: 100%; width: fit-content; margin: 18px auto; text-align: center; }
 .editor-content [data-jul-editor-image][data-align="left"] { margin-left: 0; }
 .editor-content [data-jul-editor-image][data-align="right"] { margin-right: 0; }
 .editor-content [data-jul-editor-image] img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
@@ -328,7 +328,9 @@ html[data-theme="light"] ::highlight(jul-editor-type), html[data-theme="light"] 
 .editor-content [data-jul-editor-image] [data-jul-editor-align-group] { display: flex; justify-content: center; gap: 5px; margin-top: 7px; }
 .editor-content [data-jul-editor-image] [data-jul-editor-align-option] { min-width: 22px; min-height: 22px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--text); cursor: pointer; }
 .editor-content [data-jul-editor-image] [data-jul-editor-align-option]::before { content: attr(data-jul-editor-align-option); font-size: 9px; }
-.editor-content [data-jul-editor-image] [data-jul-editor-resize-handle] { display: none; }
+.editor-content [data-jul-editor-image] [data-jul-editor-resize-handle] { position: absolute; top: 32%; width: 10px; height: 36%; border: 0; border-radius: 5px; background: var(--blue); cursor: ew-resize; }
+.editor-content [data-jul-editor-image] [data-jul-editor-resize-handle="left"] { left: -5px; }
+.editor-content [data-jul-editor-image] [data-jul-editor-resize-handle="right"] { right: -5px; }
 
 @media (max-width: 900px) {
   .site-nav { gap: 15px; }

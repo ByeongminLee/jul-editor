@@ -66,8 +66,11 @@ describe("readDOMSelection with a void block neighbour", () => {
 
   it("drives the editor selection when the DOM selection changes (what BubbleMenu listens to)", async () => {
     const { wrapper, text, editor } = mount();
+    // a triple click (detail 3): its range ending on the void's wrapper never selects the void itself
+    text("p").parentElement!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, detail: 3 }));
     select(text("p"), 0, wrapper("v"), 0);
     document.dispatchEvent(new Event("selectionchange"));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     const sel = editor.getState().selection;
     expect(sel?.type).toBe("text");
     if (sel?.type === "text") expect(sel.anchor.offset === sel.focus.offset && sel.anchor.blockId === sel.focus.blockId).toBe(false);

@@ -1,5 +1,5 @@
 // Files and object URLs are editor-lifetime state, never document data.
-import { sanitizeUrl } from "../model/url.js";
+import { sanitizeImageSource, sanitizeUrl } from "../model/url.js";
 export type UploadState = { status: "queued" | "uploading" } | { status: "error"; message?: string };
 export type UploadResult = { src: string; assetId?: string };
 export type UploadContext = { blockId: string; kind: "image" | "file" };
@@ -24,6 +24,11 @@ export function createUploadRegistry(): UploadRegistry {
   const listeners = new Set<(blockId: string) => void>();
   function notify(id: string) { for (const listener of listeners) listener(id); }
   function keep(id: string, file: File) {
+    if (files.has(id) && files.get(id) !== file) {
+      const preview = previews.get(id);
+      if (preview) URL.revokeObjectURL(preview);
+      previews.delete(id);
+    }
     files.set(id, file);
     if (!previews.has(id) && file.type.startsWith("image/") && typeof URL.createObjectURL === "function") {
       try { previews.set(id, URL.createObjectURL(file)); } catch { /* Preview is optional in non-browser hosts. */ }
@@ -46,13 +51,13 @@ export function createUploadRegistry(): UploadRegistry {
   };
 }
 
-export async function performUpload(registry: UploadRegistry, blockId: string, file: File, onUpload: UploadFn, applyResult: (result: UploadResult) => void): Promise<boolean> {
+export async function performUpload(registry: UploadRegistry, blockId: string, file: File, onUpload: UploadFn, applyResult: (result: UploadResult) => void, kind: UploadContext["kind"] = file.type.startsWith("image/") ? "image" : "file"): Promise<boolean> {
   registry.start(blockId, file);
   try {
-    const result = await onUpload(file, { blockId, kind: file.type.startsWith("image/") ? "image" : "file" });
+    const result = await onUpload(file, { blockId, kind });
     if (registry.getFile(blockId) !== file) return false;
-    const src = sanitizeUrl(result.src, "image");
-    if (!src) throw new Error("Upload must return a permanent HTTP(S) or relative URL.");
+    const src = kind === "image" ? sanitizeImageSource(result.src) : sanitizeUrl(result.src, "image");
+    if (!src) throw new Error("Upload must return a safe image source or permanent URL.");
     applyResult({...result, src});
     registry.succeed(blockId);
     return true;

@@ -142,6 +142,12 @@ function ContentNode({ node, ctx }: { node: InlineDiffBlock; ctx: Ctx }): ReactN
   return <>{rendered}</>;
 }
 
+/** Heading level (a default prop the stored doc may omit) so hosts can size headings like the editor does. */
+function levelOf(block: Block, registry: Registry): number | undefined {
+  const level = block.props.level ?? (registry.blocks.get(block.type)?.props as Record<string, unknown> | undefined)?.level;
+  return typeof level === "number" ? level : undefined;
+}
+
 function BlockNode({ node, ctx }: { node: InlineDiffBlock; ctx: Ctx }): ReactNode {
   const coverDecision = node.coverId && ctx.decisions ? getDecision(ctx.decisions, node.coverId) : undefined;
   // Resolved insert (rejected) / delete (accepted): the block is gone from the final document.
@@ -163,6 +169,7 @@ function BlockNode({ node, ctx }: { node: InlineDiffBlock; ctx: Ctx }): ReactNod
       data-jul-editor-diff-block
       data-diff={shownStatus}
       data-type={node.block.type}
+      data-jul-editor-level={levelOf(node.block, ctx.registry)}
       data-id={node.id}
       data-diff-from={node.from ? JSON.stringify(node.from) : undefined}
       data-change-id={node.changeIds[0]}

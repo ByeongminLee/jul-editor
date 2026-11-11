@@ -20,7 +20,7 @@ import {
   buildToggleMarkOps,
 } from "./edits.js";
 import { applyOp } from "./ops.js";
-import { ancestorChain, canAdmit, comparePreOrder, containerInfo, siblingsOf } from "./store.js";
+import { ancestorChain, canAdmit, containerInfo, orderPoints, siblingsOf } from "./store.js";
 import {
   buildAddColumnOps,
   buildAddRowOps,
@@ -109,7 +109,10 @@ export interface Transaction {
   replaceContent(id: string, from: number, to: number, inlines: NonNullable<Block["content"]>): Transaction;
   insertText(point: Point, text: string, marks?: Mark[]): Transaction;
   deleteRange(selection: Selection): Transaction;
-  splitBlock(point: Point): Transaction;
+  /** Splits the block at `point` (see edits.ts's buildSplitBlockOps).
+   * `opts.type` gives the block created after the caret a different type
+   * (Enter at the end of a heading starts a paragraph). */
+  splitBlock(point: Point, opts?: { type?: string; select?: boolean }): Transaction;
   mergeBackward(blockId: string): Transaction;
   indent(id: string): Transaction;
   outdent(id: string): Transaction;
@@ -152,13 +155,14 @@ export interface Transaction {
    * when it would tear a rowspan/colspan crossing the moved range. */
   moveRow(tableId: string, from: number, to: number): Transaction;
   moveColumn(tableId: string, from: number, to: number): Transaction;
-  setSelection(selection: Selection | null): Transaction;
+  setSelection(selection: Selection | null, opts?: { preserveOnRepair?: boolean }): Transaction;
   commit(): TransactionResult;
 }
 
 export function createTransaction(state: EditorState, registry: Registry): Transaction {
   let store: Store = state.store;
   let selection = state.selection;
+  let preserveOnRepair = false;
   const changedIds = new Set<string>();
   const inverseOps: Op[] = [];
 
@@ -225,8 +229,13 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       applyAll(buildDeleteRangeOps(store, sel, registry));
       return tx;
     },
-    splitBlock(point) {
-      applyAll(buildSplitBlockOps(store, point));
+    splitBlock(point, opts) {
+      const ops = buildSplitBlockOps(store, point, opts);
+      applyAll(ops);
+      if (opts?.select && ops[0]?.type === "insertBlock" && store.records.has(ops[0].block.id)) {
+        const caret = point.offset === 0 ? point : { blockId: ops[0].block.id, offset: 0 };
+        selection = { type: "text", anchor: caret, focus: caret };
+      }
       return tx;
     },
     mergeBackward(blockId) {
@@ -242,7 +251,7 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       return tx;
     },
     toggleMark(sel, markType, attrs) {
-      applyAll(buildToggleMarkOps(store, sel, markType, attrs));
+      applyAll(buildToggleMarkOps(store, sel, markType, attrs, registry));
       return tx;
     },
     setBlockType(ids, blockType, props) {
@@ -304,7 +313,7 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       const collapsed = sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset;
       let point: Point = sel.anchor;
       if (!collapsed) {
-        point = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId) <= 0 ? sel.anchor : sel.focus;
+        point = orderPoints(store, sel.anchor, sel.focus)[0];
         applyAll(buildDeleteRangeOps(store, sel, registry));
       }
       const { ops, caret } = buildInsertFragmentOps(store, registry, point, fragment);
@@ -357,8 +366,9 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
     moveColumn(tableId, from, to) {
       return runTableOp(buildMoveColumnOps(store, registry, tableId, from, to));
     },
-    setSelection(sel) {
+    setSelection(sel, opts) {
       selection = sel;
+      preserveOnRepair = opts?.preserveOnRepair ?? false;
       return tx;
     },
     commit() {
@@ -382,7 +392,8 @@ export function createTransaction(state: EditorState, registry: Registry): Trans
       if (noCursorSlot) {
         const trailing: Block = { id: newId(), type: "paragraph", props: {}, content: [] };
         apply({ type: "insertBlock", parentId: null, index: store.rootIds.length, block: trailing });
-        selection = { type: "text", anchor: { blockId: trailing.id, offset: 0 }, focus: { blockId: trailing.id, offset: 0 } };
+        if (!preserveOnRepair && !(selection?.type === "block" && selection.ids.length && selection.ids.every((id) => store.records.has(id))))
+          selection = { type: "text", anchor: { blockId: trailing.id, offset: 0 }, focus: { blockId: trailing.id, offset: 0 } };
       }
       return { state: { store, selection }, changedIds, inverseOps };
     },

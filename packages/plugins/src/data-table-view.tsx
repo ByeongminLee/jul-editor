@@ -7,7 +7,7 @@ import type { ChangeEvent, ReactNode } from "react";
 import type { Json } from "@jul-editor/core";
 import { MissingResolverError, MissingUrlResolverError, applyRange, readDataSource, type CellValue, type RangeSpec, type Table } from "./data";
 import { useResolveData } from "./resolve-data-context.js";
-import type { PluginViewProps } from "./view-props.js";
+import { usePluginControls, type PluginViewProps } from "./view-props.js";
 
 const ROW_CAP = 500;
 
@@ -46,7 +46,8 @@ export interface DataTableViewProps extends PluginViewProps {
   className?: string | DataTableViewClassNames;
 }
 
-export function DataTableView({ block, selected, updateProps, readOnly, locale = "en", className }: DataTableViewProps): ReactNode {
+export function DataTableView({ block, editor, selected, updateProps, readOnly, locale = "en", className }: DataTableViewProps): ReactNode {
+  const controls = usePluginControls(editor, selected);
   const classes = typeof className === "string" ? { container: className } : className ?? {};
   const ko = locale === "ko";
   const source = readDataSource(block.props.source);
@@ -79,7 +80,7 @@ export function DataTableView({ block, selected, updateProps, readOnly, locale =
   const more = (table?.rows.length ?? 0) - rows.length;
 
   return (
-    <div className={classes.container} data-jul-editor-plugin="dataTable">
+    <div className={classes.container} data-jul-editor-plugin="dataTable" onKeyDown={controls.onKeyDown} onPointerDown={controls.onPointerDown}>
       {state.status === "loading" && <div className={classes.status} data-jul-editor-plugin="dataTable-loading" role="status">{ko ? "표 불러오는 중…" : "Loading table…"}</div>}
       {state.status === "missing-resolver" && <div className={classes.status} data-jul-editor-plugin="missing-resolver">{state.message}</div>}
       {state.status === "error" && <div className={classes.status} data-jul-editor-plugin="dataTable-error">{state.message}</div>}
@@ -102,7 +103,7 @@ export function DataTableView({ block, selected, updateProps, readOnly, locale =
         </tbody>
       </table>}
       {state.status === "ready" && more > 0 && <div className={classes.more} data-testid="jul-editor-datatable-more">{ko ? `나머지 ${more}개 행` : `${more} more rows`}</div>}
-      {selected && !readOnly && updateProps && source.type === "inline" && !("format" in source && source.format === "json") && <div className={classes.controls} data-jul-editor-plugin="dataTable-editor">
+      {controls.open && !readOnly && updateProps && source.type === "inline" && !("format" in source && source.format === "json") && <div className={classes.controls} data-jul-editor-plugin="dataTable-editor">
         <textarea className={classes.source}
           aria-label={ko ? "표 CSV 데이터" : "Table CSV data"}
           data-testid="jul-editor-datatable-csv"

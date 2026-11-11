@@ -33,13 +33,19 @@ export interface EditorStoreShim {
   detach(): void;
   setState(state: EditorState): void;
   notify(): void;
+  /** Bumped on every notify -- lets a selector re-run for view-side state
+   * that lives outside EditorState (stored marks) even when the snapshot
+   * object itself is unchanged. */
+  getVersion(): number;
 }
 
 export function createEditorStoreShim(initialState: EditorState): EditorStoreShim {
   let state = initialState;
   let editor: CoreEditor | null = null;
+  let version = 0;
   const listeners = new Set<() => void>();
   function notify(): void {
+    version++;
     for (const listener of listeners) listener();
   }
   return {
@@ -63,6 +69,7 @@ export function createEditorStoreShim(initialState: EditorState): EditorStoreShi
       notify();
     },
     notify,
+    getVersion: () => version,
   };
 }
 

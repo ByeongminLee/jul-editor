@@ -38,6 +38,37 @@ it("opens files in IDE tabs and edits code directly with a preset theme", () => 
   expect((view.current().files as unknown as CodeWorkspaceFile[])[1]?.code).toBe("const b = 3;");
 });
 
+it("Tab in the code textarea indents the code instead of moving focus away", () => {
+  const view = workspace();
+  fireEvent.click(view.getByRole("button", { name: "src/B.ts" }));
+  const code = view.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+  fireEvent.change(code, { target: { value: "ab" } });
+  code.focus();
+  code.setSelectionRange(1, 1);
+  const notCancelled = fireEvent.keyDown(code, { key: "Tab" });
+  expect(notCancelled).toBe(false); // default (focus move) prevented
+  expect((view.current().files as unknown as CodeWorkspaceFile[])[1]?.code).toBe("a  b");
+  const after = view.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+  expect(after.selectionStart).toBe(3);
+  fireEvent.keyDown(after, { key: "Tab", shiftKey: true });
+  expect((view.current().files as unknown as CodeWorkspaceFile[])[1]?.code).toBe("a  b"); // nothing at line start to remove
+});
+
+it("Home and End move the caret to the line start and end instead of scrolling the page", () => {
+  const view = workspace();
+  fireEvent.click(view.getByRole("button", { name: "src/B.ts" }));
+  const code = view.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+  fireEvent.change(code, { target: { value: "one\ntwo three\nfour" } });
+  code.focus();
+  code.setSelectionRange(8, 8); // inside "two three"
+  expect(fireEvent.keyDown(code, { key: "Home" })).toBe(false);
+  expect([code.selectionStart, code.selectionEnd]).toEqual([4, 4]);
+  expect(fireEvent.keyDown(code, { key: "End" })).toBe(false);
+  expect([code.selectionStart, code.selectionEnd]).toEqual([13, 13]);
+  fireEvent.keyDown(code, { key: "Home", shiftKey: true });
+  expect([code.selectionStart, code.selectionEnd]).toEqual([4, 13]);
+});
+
 it("creates a folder then a file inline, infers language, and persists a pinned tab", () => {
   const view = workspace();
   fireEvent.click(view.getByRole("button", { name: "New folder" }));
@@ -244,4 +275,70 @@ it("renders every code row with its change kind so the whole row, not just the g
   const css = view.container.querySelector("style")!.textContent!;
   expect(css).toContain('[data-jul-editor-code-preview] [data-change="added"] { background');
   expect(css).toContain('[data-jul-editor-code-preview] [data-change="deleted"] { background');
+});
+
+it('keeps Home at the start of a file beginning with a newline', () => {
+  const view = workspace([{ path: 'a.ts', language: 'ts', code: '\ntext' }]);
+  const code = view.getByRole('textbox', { name: 'Code' }) as HTMLTextAreaElement;
+  code.setSelectionRange(0, 0);
+  fireEvent.keyDown(code, { key: 'Home' });
+  expect(code.selectionStart).toBe(0);
+});
+
+it('localizes the create error in Korean', () => {
+  const view = render(<CodeWorkspaceIDEView locale="ko" selected block={{ id: 'w', type: 'codeWorkspace', props: { files: [] } }} updateProps={() => {}} />);
+  fireEvent.click(view.getByRole('button', { name: '새 파일' }));
+  fireEvent.keyDown(view.getByRole('textbox', { name: '새 파일 이름' }), { key: 'Enter' });
+  expect(view.getByRole('alert').textContent).toContain('이름');
+});
+
+it.each([
+  ['en', '', 'Enter a name.'],
+  ['en', '../bad', 'Names cannot contain slashes or be . or ..'],
+  ['en', '.', 'Names cannot contain slashes or be . or ..'],
+  ['en', '..', 'Names cannot contain slashes or be . or ..'],
+  ['en', 'src', 'That name is already in use.'],
+  ['ko', '', '이름을 입력하세요.'],
+  ['ko', '../bad', '슬래시, . 또는 .. 없이 올바른 이름을 입력하세요.'],
+  ['ko', 'src', '이미 사용 중인 이름입니다.'],
+] as const)('explains the %s create error for %s', (locale, name, message) => {
+  const view = render(<CodeWorkspaceIDEView locale={locale} selected block={{ id: 'w', type: 'codeWorkspace', props: { files: [{ path: 'src/a.ts', language: 'ts', code: '' }] } }} updateProps={() => {}} />);
+  fireEvent.click(view.getByRole('button', { name: locale === 'ko' ? '새 파일' : 'New file' }));
+  const input = view.getByRole('textbox', { name: locale === 'ko' ? '새 파일 이름' : 'New file name' });
+  fireEvent.change(input, { target: { value: name } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(view.getByRole('alert').textContent).toBe(message);
+});
+
+it('localizes rename and move errors and explains them like create errors', () => {
+  const view = render(<CodeWorkspaceIDEView locale="ko" selected block={{ id: 'w', type: 'codeWorkspace', props: { files: [{ path: 'a.ts', language: 'ts', code: '' }, { path: 'b.ts', language: 'ts', code: '' }] } }} updateProps={() => {}} />);
+  fireEvent.doubleClick(view.getByRole('button', { name: 'a.ts' }));
+  const input = view.getByRole('textbox', { name: 'a.ts 이름 변경' });
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(view.getByRole('alert').textContent).toBe('이름을 입력하세요.');
+  fireEvent.change(input, { target: { value: 'b.ts' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(view.getByRole('alert').textContent).toBe('이미 사용 중이거나 옮길 수 없는 경로입니다.');
+});
+
+it("localizes IDE action labels in Korean", () => {
+  const view = render(<CodeWorkspaceIDEView locale="ko" selected block={{ id: "w", type: "codeWorkspace", props: { files: sampleFiles } }} updateProps={() => {}} />);
+  expect(view.getByRole("button", { name: "새 파일" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "src에 새 폴더" }).getAttribute("title")).toBe("src에 새 폴더");
+  expect(view.getByRole("button", { name: "src에 새 파일" }).getAttribute("title")).toBe("src에 새 파일");
+  const added = view.getByRole("textbox", { name: "추가된 줄 범위" });
+  expect(view.getByRole("textbox", { name: "삭제된 줄 범위" })).toBeTruthy();
+  fireEvent.change(added, { target: { value: "invalid" } });
+  expect(view.getByRole("alert").textContent).toBe("올바른 줄 범위를 입력하세요.");
+  fireEvent.click(view.getByRole("button", { name: "새 폴더" }));
+  const folder = view.getByRole("textbox", { name: "새 폴더 이름" });
+  fireEvent.keyDown(folder, { key: "Escape" });
+  fireEvent.click(view.getByRole("button", { name: "새 파일" }));
+  const file = view.getByRole("textbox", { name: "새 파일 이름" });
+  fireEvent.keyDown(file, { key: "Escape" });
+  expect(view.getByRole("checkbox", { name: "src/A.ts 고정" })).toBeTruthy();
+  expect(view.getByRole("button", { name: "1번째 줄 추가로 표시" })).toBeTruthy();
+  fireEvent.doubleClick(view.getByRole("button", { name: "src/A.ts" }));
+  expect(view.getByRole("textbox", { name: "src/A.ts 이름 변경" })).toBeTruthy();
 });

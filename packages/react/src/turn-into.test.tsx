@@ -116,6 +116,23 @@ describe("useTurnInto", () => {
   });
 });
 
+describe("turnInto over a range containing a void", () => {
+  it("converts the text blocks and leaves the image alone", () => {
+    const blocks: Doc["blocks"] = [...doc().blocks, { id: "img", type: "image", props: { src: "https://example.com/a.png" } }, { id: "p2", type: "paragraph", props: {}, content: [{ type: "text", text: "end" }] }];
+    render(
+      <Editor defaultValue={{ version: 1, blocks }}>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    act(() => testEditor().update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 1 }, focus: { blockId: "p2", offset: 1 } })));
+    act(() => testTurnInto().turnInto(testTurnInto().items.find((i) => i.id === "heading-2")!));
+    expect(testEditor().getDoc().blocks.map((b) => b.type)).toEqual(["heading", "image", "heading"]);
+    expect(testEditor().getDoc().blocks[1]!.props.src).toBe("https://example.com/a.png");
+    expect(testTurnInto().current?.id).toBe("heading-2");
+  });
+});
+
 describe("plugin turn-into items", () => {
   const box = defineBlock({ type: "box", content: "inline", children: "any", props: { tone: "plain" } });
   it("appends plugin entries, localizes the label, and converts with their props", () => {

@@ -6,9 +6,10 @@
 
 import { createEmitter } from "../store/emitter.js";
 import { attachClipboard } from "./clipboard.js";
+import { isInsideVoid } from "./dom.js";
 import type { ComposeRef } from "./ime.js";
 import type { Extensions, Interaction } from "./interaction.js";
-import { attachInteraction } from "./interaction.js";
+import { attachInteraction, KEEP_SELECTION_ATTRIBUTE } from "./interaction.js";
 import { createMarksRef } from "./marks.js";
 import type { BlockEls, ViewRenderCtx } from "./render.js";
 import { DecorationSet } from "./inline-decorations.js";
@@ -40,7 +41,7 @@ export type { Keymap, KeymapCtx, KeymapEntry, KeymapFn } from "./keymap.js";
 export { currentBlockInputRules, runInputRules } from "./input-rules.js";
 export type { InputRuleCtx, InputRuleEntry } from "./input-rules.js";
 export { createSuggestionController } from "./suggestion.js";
-export type { SuggestionConfig, SuggestionController, SuggestionHandle, SuggestionRange, SuggestionState } from "./suggestion.js";
+export type { SuggestionConfig, SuggestionController, SuggestionHandle, SuggestionOpenContext, SuggestionRange, SuggestionState } from "./suggestion.js";
 export { activeMarks, consumeInsertMarks, createMarksRef, marksAtPoint, textSelectionBlockIds, toggleMarkOrStore } from "./marks.js";
 export type { MarksRef } from "./marks.js";
 export { createEditor } from "./editor.js";
@@ -101,6 +102,7 @@ export function createView(options: CreateViewOptions): View {
   // holding the live DOM selection; `writeBlockSelectionAttrs` (a presence
   // attribute only, no DOM selection involved) always still runs so the
   // model-level selection stays queryable/styleable either way.
+  let restoreOnKeyboardFocus = false;
   function restoreSelection(opts: { requireFocus?: boolean } = {}): void {
     writeBlockSelectionAttrs(blockEls, currentState.selection, currentState.store, registry); // presence-only attr, safe even mid-composition
     // FOCUSED_ATTR tracks a collapsed text caret's own block -- a
@@ -109,7 +111,20 @@ export function createView(options: CreateViewOptions): View {
     const sel = currentState.selection;
     applyFocusedAttr(renderCtx, sel?.type === "text" && sel.anchor.blockId === sel.focus.blockId && sel.anchor.offset === sel.focus.offset ? sel.anchor.blockId : null);
     if (compose.active) return; // never touch DOM selection while composing
-    if (currentState.selection?.type !== "text") return;
+    const active = root.ownerDocument.activeElement;
+    if (active instanceof Element && !root.contains(active) && active.closest(`[${KEEP_SELECTION_ATTRIBUTE}]`)) {
+      restoreOnKeyboardFocus = true;
+      return;
+    }
+    if (currentState.selection?.type === "block") {
+      clearNativeHighlight();
+      return;
+    }
+    if (!currentState.selection) {
+      if (root.contains(root.ownerDocument.activeElement)) clearNativeHighlight();
+      return;
+    }
+    if (currentState.selection.type !== "text") return;
     if (opts.requireFocus) {
       const doc = root.ownerDocument;
       const domSel = doc.defaultView?.getSelection?.() ?? null;
@@ -129,7 +144,22 @@ export function createView(options: CreateViewOptions): View {
     // live DOM already maps to it) -- same bug, same fix, so the suppress
     // call moves inside writeDOMSelection's own `beforeWrite` seam, firing
     // only immediately before a real native selection write actually happens.
-    writeDOMSelection(root, currentState.selection, () => interaction?.suppressOwnWrite());
+    if (!interaction?.isPointerSelecting()) writeDOMSelection(root, currentState.selection, () => interaction?.suppressOwnWrite());
+  }
+
+  // A block or null selection has no DOM correlate, but the native selection it replaced (a partial text
+  // range before Mod-a, a drag that ran onto a void) would otherwise stay painted next to the block
+  // outlines. Collapse it to its focus, keeping focus (and the keyboard/clipboard target) in the
+  // root. A drag still in progress is left alone: the browser is extending it.
+  function clearNativeHighlight(): void {
+    if (interaction?.isPointerSelecting()) return;
+    const domSel = root.ownerDocument.defaultView?.getSelection?.() ?? null;
+    if (!domSel || domSel.rangeCount === 0 || domSel.isCollapsed || !domSel.focusNode) return;
+    if (!root.contains(domSel.anchorNode) || !root.contains(domSel.focusNode)) return;
+    interaction?.suppressOwnWrite();
+    // Never park the caret inside a void's non-editable UI (a drag that ended on a chart's labels).
+    if (isInsideVoid(domSel.focusNode) && !isInsideVoid(domSel.anchorNode)) domSel.collapse(domSel.anchorNode!, domSel.anchorOffset);
+    else domSel.collapse(domSel.focusNode, domSel.focusOffset);
   }
 
   function runDispatch(build: Parameters<CreateViewOptions["dispatch"]>[0]) {
@@ -164,6 +194,15 @@ export function createView(options: CreateViewOptions): View {
       onLinkRequest: async () => (typeof window === "undefined" ? null : window.prompt("Link URL", "")),
       suggestions: createSuggestionController({ getState: () => currentState, dispatch: runDispatch, getCaretRect }),
     };
+
+  const onPointerFocus = () => { restoreOnKeyboardFocus = false; };
+  const onRootFocus = (event: FocusEvent) => {
+    if (event.target !== root || !restoreOnKeyboardFocus) return;
+    restoreOnKeyboardFocus = false;
+    restoreSelection();
+  };
+  root.addEventListener("pointerdown", onPointerFocus, true);
+  root.addEventListener("focus", onRootFocus);
 
   applyRootStyle(root);
   root.setAttribute("contenteditable", "true");
@@ -234,12 +273,15 @@ export function createView(options: CreateViewOptions): View {
     getUploadState: (blockId) => clipboard.uploadRegistry.get(blockId),
     retryUpload: (blockId) => clipboard.retryUpload(blockId),
     insertFiles: (files) => clipboard.insertFiles(files),
+    attachUpload: (blockId, file) => clipboard.attachUpload(blockId, file),
     getUploadPreview: (id) => clipboard.uploadRegistry.getPreview(id),
     getPendingUploads: () => clipboard.getPendingUploads(),
     uploadPending: () => clipboard.uploadPending(),
     onUpload: (listener) => clipboard.uploadRegistry.onChange(listener),
     destroy() {
       interaction?.destroy();
+      root.removeEventListener("pointerdown", onPointerFocus, true);
+      root.removeEventListener("focus", onRootFocus);
       clipboard.destroy();
       // a void block's own renderVoid cleanup (React portal unmount, an
       // app-registered listener, ...) otherwise never runs when the editor

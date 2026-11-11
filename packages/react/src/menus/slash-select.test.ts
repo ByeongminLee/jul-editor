@@ -5,7 +5,7 @@
 import type { Doc, Editor as CoreEditor, EditorState, Transaction } from "@jul-editor/core";
 import { coreRegistry, createTransaction, fromDoc, newId, toDoc } from "@jul-editor/core";
 import { describe, expect, it } from "vitest";
-import { selectSlashItem } from "./slash-select.js";
+import { canInsertSlashItem, selectSlashItem } from "./slash-select.js";
 import type { SlashItem } from "./slash-items.js";
 
 function fakeEditor(doc: Doc): { editor: CoreEditor; getDoc: () => Doc } {
@@ -47,15 +47,41 @@ describe("selectSlashItem", () => {
     expect(out.blocks[1]?.type).toBe("heading");
   });
 
-  it("a void-like item (image) always inserts, adds a trailing paragraph, and block-selects the new block", () => {
+  it("a void-like item (image) replaces the empty '/' line, adds a trailing paragraph and puts the caret there", () => {
     const doc: Doc = { version: 1, blocks: [{ id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "/image" }] }] };
     const { editor, getDoc } = fakeEditor(doc);
     selectSlashItem(IMAGE_ITEM, { editor, range: { blockId: "p1", from: 0, to: 6 }, close: () => {} }, coreRegistry);
     const out = getDoc();
-    expect(out.blocks.map((b) => b.type)).toEqual(["paragraph", "image", "paragraph"]);
-    expect(out.blocks[0]?.content).toEqual([]);
-    const imageId = out.blocks[1]!.id;
-    expect(editor.getState().selection).toEqual({ type: "block", ids: [imageId] });
+    expect(out.blocks.map((b) => b.type)).toEqual(["image", "paragraph"]);
+    const afterId = out.blocks[1]!.id;
+    expect(editor.getState().selection).toEqual({ type: "text", anchor: { blockId: afterId, offset: 0 }, focus: { blockId: afterId, offset: 0 } });
+  });
+
+  it("a void-like item after other text keeps that line and still puts the caret below the new block", () => {
+    const doc: Doc = { version: 1, blocks: [{ id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "hi\n/divider" }] }] };
+    const { editor, getDoc } = fakeEditor(doc);
+    selectSlashItem({ id: "divider", type: "divider", title: "Divider", keywords: [] }, { editor, range: { blockId: "p1", from: 3, to: 11 }, close: () => {} }, coreRegistry);
+    const out = getDoc();
+    expect(out.blocks.map((b) => b.type)).toEqual(["paragraph", "divider", "paragraph"]);
+    expect(out.blocks[0]?.content).toEqual([{ type: "text", text: "hi\n" }]);
+    const afterId = out.blocks[2]!.id;
+    expect(editor.getState().selection).toMatchObject({ type: "text", anchor: { blockId: afterId, offset: 0 } });
+  });
+
+  it("does nothing in a table cell, where no slash item is admitted", () => {
+    const doc: Doc = { version: 1, blocks: [{ id: "t", type: "table", props: {}, children: [{ id: "r", type: "tableRow", props: {}, children: [{ id: "c", type: "tableCell", props: {}, content: [{ type: "text", text: "/head" }] }] }] }] };
+    const { editor, getDoc } = fakeEditor(doc);
+    expect(canInsertSlashItem(HEADING_ITEM, editor.getState(), "c", coreRegistry)).toBe(false);
+    expect(canInsertSlashItem(IMAGE_ITEM, editor.getState(), "c", coreRegistry)).toBe(false);
+    const before = JSON.stringify(getDoc());
+    selectSlashItem(HEADING_ITEM, { editor, range: { blockId: "c", from: 0, to: 5 }, close: () => {} }, coreRegistry);
+    expect(JSON.stringify(getDoc())).toBe(before);
+  });
+
+  it("refuses a code block", () => {
+    const doc: Doc = { version: 1, blocks: [{ id: "k", type: "codeBlock", props: {}, content: [{ type: "text", text: "/" }] }] };
+    const { editor } = fakeEditor(doc);
+    expect(canInsertSlashItem(HEADING_ITEM, editor.getState(), "k", coreRegistry)).toBe(false);
   });
 
   it("table gets a real 3x3 tableRow/tableCell tree (same buildTableBlock(3,3) insertTable itself uses), caret in its first cell", () => {

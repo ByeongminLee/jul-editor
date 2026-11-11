@@ -6,7 +6,7 @@ import type { ChildrenKind, Registry } from "../model/schema.js";
 import type { Block, Doc, Inline, TextInline } from "../model/types.js";
 import { CURRENT_VERSION } from "../model/migrate.js";
 import { tableGrid } from "./table.js";
-import type { BlockRecord, Selection, Store } from "./types.js";
+import type { BlockRecord, Point, Selection, Store } from "./types.js";
 
 // ---- content (Inline[]) offset helpers -----------------------------------
 // Offsets are UTF-16 code units; a mention counts as exactly 1 unit.
@@ -213,6 +213,17 @@ export function comparePreOrder(store: Store, a: string, b: string): -1 | 0 | 1 
   return siblings.indexOf(chainA[i]!) < siblings.indexOf(chainB[i]!) ? -1 : 1;
 }
 
+/** Two points in document order: by block pre-order, then by offset within
+ * the same block. Use this (not `comparePreOrder` alone, which returns 0 for
+ * the same block) whenever a possibly-backward (right-to-left) text selection
+ * must be turned into a `[start, end]` range. */
+export function orderPoints(store: Store, a: Point, b: Point): [Point, Point] {
+  const order = comparePreOrder(store, a.blockId, b.blockId);
+  if (order < 0) return [a, b];
+  if (order > 0) return [b, a];
+  return a.offset <= b.offset ? [a, b] : [b, a];
+}
+
 /** The nearest block (starting at `id` itself) whose spec has `isolating:
  * true`, or null. Merges/splits/indents may not cross this boundary. */
 export function nearestIsolatingAncestor(store: Store, id: string, registry: Registry): string | null {
@@ -306,8 +317,7 @@ export function extractFragment(store: Store, selection: Selection, registry: Re
     return { version: CURRENT_VERSION, blocks: extractCellsFragment(store, registry, selection) };
   }
 
-  const order = comparePreOrder(store, selection.anchor.blockId, selection.focus.blockId);
-  const [start, end] = order <= 0 ? [selection.anchor, selection.focus] : [selection.focus, selection.anchor];
+  const [start, end] = orderPoints(store, selection.anchor, selection.focus);
 
   if (start.blockId === end.blockId) {
     const rec = store.records.get(start.blockId);

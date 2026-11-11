@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { HighlightRange, Json } from "@jul-editor/core";
 import { createLowlightHighlighter } from "../code/highlighter.js";
-import type { PluginViewProps } from "../view-props.js";
+import { usePluginControls, type PluginViewProps } from "../view-props.js";
 import { moveWorkspaceEntry } from "./workspace-paths.js";
 import { lineChange, readCodeWorkspaceFiles, setMarkedLines, type CodeWorkspaceFile } from "./block.js";
 
@@ -95,7 +95,8 @@ export interface CodeWorkspaceViewProps extends PluginViewProps {
   className?: string | CodeWorkspaceViewClassNames;
 }
 
-export function CodeWorkspaceView({ block, selected, updateProps, readOnly, locale = "en", className }: CodeWorkspaceViewProps): ReactNode {
+export function CodeWorkspaceView({ block, editor, selected, updateProps, readOnly, locale = "en", className }: CodeWorkspaceViewProps): ReactNode {
+  const controls = usePluginControls(editor, selected);
   const classes = typeof className === "string" ? { container: className } : className ?? {};
   const ui = UI[locale];
   const files = readCodeWorkspaceFiles(block.props);
@@ -197,7 +198,7 @@ export function CodeWorkspaceView({ block, selected, updateProps, readOnly, loca
   const ranges = activeFile && highlight && highlight.code === activeFile.code && highlight.language === activeFile.language ? highlight.ranges : [];
   let lineStart = 0;
 
-  return <section className={classes.container} data-jul-editor-plugin="code-workspace" aria-label={title || ui.workspace}>
+  return <section className={classes.container} data-jul-editor-plugin="code-workspace" aria-label={title || ui.workspace} onKeyDown={controls.onKeyDown} onPointerDown={controls.onPointerDown}>
     {title && <header className={classes.title} data-jul-editor-code-title>{title}</header>}
     {showTabs && tabs.length > 0 && <div className={classes.tabs} role="tablist" aria-label={ui.openFiles} data-jul-editor-code-tabs>
       {tabs.map((path, index) => <button className={classes.tab} key={path} id={`${panelId}-tab-${index}`} type="button" role="tab" aria-selected={path === activeTab} aria-controls={`${panelId}-panel`} tabIndex={path === activeTab ? 0 : -1} onClick={() => setActivePath(path)} onKeyDown={(event) => onTabKeyDown(event, path)}>{path.split("/").filter(Boolean).at(-1) ?? path}</button>)}
@@ -220,7 +221,7 @@ export function CodeWorkspaceView({ block, selected, updateProps, readOnly, loca
         </> : <p data-jul-editor-code-empty>{ui.empty}</p>}
       </div>
     </div>
-    {selected && !readOnly && updateProps && <fieldset className={classes.toolbar} data-jul-editor-code-controls>
+    {controls.open && !readOnly && updateProps && <fieldset className={classes.toolbar} data-jul-editor-code-controls>
       <legend>{ui.settings}</legend>
       <label>{ui.title} <input value={title} onChange={(event) => updateProps({ title: event.target.value })} /></label>
       <label><input type="checkbox" checked={showTree} onChange={(event) => updateProps({ showTree: event.target.checked })} /> {ui.tree}</label>

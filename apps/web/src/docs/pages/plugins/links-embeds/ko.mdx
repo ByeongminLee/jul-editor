@@ -15,7 +15,7 @@ const blocks = createLinkBlocks(iframePolicy); // 모듈 범위
 </LinkContextProvider>
 ```
 
-`linkSlashItems`는 북마크, 임베드, Figma, GitHub 항목을 추가합니다. 메인 엔트리의 `pluginRenderers`와 `pluginSlashItems`에도 `bookmark`, `iframe`이 이미 연결되어 있지만 블록 스펙은 직접 등록해야 합니다.
+`linkSlashItems`는 북마크, 웹 임베드(Web embed), Figma, GitHub 항목을 추가합니다. 각 항목은 빈 블록을 넣고, 블록 화면에서 바로 URL을 입력받습니다. 메인 엔트리의 `pluginRenderers`와 `pluginSlashItems`에도 `bookmark`, `iframe`이 이미 연결되어 있지만 블록 스펙은 직접 등록해야 합니다.
 
 ## fetchMetadata 어댑터
 

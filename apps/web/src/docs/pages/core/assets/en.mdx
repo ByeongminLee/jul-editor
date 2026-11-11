@@ -12,7 +12,7 @@ The mode is an initial editor setting. Use separate editor instances if two prod
 
 ## Add images and attachments
 
-The default image renderer supports a remote image URL, alt text, width, alignment, and caption. Select an image block to edit its URL. For PDFs and other files, register `attachmentBlock` and `AttachmentView` explicitly. A file input can call `editor.insertFiles(files)`; paste and drop work through the same API. `createFileBlock` lets your app choose a different block type for a non-image file.
+The default image renderer supports a remote image URL, alt text, width, alignment, and caption. Select an image block to edit its URL. For PDFs and other files, register `attachmentBlock` and `AttachmentView` explicitly. A file input can call `editor.insertFiles(files)`; paste and drop work through the same API. `createFileBlock` lets your app choose a different block type for a non-image file. For a block that is already in the document, such as an image `fromHTML` left empty because its source was a data URL, `editor.attachUpload(blockId, file)` stages the file the same way.
 
 ```tsx
 import { Editor, useEditor, attachmentBlock, AttachmentView,

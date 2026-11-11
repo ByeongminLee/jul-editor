@@ -34,6 +34,41 @@ test("End moves the editor caret without scrolling the document to its bottom", 
   expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "p1", offset: 2 }, focus: { blockId: "p1", offset: 11 } });
 });
 
+test("a key that changes nothing leaves a page scrolled away from the caret where it is", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 580 });
+  await page.evaluate(() => {
+    window.__julEditor!.editor.setDoc({ version: 1, blocks: [
+      ...Array.from({ length: 100 }, (_, i) => ({ id: `line-${i}`, type: "paragraph", props: {}, content: [{ type: "text" as const, text: `line ${i}` }] })),
+      { id: "last", type: "paragraph", props: {}, content: [{ type: "text", text: "End" }] },
+    ] });
+    window.__julEditor!.setCaret("last", 3);
+  });
+  await page.keyboard.type("!");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  for (const key of ["Shift", "ControlOrMeta+c", "PageUp"]) {
+    await page.keyboard.press(key);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  }
+  await page.keyboard.type("!");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+});
+
+test("Shift+ArrowDown from a text range takes in the next void instead of jumping past it", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__julEditor!.editor.setDoc({ version: 1, blocks: [
+      { id: "head", type: "heading", props: {}, content: [{ type: "text", text: "Heading" }] },
+      { id: "one", type: "divider", props: {} }, { id: "two", type: "divider", props: {} },
+      { id: "end", type: "paragraph", props: {}, content: [{ type: "text", text: "end" }] },
+    ] });
+    window.__julEditor!.setCaret("head", 3);
+  });
+  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("Shift+ArrowDown");
+  expect(await getSelection(page)).toEqual({ type: "block", ids: ["head", "one"] });
+});
+
 async function modKey(page: import("@playwright/test").Page): Promise<"Meta" | "Control"> {
   const mac = await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent));
   return mac ? "Meta" : "Control";
@@ -183,11 +218,12 @@ test("structure: table Tab moves to the next cell (wrapping rows), Shift-Tab bac
   await insertTestTable(page);
   await page.evaluate(() => window.__julEditor!.setCaret("r1c1", 0));
 
+  // Tab lands at the END of the next cell, same as Shift-Tab (typing appends instead of prefixing).
   await page.keyboard.press("Tab");
-  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 0 }, focus: { blockId: "r1c2", offset: 0 } });
+  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 1 }, focus: { blockId: "r1c2", offset: 1 } });
 
   await page.keyboard.press("Tab");
-  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r2c1", offset: 0 }, focus: { blockId: "r2c1", offset: 0 } });
+  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r2c1", offset: 1 }, focus: { blockId: "r2c1", offset: 1 } });
 
   await page.keyboard.press("Shift+Tab");
   expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 1 }, focus: { blockId: "r1c2", offset: 1 } });
@@ -242,6 +278,28 @@ test("structure: Mod-Enter exits a codeBlock into a new paragraph after it", asy
   expect(textOf(after, "cb")).toBe("let x = 1;"); // unchanged
   const sel = (await getSelection(page)) as { type: string; anchor: { blockId: string } };
   expect(sel.anchor.blockId).toBe(nextId);
+});
+
+test("structure: Tab inside a codeBlock indents the code, never the block; Shift-Tab undoes it", async ({ page }) => {
+  await insertTestCodeBlock(page);
+  await page.evaluate(() => window.__julEditor!.setCaret("cb", 0));
+  await page.keyboard.press("Tab");
+  let after = await getDoc(page);
+  expect(childIds(after, null)).toContain("cb"); // still a root block (not nested under its previous sibling)
+  expect(textOf(after, "cb")).toBe("  let x = 1;");
+  await page.keyboard.press("Shift+Tab");
+  after = await getDoc(page);
+  expect(childIds(after, null)).toContain("cb");
+  expect(textOf(after, "cb")).toBe("let x = 1;");
+});
+
+test("structure: a word typed after ``` stays code unless it names a language", async ({ page }) => {
+  await page.evaluate(() => window.__julEditor!.setCaret("pEnd", 0));
+  await page.keyboard.type("```", { delay: 10 });
+  await page.keyboard.type("const x = 1", { delay: 10 });
+  const after = await getDoc(page);
+  expect(blockType(after, "pEnd")).toBe("codeBlock");
+  expect(textOf(after, "pEnd")).toBe("const x = 1");
 });
 
 // ---- todo Mod-Enter -----------------------------------------------------------
@@ -338,7 +396,7 @@ test("structure: block-level keymap runs before ANY registered keymap, regardles
 
   const log = await page.evaluate(() => (window as unknown as { __log: string[] }).__log);
   expect(log).toEqual([]); // tableCell's own block-level Tab handler wins, the registered one never runs
-  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 0 }, focus: { blockId: "r1c2", offset: 0 } });
+  expect(await getSelection(page)).toEqual({ type: "text", anchor: { blockId: "r1c2", offset: 1 }, focus: { blockId: "r1c2", offset: 1 } });
 });
 
 // ---- suggestion controller: Korean composition updates the open query -------

@@ -12,31 +12,32 @@
 export interface CodeLanguage {
   value: string;
   label: string;
+  aliases?: readonly string[];
 }
 
 export const pluginCodeLanguages: readonly CodeLanguage[] = [
-  { value: "plaintext", label: "Plain Text" },
-  { value: "ts", label: "TypeScript" },
+  { value: "plaintext", label: "Plain Text", aliases: ["text", "txt", "plain"] },
+  { value: "ts", label: "TypeScript", aliases: ["typescript", "mts", "cts"] },
   { value: "tsx", label: "TSX" },
-  { value: "js", label: "JavaScript" },
+  { value: "js", label: "JavaScript", aliases: ["javascript", "mjs", "cjs"] },
   { value: "jsx", label: "JSX" },
   { value: "json", label: "JSON" },
-  { value: "bash", label: "Bash" },
-  { value: "python", label: "Python" },
-  { value: "go", label: "Go" },
-  { value: "rust", label: "Rust" },
+  { value: "bash", label: "Bash", aliases: ["sh", "zsh"] },
+  { value: "python", label: "Python", aliases: ["py"] },
+  { value: "go", label: "Go", aliases: ["golang"] },
+  { value: "rust", label: "Rust", aliases: ["rs"] },
   { value: "java", label: "Java" },
-  { value: "kotlin", label: "Kotlin" },
+  { value: "kotlin", label: "Kotlin", aliases: ["kt", "kts"] },
   { value: "swift", label: "Swift" },
   { value: "sql", label: "SQL" },
-  { value: "yaml", label: "YAML" },
+  { value: "yaml", label: "YAML", aliases: ["yml"] },
   { value: "html", label: "HTML" },
   { value: "css", label: "CSS" },
-  { value: "markdown", label: "Markdown" },
-  { value: "diff", label: "Diff" },
-  { value: "c", label: "C" },
-  { value: "cpp", label: "C++" },
-  { value: "csharp", label: "C#" },
+  { value: "markdown", label: "Markdown", aliases: ["md"] },
+  { value: "diff", label: "Diff", aliases: ["patch"] },
+  { value: "c", label: "C", aliases: ["h"] },
+  { value: "cpp", label: "C++", aliases: ["c++", "cc", "cxx", "hpp"] },
+  { value: "csharp", label: "C#", aliases: ["cs"] },
   { value: "php", label: "PHP" },
-  { value: "ruby", label: "Ruby" },
+  { value: "ruby", label: "Ruby", aliases: ["rb"] },
 ] as const;

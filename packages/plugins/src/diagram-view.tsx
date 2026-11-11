@@ -9,7 +9,7 @@
 // view -- a parse/render error becomes a headless error element instead.
 import { useEffect, useId, useRef, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
-import type { PluginViewProps } from "./view-props.js";
+import { usePluginControls, type PluginViewProps } from "./view-props.js";
 
 let mermaidInitialized = false;
 
@@ -17,7 +17,10 @@ async function ensureMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
   if (!mermaidInitialized) {
-    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", maxTextSize: 50000 });
+    // suppressErrorRendering: on a failed render mermaid otherwise draws its
+    // "Syntax error in text" graphic into a temporary `#d<id>` container on
+    // document.body and throws before removing it; the error is shown in-block.
+    mermaid.initialize({ startOnLoad: false, securityLevel: "strict", maxTextSize: 50000, suppressErrorRendering: true });
     mermaidInitialized = true;
   }
   return mermaid;
@@ -36,9 +39,10 @@ export interface DiagramViewProps extends PluginViewProps {
   className?: string | DiagramViewClassNames;
 }
 
-export function DiagramView({ block, selected, updateProps, readOnly, locale = "en", className }: DiagramViewProps): ReactNode {
+export function DiagramView({ block, editor, selected, updateProps, readOnly, locale = "en", className }: DiagramViewProps): ReactNode {
   const classes = typeof className === "string" ? { container: className } : className ?? {};
   const ko = locale === "ko";
+  const controls = usePluginControls(editor, selected);
   const code = typeof block.props.code === "string" ? block.props.code : "";
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,14 +60,18 @@ export function DiagramView({ block, selected, updateProps, readOnly, locale = "
         setError(null);
         return;
       }
+      const renderId = `jul-editor-diagram-${reactId}-${seq}`;
       ensureMermaid()
-        .then((mermaid) => mermaid.render(`jul-editor-diagram-${reactId}-${seq}`, code))
+        .then((mermaid) => mermaid.render(renderId, code))
         .then(({ svg: rendered }) => {
           if (seq !== seqRef.current) return;
           setSvg(rendered);
           setError(null);
         })
         .catch((err: unknown) => {
+          // Belt and braces: never leave mermaid's temporary render container behind.
+          document.getElementById(`d${renderId}`)?.remove();
+          document.getElementById(renderId)?.remove();
           if (seq !== seqRef.current) return;
           setSvg(null);
           setError(err instanceof Error ? err.message : String(err));
@@ -76,8 +84,8 @@ export function DiagramView({ block, selected, updateProps, readOnly, locale = "
   }, [code, reactId]);
 
   return (
-    <div className={classes.container} data-jul-editor-plugin="diagram">
-      {selected && !readOnly && updateProps && (
+    <div className={classes.container} data-jul-editor-plugin="diagram" onKeyDown={controls.onKeyDown} onPointerDown={controls.onPointerDown}>
+      {controls.open && !readOnly && updateProps && (
         <textarea className={classes.source}
           aria-label={ko ? "다이어그램 소스" : "Diagram source"}
           data-testid="jul-editor-diagram-code"

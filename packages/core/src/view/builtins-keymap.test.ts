@@ -1,8 +1,8 @@
 // Unit tests for the tableCell/table keymap additions (Enter/Mod-Enter,
 // column-wise ArrowUp/Down + last-row exit, Shift-Arrow starting a `cells`
 // rectangle, and the whole-table keymap collapsing one back to a caret).
-// codeBlock/todoListItem/tableCell's pre-existing Tab/Shift-Tab are
-// covered by e2e, not duplicated here.
+// Also codeBlock's Tab/Shift-Tab code indentation and the language grab
+// after a "```" conversion, and tableCell Tab/Shift-Tab caret placement.
 
 import { describe, expect, it } from "vitest";
 import { codeBlock, table, tableCell } from "../model/builtins.js";
@@ -211,6 +211,31 @@ describe("codeBlock space/Enter sets language from a typed lang token", () => {
     expect(codeBlockKeymap[" "]!({ state, registry: r } as KeymapCtx)).toBe(false);
   });
 
+  it("' ' after a word that is NOT a known language keeps it as code (first word never eaten)", () => {
+    const store = storeFrom([codeBlockRecord("c1", "const")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 5 }, focus: { blockId: "c1", offset: 5 } } };
+    armCodeBlockLangGrab("c1");
+    expect(codeBlockKeymap[" "]!({ state, registry: r } as KeymapCtx)).toBe(false);
+  });
+
+  it("Enter after an unknown token inserts a newline instead of setting the language", () => {
+    const store = storeFrom([codeBlockRecord("c1", "ab")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 2 }, focus: { blockId: "c1", offset: 2 } } };
+    armCodeBlockLangGrab("c1");
+    const next = run(codeBlockKeymap.Enter!, state);
+    const rec = next.store.records.get("c1")!;
+    expect(rec.props.language ?? "").toBe("");
+    expect(rec.content).toEqual([{ type: "text", text: "ab\n" }]);
+  });
+
+  it("a known alias is accepted case-insensitively and stored lowercase", () => {
+    const store = storeFrom([codeBlockRecord("c1", "TS")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 2 }, focus: { blockId: "c1", offset: 2 } } };
+    armCodeBlockLangGrab("c1");
+    const next = run(codeBlockKeymap[" "]!, state);
+    expect(next.store.records.get("c1")!.props.language).toBe("ts");
+  });
+
   it("' ' mid-token (not at the content's own end) is unhandled -- a real space inside code", () => {
     const store = storeFrom([codeBlockRecord("c1", "tsx")]);
     const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 1 }, focus: { blockId: "c1", offset: 1 } } };
@@ -317,6 +342,58 @@ describe("Tab navigation skips covered (merged-away) positions", () => {
     ]);
     const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "a1", offset: 0 }, focus: { blockId: "a1", offset: 0 } } };
     const next = run(cellKeymap.Tab!, state);
-    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "c1", offset: 0 }, focus: { blockId: "c1", offset: 0 } });
+    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "c1", offset: 2 }, focus: { blockId: "c1", offset: 2 } });
+  });
+});
+
+describe("codeBlock Tab/Shift-Tab indent the code, never the block", () => {
+  function code(id: string, text: string) {
+    return { id, type: "codeBlock" as const, props: { language: "ts" }, content: text ? [{ type: "text" as const, text }] : [] };
+  }
+  const textOf = (st: EditorState, id: string) => (st.store.records.get(id)!.content ?? []).map((i) => ("text" in i ? i.text : "")).join("");
+
+  it("Tab at a collapsed caret inserts two spaces there and keeps the block at depth 0", () => {
+    const store = storeFrom([para("p0", "before"), code("c1", "ab")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 1 }, focus: { blockId: "c1", offset: 1 } } };
+    const next = run(codeBlockKeymap.Tab!, state);
+    expect(textOf(next, "c1")).toBe("a  b");
+    expect(next.store.rootIds).toEqual(["p0", "c1"]);
+    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "c1", offset: 3 }, focus: { blockId: "c1", offset: 3 } });
+  });
+
+  it("Tab over a multi-line range indents every touched line", () => {
+    const store = storeFrom([code("c1", "a\nb\nc")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 0 }, focus: { blockId: "c1", offset: 3 } } };
+    const next = run(codeBlockKeymap.Tab!, state);
+    expect(textOf(next, "c1")).toBe("  a\n  b\nc");
+    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "c1", offset: 2 }, focus: { blockId: "c1", offset: 7 } });
+  });
+
+  it("Shift-Tab removes one indent step from the caret's line (tab or up to two spaces)", () => {
+    const store = storeFrom([code("c1", "x\n    y")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 7 }, focus: { blockId: "c1", offset: 7 } } };
+    const next = run(codeBlockKeymap["Shift-Tab"]!, state);
+    expect(textOf(next, "c1")).toBe("x\n  y");
+    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "c1", offset: 5 }, focus: { blockId: "c1", offset: 5 } });
+  });
+
+  it("Shift-Tab with nothing to outdent is still handled (never outdents the block)", () => {
+    const store = storeFrom([code("c1", "x")]);
+    const state: EditorState = { store, selection: { type: "text", anchor: { blockId: "c1", offset: 1 }, focus: { blockId: "c1", offset: 1 } } };
+    expect(codeBlockKeymap["Shift-Tab"]!({ state, registry: r, dispatch: () => { throw new Error("no dispatch expected"); } } as unknown as KeymapCtx)).toBe(true);
+  });
+});
+
+describe("tableCell Tab and Shift-Tab both land at the END of the target cell", () => {
+  it("Tab to the next cell puts the caret after its text", () => {
+    const state: EditorState = { store: twoByTwoStore(), selection: { type: "text", anchor: { blockId: "a1", offset: 2 }, focus: { blockId: "a1", offset: 2 } } };
+    const next = run(cellKeymap.Tab!, state);
+    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "b1", offset: 2 }, focus: { blockId: "b1", offset: 2 } });
+  });
+
+  it("Tab from a row's last cell wraps to the end of the next row's first cell", () => {
+    const state: EditorState = { store: twoByTwoStore(), selection: { type: "text", anchor: { blockId: "b1", offset: 0 }, focus: { blockId: "b1", offset: 0 } } };
+    const next = run(cellKeymap.Tab!, state);
+    expect(next.selection).toEqual({ type: "text", anchor: { blockId: "a2", offset: 2 }, focus: { blockId: "a2", offset: 2 } });
   });
 });

@@ -1,0 +1,64 @@
+JulEditor는 에이전트 스킬을 함께 제공합니다. AI 코딩 에이전트에게 에디터 설치와 사용법을 알려 주는 지침 파일 하나입니다. 스킬을 설치하면 "툴바와 Markdown 내보내기가 있는 JulEditor 에디터를 추가해 줘"처럼 요청했을 때, 이 사이트의 규칙을 따르는 동작하는 코드가 나옵니다. 같은 스킬을 Claude Code와 OpenAI Codex에서 모두 쓸 수 있습니다.
+
+## 스킬이 다루는 내용
+
+- 패키지와 선택형 플러그인 peer 설치
+- 툴바 버튼을 명시하고 슬래시 메뉴를 넣은 최소 `<Editor>` 구성
+- 문서 저장과 불러오기, 제어·비제어 방식
+- Markdown, HTML, 텍스트 변환
+- 이미지와 업로드, 플러그인, 스타일, 한국어 레이블
+
+## Claude Code
+
+저장소를 플러그인 마켓플레이스로 추가한 뒤 플러그인을 설치합니다.
+
+```sh
+claude plugin marketplace add ByeongminLee/jul-editor
+claude plugin install jul-editor@jul-editor
+```
+
+세션 안에서는 `/plugin marketplace add ByeongminLee/jul-editor`로 같은 작업을 할 수 있습니다. 작업에 JulEditor가 언급되면 Claude가 스킬을 알아서 쓰고, `/jul-editor:jul-editor`로 직접 부를 수도 있습니다.
+
+## OpenAI Codex
+
+저장소를 플러그인 마켓플레이스로 추가한 뒤 플러그인을 설치합니다.
+
+```sh
+codex plugin marketplace add ByeongminLee/jul-editor
+codex plugin add jul-editor@jul-editor
+```
+
+플러그인 없이 한 프로젝트에서만 쓰려면 스킬 폴더를 프로젝트의 `.agents/skills`에 복사하세요. Codex가 이 위치를 읽습니다.
+
+```sh
+git clone --depth 1 https://github.com/ByeongminLee/jul-editor.git /tmp/jul-editor
+mkdir -p .agents/skills
+cp -r /tmp/jul-editor/plugins/jul-editor/skills/jul-editor .agents/skills/
+```
+
+스킬이 보이지 않으면 Codex를 다시 시작하세요.
+
+## 다른 에이전트
+
+`skills` CLI를 쓰면 같은 폴더를 Claude Code, Codex, 그 밖에 `SKILL.md`를 읽는 에이전트에 설치할 수 있습니다.
+
+```sh
+npx skills add ByeongminLee/jul-editor
+```
+
+<Note>
+
+스킬은 저장소의 `plugins/jul-editor/skills/jul-editor/`에 있는 Markdown 파일입니다. 짧은 `SKILL.md`와, 작업에 필요할 때만 읽는 주제별 파일로 나뉘어 있습니다. 설치 전에 내용을 읽어 보고, 스킬을 지원하지 않는 도구라면 규칙을 에이전트 지침에 그대로 옮겨 쓰세요.
+
+</Note>
+
+## 써 보기
+
+설치한 뒤 에이전트에게 구체적으로 요청해 보세요.
+
+```text
+설정 페이지에 JulEditor 에디터를 추가해 줘. 툴바에는 굵게, 기울임, 제목, 목록을 넣고,
+문서는 localStorage에 저장하고, 내용을 Markdown으로 복사하는 버튼도 만들어 줘.
+```
+
+다음 단계: 같은 API를 직접 쓰는 방법은 [시작하기](/docs/getting-started)에서 확인하세요.

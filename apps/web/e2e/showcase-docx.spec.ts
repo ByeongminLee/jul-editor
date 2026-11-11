@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { mkdirSync, readFileSync } from "node:fs";
+import { Document, ImageRun, Packer, Paragraph } from "docx";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
@@ -148,4 +150,306 @@ test("docx editor on a phone: toolbar scrolls, sheet scales to fit", async ({ pa
   await expect(root.getByRole("complementary", { name: "Page settings" })).toBeVisible();
   await root.screenshot({ path: `${SHOTS}/docx-mobile.png` });
   await page.screenshot({ path: `${SHOTS}/docx-mobile-page.png` });
+});
+
+const DOT_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAT0lEQVR4nO3PQQ0AIBDAsFPHF/8C8IEIHg3JkgnoZq/zdcMFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY8dgHBoNCmXb2NNwAAAABJRU5ErkJggg==", "base64");
+const loadedImages = (root: ReturnType<Page["locator"]>) => root.locator(".editor-content img").evaluateAll((imgs) => imgs.filter((img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0).length);
+
+test("docx editor: an inserted image shows, and image + page break survive export and re-import", async ({ page }) => {
+  await page.setViewportSize({ width: 1360, height: 900 });
+  const root = await openDocx(page);
+  await expect(root.locator(".editor-content [data-jul-page-break]")).toHaveCount(1);
+  await root.locator(".editor-content [data-type=paragraph]").first().click();
+  await root.getByTestId("docx-image-input").setInputFiles({ name: "dot.png", mimeType: "image/png", buffer: DOT_PNG });
+  await expect(root.locator(".editor-content img")).toHaveCount(1);
+  // the picture actually renders (not a broken <img> whose src was stripped)
+  await expect.poll(() => loadedImages(root)).toBe(1);
+
+  const download = page.waitForEvent("download");
+  await root.getByRole("button", { name: "Export" }).click();
+  const path = await (await download).path();
+  await expect(root.locator(".docx-status")).toContainText("valid .docx zip");
+  await expect(root.locator(".docx-status")).not.toContainText("simplified");
+  expect(readFileSync(path!).toString("latin1")).toMatch(/word\/media\/[^"]+\.png/);
+
+  await root.getByTestId("docx-import-input").setInputFiles(path!);
+  await expect(root.locator(".docx-status")).toContainText("with 1 image");
+  await expect(root.locator(".editor-content [data-jul-page-break]")).toHaveCount(1);
+  await expect.poll(() => loadedImages(root)).toBe(1);
+  await root.screenshot({ path: `${SHOTS}/docx-image-roundtrip.png` });
+});
+
+test("docx editor: opening one toolbar menu closes the other", async ({ page }) => {
+  await page.setViewportSize({ width: 1360, height: 900 });
+  const root = await openDocx(page);
+  await root.locator(".editor-content [data-jul-editor-block]").first().click();
+  const color = root.getByRole("button", { name: "Text color" });
+  const align = root.getByRole("button", { name: "Alignment" });
+  await color.click();
+  await expect(color).toHaveAttribute("aria-expanded", "true");
+  await align.click();
+  await expect(align).toHaveAttribute("aria-expanded", "true");
+  await expect(color).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("[data-docx-menu-panel]")).toHaveCount(1);
+});
+
+test('docx menu supports keyboard navigation and restores focus on Escape', async ({ page }) => {
+  const root = await openDocx(page);
+  const button = root.getByRole('button', { name: 'Alignment' });
+  await button.focus();
+  await button.press('Enter');
+  const items = page.getByRole('menuitemradio');
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('docx local image survives switching showcase previews', async ({ page }) => {
+  const root = await openDocx(page);
+  await root.locator('.editor-content [data-type=paragraph]').first().click();
+  await root.getByTestId('docx-image-input').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: DOT_PNG });
+  await expect.poll(() => loadedImages(root)).toBe(1);
+  await page.getByRole('group', { name: 'DOCX editor view' }).getByRole('button', { name: 'Code', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect.poll(() => loadedImages(root)).toBe(1);
+  const download = page.waitForEvent('download');
+  await root.getByRole('button', { name: 'Export' }).click();
+  const path = await (await download).path();
+  expect(readFileSync(path!).toString('latin1')).toMatch(/word\/media\/[^"]+\.png/);
+});
+
+test('docx local images survive a locale roundtrip', async ({ page }) => {
+  const root = await openDocx(page);
+  await root.locator('.editor-content [data-type=paragraph]').first().click();
+  await root.getByTestId('docx-image-input').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: DOT_PNG });
+  await expect.poll(() => loadedImages(root)).toBe(1);
+  await page.getByRole('button', { name: '한국어' }).click();
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect.poll(() => loadedImages(root)).toBe(1);
+});
+
+
+test('docx pending image survives a preview remount', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = FileReader.prototype.readAsDataURL;
+    let reads = 0;
+    FileReader.prototype.readAsDataURL = function (blob) {
+      if (blob instanceof File && blob.name === 'pending.png' && ++reads === 1) return;
+      read.call(this, blob);
+    };
+  });
+  const root = await openDocx(page);
+  await root.locator('.editor-content [data-type=paragraph]').first().click();
+  await root.getByTestId('docx-image-input').setInputFiles({ name: 'pending.png', mimeType: 'image/png', buffer: DOT_PNG });
+  await expect(root.locator('.editor-content [data-type=image] img')).toHaveAttribute('src', /^blob:/);
+  await page.getByRole('group', { name: 'DOCX editor view' }).getByRole('button', { name: 'Code', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(root.locator('.editor-content [data-type=image] img')).toHaveAttribute('src', /^data:image\/png/);
+});
+
+test('docx export preserves dimensions of a local image URL', async ({ page }) => {
+  await page.goto('/showcase');
+  const base64 = await page.evaluate(async (settingsUrl) => {
+    const io = await import('/src/pages/showcase/docx-editor-io.ts');
+    const pages = await import(/* @vite-ignore */ settingsUrl);
+    const doc = { version: 1, blocks: [{ id: 'image', type: 'image', props: { src: '/editor-canvas.svg' } }] };
+    const result = await io.buildDocx(doc, pages.normalizeSettings());
+    const bytes = new Uint8Array(await result.blob.arrayBuffer());
+    return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''));
+  }, `/@fs${process.cwd()}/packages/plugins/src/pages/settings.ts`);
+  const file = join(tmpdir(), 'jul-editor-local-image.docx');
+  writeFileSync(file, Buffer.from(base64, 'base64'));
+  const xml = execFileSync('unzip', ['-p', file, 'word/document.xml'], { encoding: 'utf8' });
+  const extent = /<wp:extent cx="(\d+)" cy="(\d+)"/.exec(xml);
+  expect(extent).not.toBeNull();
+  expect(Number(extent![1]) / Number(extent![2])).toBeCloseTo(840 / 460, 1);
+});
+
+
+test('docx export reports an unavailable image instead of failing the document', async ({ page }) => {
+  await page.goto('/showcase');
+  const result = await page.evaluate(async (settingsUrl) => {
+    const io = await import('/src/pages/showcase/docx-editor-io.ts');
+    const pages = await import(/* @vite-ignore */ settingsUrl);
+    return io.buildDocx({ version: 1, blocks: [{ id: 'image', type: 'image', props: { src: '/missing-image.png' } }] }, pages.normalizeSettings()).then(({ validZip, lossy }) => ({ validZip, lossy }));
+  }, `/@fs${process.cwd()}/packages/plugins/src/pages/settings.ts`);
+  expect(result).toEqual({ validZip: true, lossy: 1 });
+});
+
+test('docx block style reflects a level-one heading after selecting it', async ({ page }) => {
+  const root = await openDocx(page);
+  const paragraph = root.locator('.editor-content [data-type=paragraph]').first();
+  const id = await paragraph.getAttribute('data-id');
+  await paragraph.click();
+  await root.getByLabel('Block style').selectOption('h1');
+  await root.locator('.editor-content [data-type=paragraph]').first().click();
+  await root.locator(`[data-id="${id}"]`).click();
+  await expect(root.getByLabel('Block style')).toHaveValue('h1');
+});
+
+test('docx menu opens with ArrowDown and Tab exits', async ({ page }) => {
+  const root = await openDocx(page);
+  const button = root.getByRole('button', { name: 'Alignment' });
+  await button.focus();
+  await button.press('ArrowDown');
+  await expect(page.getByRole('menuitemradio').first()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('WebP image survives DOCX export and import with its proportions', async ({ page }) => {
+  const root = await openDocx(page);
+  const bytes = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 32;
+    canvas.getContext('2d')!.fillRect(0, 0, 64, 32);
+    return canvas.toDataURL('image/webp').split(',')[1]!;
+  });
+  await root.locator('.editor-content [data-type=paragraph]').first().click();
+  await root.getByTestId('docx-image-input').setInputFiles({ name: 'landscape.webp', mimeType: 'image/webp', buffer: Buffer.from(bytes, 'base64') });
+  await expect(root.locator('[data-jul-editor-image]')).toHaveAttribute('data-state', 'ready');
+  const download = page.waitForEvent('download');
+  await root.getByRole('button', { name: 'Export' }).click();
+  const path = await (await download).path();
+  await expect(root.locator('.docx-status')).not.toContainText('simplified');
+  await root.getByTestId('docx-import-input').setInputFiles(path!);
+  await expect(root.locator('.docx-status')).toContainText('with 1 image');
+  const image = root.locator('.editor-content [data-jul-editor-image] img');
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth / el.naturalHeight)).toBe(2);
+});
+
+
+test('imported DOCX remains after switching preview', async ({ page }) => {
+  const root = await openDocx(page);
+  const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('IMPORTED DOCX DRAFT ONLY')] }] }));
+  await root.getByTestId('docx-import-input').setInputFiles({ name: 'import.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+  await expect(root.locator('.editor-content')).toContainText('IMPORTED DOCX DRAFT ONLY');
+  await page.getByRole('group', { name: 'DOCX editor view' }).getByRole('button', { name: 'Code', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(root.locator('.editor-content')).toContainText('IMPORTED DOCX DRAFT ONLY');
+});
+
+test('an imported DOCX stays with the locale that started the import', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () { return new Promise((resolve, reject) => setTimeout(() => read.call(this).then(resolve, reject), 600)); };
+  });
+  const root = await openDocx(page);
+  const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('ORIGIN LOCALE ONLY')] }] }));
+  await root.getByTestId('docx-import-input').setInputFiles({ name: 'import.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+  await page.getByRole('button', { name: '한국어' }).click();
+  await page.waitForTimeout(1200);
+  await expect(root.locator('.editor-content')).not.toContainText('ORIGIN LOCALE ONLY');
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect(root.locator('.editor-content')).toContainText('ORIGIN LOCALE ONLY');
+});
+
+
+test('a DOCX image remains with its originating locale during import', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () { return new Promise((resolve, reject) => setTimeout(() => read.call(this).then(resolve, reject), 600)); };
+  });
+  const root = await openDocx(page);
+  const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph({ children: [new ImageRun({ data: DOT_PNG, type: 'png', transformation: { width: 64, height: 32 } })] })] }] }));
+  await root.getByTestId('docx-import-input').setInputFiles({ name: 'picture.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+  await page.getByRole('button', { name: '한국어' }).click();
+  await page.waitForTimeout(1400);
+  await expect(root.locator('.editor-content [data-jul-editor-image]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'English' }).click();
+  await expect.poll(() => loadedImages(root)).toBe(1);
+});
+
+test('a DOCX import persists if preview closes while reading', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () { return new Promise((resolve, reject) => setTimeout(() => read.call(this).then(resolve, reject), 600)); };
+  });
+  const root = await openDocx(page);
+  const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('ASYNC IMPORT DRAFT')] }] }));
+  await root.getByTestId('docx-import-input').setInputFiles({ name: 'import.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+  await page.getByRole('group', { name: 'DOCX editor view' }).getByRole('button', { name: 'Code', exact: true }).click();
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(root.locator('.editor-content')).toContainText('ASYNC IMPORT DRAFT');
+});
+
+test('a DOCX import appears if preview reopens before reading finishes', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () { return new Promise((resolve, reject) => setTimeout(() => read.call(this).then(resolve, reject), 1000)); };
+  });
+  const root = await openDocx(page);
+  const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('DELAYED REOPEN IMPORT')] }] }));
+  await root.getByTestId('docx-import-input').setInputFiles({ name: 'import.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+  await page.getByRole('group', { name: 'DOCX editor view' }).getByRole('button', { name: 'Code', exact: true }).click();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(root.locator('.editor-content')).toContainText('DELAYED REOPEN IMPORT');
+});
+
+test('a delayed DOCX import does not overwrite newer edits', async ({ page }) => {
+  await page.addInitScript(() => {
+    const read = Blob.prototype.arrayBuffer;
+    Blob.prototype.arrayBuffer = function () { return new Promise((resolve, reject) => setTimeout(() => read.call(this).then(resolve, reject), 1000)); };
+  });
+  const root = await openDocx(page);
+  const buffer = await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('STALE IMPORT')] }] }));
+  await root.getByTestId('docx-import-input').setInputFiles({ name: 'import.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer });
+  const paragraph = root.locator('.editor-content [data-type=paragraph]').first();
+  await paragraph.click();
+  await page.keyboard.type('NEWER EDIT');
+  await expect(root.locator('.docx-status')).toContainText('document changed while importing');
+  await expect(root.locator('.editor-content')).toContainText('NEWER EDIT');
+  await expect(root.locator('.editor-content')).not.toContainText('STALE IMPORT');
+});
+
+test("docx formatting menus fit above a low selection and restore keyboard focus", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 500 });
+  const root = await openDocx(page);
+  const more = root.getByRole("button", { name: "More" });
+  await more.scrollIntoViewIfNeeded();
+  await more.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 390));
+  await more.focus();
+  await more.press("ArrowDown");
+  const menu = page.locator('[data-docx-menu-panel]');
+  await expect(menu.getByRole("menuitem", { name: "Underline" })).toBeFocused();
+  const menuBox = (await menu.boundingBox())!;
+  expect(menuBox.y).toBeGreaterThanOrEqual(0);
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(500);
+  await menu.press("End");
+  await expect(menu.getByRole("menuitem", { name: "Redo" })).toBeFocused();
+  await menu.press("Escape");
+  await expect(more).toBeFocused();
+
+  const paragraph = root.locator(".editor-content [data-type=paragraph]").first();
+  await paragraph.scrollIntoViewIfNeeded();
+  await paragraph.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 460));
+  await paragraph.click({ position: { x: 10, y: 8 } });
+  await page.keyboard.press("ControlOrMeta+k");
+  const input = page.getByLabel("Link URL");
+  await expect(input).toBeFocused();
+  const linkBox = (await input.locator("..").boundingBox())!;
+  expect(linkBox.y).toBeGreaterThanOrEqual(0);
+  expect(linkBox.y + linkBox.height).toBeLessThanOrEqual(500);
+  await input.press("Escape");
+  await expect(input).toHaveCount(0);
+  await page.keyboard.type("typed after closing");
+  await expect(paragraph).toContainText("typed after closing");
+});
+
+test("docx menu tracks its trigger while the page scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 500 });
+  const root = await openDocx(page);
+  const trigger = root.getByRole("button", { name: "More" });
+  await trigger.scrollIntoViewIfNeeded();
+  await trigger.evaluate((el) => window.scrollBy(0, el.getBoundingClientRect().top - 390));
+  await trigger.click();
+  const menu = page.locator("[data-docx-menu-panel]");
+  const before = (await menu.boundingBox())!;
+  await page.evaluate(() => window.scrollBy(0, 100));
+  await expect.poll(async () => (await menu.boundingBox())?.y).not.toBe(before.y);
+  await expect(menu.getByRole("menuitem", { name: "Underline" })).toBeFocused();
 });

@@ -52,7 +52,7 @@ test("five cases: agent, docx and notion-like editors, shadcn, and Custom with b
 test("showcase opens on Custom with only the page title and description", async ({ page }) => {
   await page.goto("/showcase");
   await expect(page.locator(".showcase-active")).toHaveAttribute("data-theme", "custom");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Showcase");
+  await expect(page.getByRole("heading", { level: 1, name: "Showcase" })).toBeVisible();
   await expect(page.getByText("Nine visual directions")).toHaveCount(0);
   await expect(page.getByText("Use your own design system.")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Read the styling guide" })).toBeVisible();

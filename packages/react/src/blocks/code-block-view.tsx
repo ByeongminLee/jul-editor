@@ -23,6 +23,7 @@ import { LabelsContext } from "../context.js";
 export interface CodeLanguageOption {
   value: string;
   label: string;
+  aliases?: readonly string[];
 }
 
 /** The async Clipboard API can reject (NotAllowedError -- no permission,
@@ -71,7 +72,7 @@ function CodeBlockChrome(props: VoidRendererProps & { languages: readonly CodeLa
   // options -- a plain controlled <select> would otherwise silently fall
   // back to its first option's value, so add the real value as an extra
   // option instead of losing it.
-  const knownLanguage = languages.some((l) => l.value === language);
+  const matchedLanguage = languages.find((l) => l.value === language || l.aliases?.includes(language));
 
   function handleCopy(): void {
     const rec = editor.getState().store.records.get(block.id);
@@ -84,8 +85,8 @@ function CodeBlockChrome(props: VoidRendererProps & { languages: readonly CodeLa
 
   return (
     <div data-jul-editor-code-chrome>
-      <select aria-label={labels.codeLanguage} value={language} onChange={(e) => updateProps({ language: e.target.value })}>
-        {!knownLanguage && language && <option value={language}>{language}</option>}
+      <select aria-label={labels.codeLanguage} value={matchedLanguage?.value ?? language} onChange={(e) => updateProps({ language: e.target.value })}>
+        {!matchedLanguage && language && <option value={language}>{language}</option>}
         {languages.map((l) => (
           <option key={l.value} value={l.value}>
             {l.label}

@@ -15,7 +15,7 @@
 //             pasted from the web is accepted too.
 //   typed     `>> ` (toggle), `>># ` / `>>## ` / `>>### ` (toggle heading 1-3). Plain `> ` is the
 //             quote rule and fires first, so toggle needs a distinct prefix.
-import { ancestorChain, defineBlock, getProp, newId } from "@jul-editor/core";
+import { ancestorChain, contentLength, defineBlock, getProp, newId } from "@jul-editor/core";
 import type { Block, Editor, FromMarkdownBlockCtx, FromMarkdownBlockResult, InputRuleEntry, Json, Keymap, MarkdownBlockToken } from "@jul-editor/core";
 import { enterOpensBody, prefixRule } from "../notion-shared/behaviors.js";
 import { blocksFromHTML, inlinesFromHTML } from "../notion-shared/html-parse.js";
@@ -148,15 +148,16 @@ export const toggleBlock = defineBlock({
 });
 
 /** Opens/closes a toggle. Collapsing while the caret is inside one of its descendants moves the caret
- * to the toggle's summary (the hidden children cannot hold a caret), all as ONE undo step. */
+ * to the END of the toggle's summary (the hidden children cannot hold a caret; typing then continues the
+ * title instead of prefixing it), all as ONE undo step. */
 export function setToggleOpen(editor: Editor, id: string, open: boolean, opts: { persist?: boolean } = {}): void {
   editor.update((tx) => {
     const state = editor.getState();
     // persist:false (an openStore adapter owns the state) only repairs the selection.
     let next = opts.persist === false ? tx : tx.setProps(id, { open: open ? true : undefined });
     const sel = state.selection;
-    if (!open && sel && sel.type === "text" && sel.anchor.blockId !== id && ancestorChain(state.store, sel.anchor.blockId).includes(id)) {
-      const caret = { blockId: id, offset: 0 };
+    if (!open && sel && sel.type === "text" && [sel.anchor.blockId, sel.focus.blockId].some((blockId) => blockId !== id && ancestorChain(state.store, blockId).includes(id))) {
+      const caret = { blockId: id, offset: contentLength(state.store.records.get(id)?.content) };
       next = next.setSelection({ type: "text", anchor: caret, focus: caret });
     }
     return next;

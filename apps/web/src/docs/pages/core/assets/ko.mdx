@@ -12,7 +12,7 @@
 
 ## 이미지와 첨부파일 넣기
 
-기본 이미지 렌더러는 외부 이미지 URL·대체 텍스트·너비·정렬·캡션을 지원합니다. 이미지 블록을 선택하면 URL을 고칠 수 있습니다. PDF와 다른 파일은 `attachmentBlock`과 `AttachmentView`를 명시적으로 등록하세요. 파일 입력은 `editor.insertFiles(files)`를 호출하면 되고, 붙여넣기와 드롭도 같은 경로로 처리됩니다. `createFileBlock`으로 이미지 외 파일의 블록 형태를 앱에서 바꿀 수 있습니다.
+기본 이미지 렌더러는 외부 이미지 URL·대체 텍스트·너비·정렬·캡션을 지원합니다. 이미지 블록을 선택하면 URL을 고칠 수 있습니다. PDF와 다른 파일은 `attachmentBlock`과 `AttachmentView`를 명시적으로 등록하세요. 파일 입력은 `editor.insertFiles(files)`를 호출하면 되고, 붙여넣기와 드롭도 같은 경로로 처리됩니다. `createFileBlock`으로 이미지 외 파일의 블록 형태를 앱에서 바꿀 수 있습니다. 이미 문서에 있는 블록, 예를 들어 원본이 data URL이라 `fromHTML`이 비워 둔 이미지는 `editor.attachUpload(blockId, file)`로 같은 방식으로 업로드 대기열에 넣습니다.
 
 ```tsx
 import { Editor, useEditor, attachmentBlock, AttachmentView,

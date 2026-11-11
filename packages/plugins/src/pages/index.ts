@@ -14,5 +14,5 @@ export {
 export type { DocumentSettings, PageSizeName, PageOrientation, PageMargins, HeaderFooterSettings, HeaderFooterAlign, PageGeometryPx } from "./settings.js";
 export { applyPageTokens, splitPageTokens } from "./tokens.js";
 export { buildPrintCss, pageRule } from "./print.js";
-export { exportDocx, importDocx } from "./docx.js";
-export type { DocxLib, MammothLib, ExportDocxOptions, ExportDocxResult, ImportDocxOptions } from "./docx.js";
+export { exportDocx, importDocx, restoreDocxPageBreaks } from "./docx.js";
+export type { DocxLib, DocxPendingImage, MammothLib, ExportDocxOptions, ExportDocxResult, ImportDocxOptions, ImportDocxResult } from "./docx.js";

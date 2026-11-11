@@ -17,7 +17,7 @@
 
 import { defineMark } from "@jul-editor/core";
 import type { Editor, EditorState, Inline, Mark, Registry, Selection, Store, TextInline } from "@jul-editor/core";
-import { comparePreOrder, contentLength, sliceContent, textSelectionBlockIds } from "@jul-editor/core";
+import { orderPoints, contentLength, sliceContent, textSelectionBlockIds } from "@jul-editor/core";
 
 export const COMMENT_MARK = "comment";
 
@@ -113,8 +113,7 @@ export function threadIdsAtPoint(state: EditorState): string[] {
 /** Per-block [from,to) pieces of a text selection, in document order. */
 function selectionRanges(store: Store, registry: Registry | undefined, sel: Extract<Selection, { type: "text" }>): ThreadRange[] {
   const ids = textSelectionBlockIds(store, sel);
-  const order = comparePreOrder(store, sel.anchor.blockId, sel.focus.blockId);
-  const [start, end] = order < 0 || (order === 0 && sel.anchor.offset <= sel.focus.offset) ? [sel.anchor, sel.focus] : [sel.focus, sel.anchor];
+  const [start, end] = orderPoints(store, sel.anchor, sel.focus);
   const out: ThreadRange[] = [];
   for (const blockId of ids) {
     const rec = store.records.get(blockId);

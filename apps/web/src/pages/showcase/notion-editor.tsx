@@ -23,10 +23,16 @@ import type { CollabUser } from "@jul-editor/plugins/collaboration";
 import { Copy, GripVertical, MessageSquare, Moon, Plus, Redo2, Sun, Trash2, Undo2, Users, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NOTION_DOC_ID, notionSampleDoc } from "./notion-editor-sample.js";
+import type { Doc } from "@jul-editor/core";
+import { useBubblePlacement } from "../../components/workspace/bubble-placement.js";
+import { PlacedMenu, useMenuPlacement } from "../../components/workspace/menu-placement.js";
 import "./notion-editor.css";
 
 export interface NotionEditorProps {
   locale?: "en" | "ko";
+  /** Documents kept by the host page, so edits survive unmounting (e.g. switching showcase cases). */
+  drafts?: Partial<Record<"en" | "ko", Doc>>;
+  onDraftChange?: (locale: "en" | "ko", doc: Doc) => void;
 }
 
 type Locale = "en" | "ko";
@@ -61,8 +67,9 @@ const codeBlockRenderer = createCodeBlockRenderer({ languages: pluginCodeLanguag
 /** Click-to-load wrapper: the embed stays a placeholder (no iframe, no request) until the user opts in. */
 function LazyIframeView(props: IframeViewProps) {
   const [loaded, setLoaded] = useState(false);
-  if (loaded) return <IframeView {...props} />;
   const url = typeof props.block.props.url === "string" ? props.block.props.url : "";
+  // no url yet (a slash insert): IframeView shows its URL field, there is nothing to load
+  if (loaded || !url) return <IframeView {...props} />;
   const ko = props.locale === "ko";
   let host = url;
   try { host = new URL(url).hostname; } catch { /* keep raw url */ }
@@ -171,10 +178,10 @@ function BlockControls({ copy }: { copy: Strings }) {
 
 function SlashCommands({ copy }: { copy: Strings }) {
   return <Editor.SlashMenu>{({ items, activeIndex, rect, getListboxProps, getOptionProps }) =>
-    <div {...getListboxProps()} className="nt-menu nt-slash" style={rect ? { left: Math.max(8, Math.min(rect.left, window.innerWidth - 270)), top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 330)) } : undefined}>
+    <PlacedMenu {...getListboxProps()} className="nt-menu nt-slash" rect={rect} guess={{ width: 244, height: 320 }}>
       <div className="nt-menu-label">{copy.slash}</div>
       {items.length ? items.map((item, index) => <div key={item.id} {...getOptionProps(index)} className="nt-menu-item" data-active={index === activeIndex || undefined}>{item.title}</div>) : <div className="nt-menu-empty">{copy.noMatch}</div>}
-    </div>
+    </PlacedMenu>
   }</Editor.SlashMenu>;
 }
 
@@ -183,12 +190,23 @@ function SlashCommands({ copy }: { copy: Strings }) {
 function ColorMenu({ copy }: { copy: Strings }) {
   const picker = useColorPicker();
   const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const { ref, style } = useMenuPlacement(anchor, { width: 214, height: 230 });
+  useEffect(() => {
+    if (!open) return;
+    let frame = 0;
+    const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setAnchor(buttonRef.current?.getBoundingClientRect() ?? null)); };
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
+  }, [open]);
   const keep = { "data-jul-editor-keep-selection": "" } as const;
   return <span className="nt-color" {...keep}>
-    <button type="button" className="nt-tool" aria-label={copy.color} title={copy.color} aria-expanded={open} onMouseDown={(event) => event.preventDefault()} onClick={() => setOpen(!open)}>
+    <button ref={buttonRef} type="button" className="nt-tool" aria-label={copy.color} title={copy.color} aria-expanded={open} onMouseDown={(event) => event.preventDefault()} onClick={(event) => { setAnchor(event.currentTarget.getBoundingClientRect()); setOpen(!open); }}>
       <span className="nt-color-a" style={{ borderBottomColor: picker.current.textColor && picker.current.textColor !== "default" ? `var(--nt-c-${picker.current.textColor})` : undefined }}>A</span>
     </button>
-    {open && <div className="nt-menu nt-color-pop" role="group" aria-label={copy.color} onMouseDown={(event) => event.preventDefault()}>
+    {open && <div ref={ref} style={style} className="nt-menu nt-color-pop" role="group" aria-label={copy.color} onMouseDown={(event) => event.preventDefault()}>
       <div className="nt-menu-label">{copy.textColor}</div>
       <div className="nt-swatches">{picker.palette.map((color) => <button key={color} type="button" className="nt-swatch" data-color={color} aria-label={`${copy.textColor}: ${color}`} data-active={picker.current.textColor === color || undefined} onClick={() => picker.setTextColor(color)}><span style={{ color: `var(--nt-c-${color})` }}>A</span></button>)}</div>
       <div className="nt-menu-label">{copy.highlight}</div>
@@ -198,8 +216,9 @@ function ColorMenu({ copy }: { copy: Strings }) {
   </span>;
 }
 
-function BubbleTools({ copy, onComment }: { copy: Strings; onComment: () => void }) {
-  return <Editor.BubbleMenu>{({ rect }) => <div className="nt-bubble" data-jul-editor-keep-selection="" style={{ left: Math.max(8, Math.min(rect.left, window.innerWidth - 330)), top: Math.max(8, rect.top - 46) }}>
+function BubbleBar({ rect, copy, onComment }: { rect: DOMRect; copy: Strings; onComment: () => void }) {
+  const { ref, style } = useBubblePlacement(rect, { width: 330, height: 40 });
+  return <div ref={ref} className="nt-bubble" data-jul-editor-keep-selection="" style={style}>
     <Editor.Bold className="nt-tool" aria-label={copy.bold} title={copy.bold}><b>B</b></Editor.Bold>
     <Editor.Italic className="nt-tool" aria-label={copy.italic} title={copy.italic}><i>I</i></Editor.Italic>
     <Editor.Underline className="nt-tool" aria-label={copy.underline} title={copy.underline}><u>U</u></Editor.Underline>
@@ -208,7 +227,11 @@ function BubbleTools({ copy, onComment }: { copy: Strings; onComment: () => void
     <ColorMenu copy={copy} />
     <span className="nt-bubble-sep" />
     <AddCommentButton className="nt-tool nt-tool-wide" onOpen={onComment}><MessageSquare size={14} /> {copy.addComment}</AddCommentButton>
-  </div>}</Editor.BubbleMenu>;
+  </div>;
+}
+
+function BubbleTools({ copy, onComment }: { copy: Strings; onComment: () => void }) {
+  return <Editor.BubbleMenu>{({ rect }) => <BubbleBar rect={rect} copy={copy} onComment={onComment} />}</Editor.BubbleMenu>;
 }
 
 // ---- paste menu (Link / Bookmark / Embed / Mention) ---------------------------------------------------------
@@ -315,7 +338,7 @@ function readSiteTheme(): Theme {
   try { return document.documentElement.dataset.theme === "light" ? "light" : "dark"; } catch { return "dark"; }
 }
 
-export function NotionEditor({ locale = "en" }: NotionEditorProps) {
+export function NotionEditor({ locale = "en", drafts, onDraftChange }: NotionEditorProps) {
   const [theme, setTheme] = useState<Theme>(readSiteTheme);
   const [user] = useState<CollabUser>(randomUser);
   const copy = COPY[locale];
@@ -332,12 +355,13 @@ export function NotionEditor({ locale = "en" }: NotionEditorProps) {
   }, []);
   const author = useMemo(() => ({ id: user.id, name: user.name, color: user.color }), [user]);
   const linkContext = useMemo(() => ({ fetchMetadata, iframePolicy: IFRAME_POLICY }), []);
-  const initial = useMemo(() => notionSampleDoc(locale), [locale]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const initial = useMemo(() => drafts?.[locale] ?? notionSampleDoc(locale), [locale]);
 
   return <div className="showcase-notion" data-nt-theme={theme}>
     <style>{PLUGIN_CSS}</style>
     <LinkContextProvider value={linkContext}>
-      <Editor key={locale} defaultValue={initial} locale={locale} renderers={RENDERERS} placeholder={copy.placeholder} className="editor-instance nt-shell">
+      <Editor key={locale} defaultValue={initial} onChange={(doc) => onDraftChange?.(locale, doc)} locale={locale} renderers={RENDERERS} placeholder={copy.placeholder} className="editor-instance nt-shell">
         <Editor.Plugin {...calloutPlugin} />
         <Editor.Plugin {...togglePlugin} />
         <Editor.Plugin {...tocPlugin} />

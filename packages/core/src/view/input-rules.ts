@@ -13,7 +13,7 @@ import type { Block, Inline, Json } from "../model/types.js";
 import { sanitizeUrl } from "../model/url.js";
 import { contentLength, sliceContent } from "../store/store.js";
 import type { EditorState, Point } from "../store/types.js";
-import type { MarksRef } from "./marks.js";
+import { marksAtPoint, type MarksRef } from "./marks.js";
 import type { Dispatch } from "./types.js";
 
 export interface InputRuleCtx {
@@ -190,11 +190,10 @@ function inlineMarkRule(match: RegExp, markType: string): InputRuleEntry {
       // The delimiters (everything in [from, fromInner) and [toInner, to)) are
       // dropped entirely -- `marked` lands starting at `from`, not `fromInner`.
       const caretOffset = from + contentLength(marked);
+      const followingMarks = marksAtPoint(ctx.state, sel.anchor);
       ctx.dispatch((tx) => tx.replaceContent(blockId, from, to, marked).setSelection({ type: "text", anchor: { blockId, offset: caretOffset }, focus: { blockId, offset: caretOffset } }));
-      // `code` is non-inclusive (Notion/ProseMirror convention) -- text
-      // typed right after must not inherit it the way bold/italic/strike/
-      // highlight (inclusive) legitimately do.
-      if (markType === "code" && ctx.marksRef) ctx.marksRef.stored = [];
+      // Text typed next keeps the closing delimiter's own marks, not the mark this rule just added.
+      if (ctx.marksRef) ctx.marksRef.stored = followingMarks;
       return true;
     },
   };

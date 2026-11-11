@@ -273,7 +273,8 @@ for (const docSize of ["500", "5000"] as const) {
   test(`perf mount time: ${docSize} blocks (react=0)${docSize === "5000" ? " (gate < 1500ms)" : " (report)"}`, async ({ page }) => {
     test.setTimeout(30_000);
     await gotoPerf(page, { doc: docSize, react: false, autosave: false });
-    const mountMs = await page.evaluate(() => window.__perf!.mountMs);
+    const { mountMs, mountInitialChildCount } = await page.evaluate(() => ({ mountMs: window.__perf!.mountMs, mountInitialChildCount: window.__perf!.mountInitialChildCount }));
+    expect(mountInitialChildCount).toBe(0);
     results[`mount-${docSize}`] = { mountMs, budgetMs: docSize === "5000" ? 1500 : null, gated: docSize === "5000" };
     if (docSize === "5000") expect(mountMs).toBeLessThan(1500);
   });

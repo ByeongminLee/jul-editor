@@ -115,3 +115,13 @@ describe("createCodeBlockRenderer with a ko-locale LabelsContext", () => {
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "코드 복사" }).textContent).toBe("복사됨"));
   });
 });
+
+it('selects a canonical language for a stored alias without duplicating it', () => {
+  const Code = createCodeBlockRenderer({ languages: [{ value: 'js', label: 'JavaScript', aliases: ['javascript'] }] });
+  const updateProps = vi.fn();
+  render(<Code {...baseProps({ block: { id: 'c1', type: 'codeBlock', props: { language: 'javascript' } }, updateProps })} />);
+  const select = screen.getByRole('combobox') as HTMLSelectElement;
+  expect(select.value).toBe('js');
+  expect(select.options).toHaveLength(1);
+  expect(updateProps).not.toHaveBeenCalled();
+});

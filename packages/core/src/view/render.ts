@@ -4,6 +4,7 @@
 // wrapper elements inside a `data-jul-editor-children` container.
 
 import { getProp, isText } from "../model/canonical.js";
+import { newId } from "../model/id.js";
 import { isVoidBlockSpec } from "../model/schema.js";
 import type { Registry } from "../model/schema.js";
 import type { Block, Inline, MentionInline } from "../model/types.js";
@@ -37,6 +38,8 @@ export interface BlockEls {
    * didn't change" check, same idea as `lastContent` but for
    * structure (insert/remove/move) instead of text. */
   lastChildIds?: readonly string[];
+  lastTableHeader?: boolean;
+  listDomId?: string;
   /** Attribute names last written from BlockSpec.wrapperAttrs, so a name that
    * disappears from the next result is removed again (core never removes an attr it did not write). */
   wrapperAttrNames?: Set<string>;
@@ -69,6 +72,7 @@ export interface ViewRenderCtx {
    * non-root parent, since the root itself has no block id/BlockEls of its
    * own to hang that field on. */
   lastRootIds?: readonly string[];
+  listIdPrefix?: string;
   /** a text block's placeholder (Notion-style "Type '/' for commands"),
    * resolved per block when set. Written as `data-placeholder` on the
    * block's own content element -- a host's CSS decides when/how to show it
@@ -218,14 +222,31 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   const oldInlines = els.lastContent;
   const domText = domPlainText(content);
   const modelText = plainTextOf(inlines);
-  // same PLAIN TEXT isn't "the DOM already matches" -- a mark-only
-  // change (toggleMark, undo/redo of one) never touches a single character,
-  // so domText === modelText trivially even though the run structure (which
-  // marks wrap which characters) changed. Require the run shape to match too
-  // before trusting this shortcut; otherwise fall through to the sameShape
-  // in-place patch (or a full rebuild) below, same as a run-count change.
-  const sameRunShape = !!oldInlines && oldInlines.length === inlines.length && oldInlines.every((o, i) => runKey(o) === runKey(inlines[i]!));
-  if (domText === modelText && sameRunShape) {
+  // Every shortcut below writes through (or trusts) `els.runNodes`, so first
+  // check they still ARE the DOM: one live node per old run, and together they
+  // account for all of the content's text. A composition (skipDom above only
+  // records lastContent) can leave them stale -- in an empty block the browser
+  // swaps the placeholder <br> for its own, never-registered text node -- and
+  // a stray browser-created text node can sit next to them. Untrusted -> rebuild.
+  const runNodes = els.runNodes;
+  const trusted =
+    !!oldInlines &&
+    runNodes.length === oldInlines.length &&
+    runNodes.every((n) => !!n && content.contains(n)) &&
+    runNodes.map((n) => (n.nodeType === Node.TEXT_NODE ? (n as Text).data : (n.textContent ?? ""))).join("") === domText;
+  if (!trusted) {
+    rebuildContent(els, inlines);
+    els.lastContent = inlines;
+    return;
+  }
+  // Same PLAIN TEXT plus the same run keys still isn't "the DOM already
+  // matches": a toggleMark that only MOVES a run boundary (bold extended over
+  // the text before it, undo/redo of that) keeps both identical while
+  // changing which characters each run holds. Compare each run's own DOM text
+  // against the new model run too.
+  const sameRunShape = oldInlines.length === inlines.length && oldInlines.every((o, i) => runKey(o) === runKey(inlines[i]!));
+  const runTextMatches = sameRunShape && inlines.every((inl, i) => !isText(inl) || (runNodes[i] as Text).data === inl.text);
+  if (domText === modelText && runTextMatches) {
     els.lastContent = inlines; // DOM already matches (typical absorb-echo case)
     return;
   }
@@ -239,11 +260,12 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   // '\n' instead of after it.
   const sameEndsWithNewline = !!oldInlines && plainTextOf(oldInlines).endsWith("\n") === modelText.endsWith("\n");
   const sameShape = sameRunShape && sameEndsWithNewline;
-  if (sameShape && els.runNodes) {
+  if (sameShape) {
+    // in place: each run's own (trusted, see above) node gets its new text --
+    // also correct for a boundary-only shift, since every run keeps its marks.
     for (let i = 0; i < inlines.length; i++) {
       const inl = inlines[i]!;
-      const node = els.runNodes[i];
-      if (!node) continue;
+      const node = runNodes[i]!;
       if (isText(inl) && node.nodeType === Node.TEXT_NODE) {
         if ((node as Text).data !== inl.text) (node as Text).data = inl.text;
       } else if (inl.type === "mention" && node instanceof HTMLElement) {
@@ -257,7 +279,7 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   // run COUNT changed (the only reason sameShape just failed, given
   // sameEndsWithNewline held) -- try the cheaper group-level reconciliation
   // before paying for a full rebuild.
-  if (sameEndsWithNewline && oldInlines && reconcileRunGroups(els, oldInlines, inlines)) {
+  if (sameEndsWithNewline && reconcileRunGroups(els, oldInlines, inlines)) {
     els.lastContent = inlines;
     return;
   }
@@ -265,7 +287,7 @@ function patchContent(els: BlockEls, inlines: NonNullable<Block["content"]>, ski
   els.lastContent = inlines;
 }
 
-const WRAPPER_ATTR_NAME = /^(data|aria)-[a-z0-9-]+$/;
+const WRAPPER_ATTR_NAME = /^(?:role|(?:data|aria)-[a-z0-9-]+)$/;
 
 /** Mirrors BlockSpec.wrapperAttrs plus the core block-style props (textAlign, textColor,
  * backgroundColor) onto the wrapper. Attribute-only: the MutationObserver watches childList and
@@ -346,6 +368,26 @@ export function renderBlock(id: string, store: Store, ctx: ViewRenderCtx, seen: 
   }
 
   syncWrapperAttrs(els, spec, store, id, rec.props);
+  const isListItem = rec.type === "bulletListItem" || rec.type === "orderedListItem" || rec.type === "todoListItem";
+  const row = rec.type === "tableCell" && rec.parentId ? store.records.get(rec.parentId) : undefined;
+  const table = row?.parentId ? store.records.get(row.parentId) : undefined;
+  const isHeader = !!table && table.type === "table" && table.childIds[0] === row?.id && (getProp<boolean>({ id: table.id, type: table.type, props: table.props }, "headerRow", ctx.registry) ?? true);
+  const role = rec.type === "heading" ? "heading" : isListItem ? "listitem"
+    : rec.type === "table" ? "table" : rec.type === "tableRow" ? "row" : rec.type === "tableCell" ? (isHeader ? "columnheader" : "cell") : null;
+  if (!isListItem) {
+    if (ctx.listIdPrefix && els.wrapper.id.startsWith(`jul-list-${ctx.listIdPrefix}-`)) els.wrapper.removeAttribute("id");
+    if (!els.wrapperAttrNames?.has("aria-owns")) els.wrapper.removeAttribute("aria-owns");
+    els.content?.removeAttribute("role");
+  }
+  const semanticAttr = (name: string, value: string | null): void => {
+    if (els!.wrapperAttrNames?.has(name) || els!.wrapper.getAttribute(name) === value) return;
+    if (value === null) els!.wrapper.removeAttribute(name);
+    else els!.wrapper.setAttribute(name, value);
+  };
+  if (!(role === "listitem" && els.wrapper.getAttribute("role") === "list")) semanticAttr("role", role);
+  semanticAttr("aria-level", rec.type === "heading" ? els.wrapper.getAttribute(LEVEL_ATTR) ?? "1" : null);
+  semanticAttr("aria-colspan", rec.type === "tableCell" ? els.wrapper.getAttribute(COLSPAN_ATTR) : null);
+  semanticAttr("aria-rowspan", rec.type === "tableCell" ? els.wrapper.getAttribute(ROWSPAN_ATTR) : null);
 
   if (isVoidSpec(spec)) {
     // this block used to be a text/container block (its type just
@@ -456,8 +498,14 @@ export function renderBlock(id: string, store: Store, ctx: ViewRenderCtx, seen: 
     // child list at all -- skip the walk instead of re-visiting every
     // descendant. A full renderAll (ctx.partial unset) always recurses,
     // identical to the previous behavior.
-    if (!ctx.partial || els.lastChildIds !== rec.childIds || depthChanged) {
+    const header = rec.type === "table" ? (getProp<boolean>({ id, type: rec.type, props: rec.props }, "headerRow", ctx.registry) ?? true) : undefined;
+    const headerChanged = header !== undefined && els.lastTableHeader !== undefined && header !== els.lastTableHeader;
+    els.lastTableHeader = header;
+    if (!ctx.partial || els.lastChildIds !== rec.childIds || depthChanged || headerChanged) {
+      const partial = ctx.partial;
+      if (headerChanged) ctx.partial = false;
       renderChildren(els.children, rec.childIds, store, ctx, seen, depth + 1);
+      ctx.partial = partial;
       els.lastChildIds = rec.childIds;
     }
   } else if (els.children) {
@@ -475,6 +523,7 @@ export function renderBlock(id: string, store: Store, ctx: ViewRenderCtx, seen: 
  * a sibling's DOM. */
 export function renderChildren(container: HTMLElement, ids: string[], store: Store, ctx: ViewRenderCtx, seen: Set<string>, depth = 0): void {
   let olIndex = 0;
+  let previous: Element | null = null;
   for (let index = 0; index < ids.length; index++) {
     const id = ids[index]!;
     const rec = store.records.get(id)!;
@@ -483,10 +532,38 @@ export function renderChildren(container: HTMLElement, ids: string[], store: Sto
     els.wrapper.setAttribute(DEPTH_ATTR, String(depth));
     if (rec.type === "orderedListItem") els.wrapper.setAttribute(INDEX_ATTR, String(olIndex));
     else els.wrapper.removeAttribute(INDEX_ATTR);
-    const current = container.children[index] ?? null;
+    const current: Element | null = previous ? previous.nextElementSibling : container.firstElementChild;
     if (current !== els.wrapper) container.insertBefore(els.wrapper, current);
+    previous = els.wrapper;
   }
-  while (container.children.length > ids.length) container.children[ids.length]!.remove();
+  let extra = previous ? previous.nextElementSibling : container.firstElementChild;
+  while (extra) {
+    const next = extra.nextElementSibling;
+    extra.remove();
+    extra = next;
+  }
+  const isList = (type: string | undefined) => type === "bulletListItem" || type === "orderedListItem" || type === "todoListItem";
+  for (let start = 0; start < ids.length;) {
+    const type = store.records.get(ids[start]!)?.type;
+    if (!isList(type)) { start++; continue; }
+    let end = start + 1;
+    while (end < ids.length && store.records.get(ids[end]!)?.type === type) end++;
+    ctx.listIdPrefix ??= newId();
+    const group = ids.slice(start, end).map((id) => ctx.blockEls.get(id)!);
+    for (let i = 0; i < group.length; i++) {
+      const item = group[i]!;
+      item.listDomId ??= `jul-list-${ctx.listIdPrefix}-${newId()}`;
+      if (item.wrapper.id !== item.listDomId) item.wrapper.id = item.listDomId;
+      const role = i === 0 ? "list" : "listitem";
+      if (item.wrapper.getAttribute("role") !== role) item.wrapper.setAttribute("role", role);
+      if (i === 0) item.content?.setAttribute("role", "listitem");
+      else item.content?.removeAttribute("role");
+      const owns = i === 0 ? group.slice(1).map((sibling) => sibling.listDomId ??= `jul-list-${ctx.listIdPrefix}-${newId()}`).join(" ") : "";
+      if (owns) { if (item.wrapper.getAttribute("aria-owns") !== owns) item.wrapper.setAttribute("aria-owns", owns); }
+      else item.wrapper.removeAttribute("aria-owns");
+    }
+    start = end;
+  }
 }
 
 export function renderAll(root: HTMLElement, store: Store, ctx: ViewRenderCtx): void {
@@ -549,7 +626,8 @@ export function renderChanged(root: HTMLElement, store: Store, ctx: ViewRenderCt
     // sibling list here instead of only re-rendering this one block.
     const prevType = els.wrapper.getAttribute(TYPE_ATTR);
     const rec = store.records.get(id)!;
-    const listTransition = prevType !== null && prevType !== rec.type && (prevType === "orderedListItem" || rec.type === "orderedListItem");
+    const isListType = (type: string) => type === "orderedListItem" || type === "bulletListItem" || type === "todoListItem";
+    const listTransition = prevType !== null && prevType !== rec.type && (isListType(prevType) || isListType(rec.type));
     if (listTransition) {
       const parentId = rec.parentId;
       const siblingIds = parentId === null ? store.rootIds : (store.records.get(parentId)?.childIds ?? []);

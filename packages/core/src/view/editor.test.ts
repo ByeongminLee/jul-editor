@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
 import { coreRegistry } from "../model/builtins.js";
-import type { Doc } from "../model/types.js";
+import type { Block, Doc } from "../model/types.js";
 import { createEditor } from "./editor.js";
 
 function twoParas(): Doc {
@@ -514,4 +514,518 @@ describe("drag handle core API", () => {
 
     editor.destroy();
   });
+
+  describe("stored marks (collapsed-caret toggleMark)", () => {
+    const caret = (blockId: string, offset: number) => ({ type: "text" as const, anchor: { blockId, offset }, focus: { blockId, offset } });
+
+    it("on('marks') fires and getActiveMarks reflects the pending mark", () => {
+      const element = document.createElement("div");
+      document.body.appendChild(element);
+      const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+      const seen: string[][] = [];
+      const off = editor.on("marks", () => seen.push(editor.getActiveMarks().map((m) => m.type)));
+      editor.commands.toggleMark("bold");
+      expect(editor.getActiveMarks().map((m) => m.type)).toEqual(["bold"]);
+      expect(seen).toEqual([["bold"]]);
+      editor.commands.toggleMark("bold");
+      expect(editor.getActiveMarks()).toEqual([]);
+      expect(seen).toEqual([["bold"], []]);
+      off();
+      editor.destroy();
+    });
+
+    it("are discarded when the caret moves (no leak into another block or offset)", () => {
+      const element = document.createElement("div");
+      document.body.appendChild(element);
+      const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+      editor.commands.toggleMark("bold");
+      editor.update((tx) => tx.setSelection(caret("p2", 2)));
+      expect(editor.getActiveMarks()).toEqual([]);
+      element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "W", bubbles: true, cancelable: true }));
+      expect(editor.getDoc().blocks[1]?.content).toEqual([{ type: "text", text: "woWrld" }]);
+
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+      editor.commands.toggleMark("bold");
+      editor.update((tx) => tx.setSelection(caret("p1", 3)));
+      expect(editor.getActiveMarks()).toEqual([]);
+      editor.destroy();
+    });
+
+    it("survive a commit that keeps the caret in place and apply to the next typed text", () => {
+      const element = document.createElement("div");
+      document.body.appendChild(element);
+      const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+      editor.update((tx) => tx.setSelection(caret("p1", 5)));
+      editor.commands.toggleMark("bold");
+      editor.commands.setBlockType("heading", { level: 1 });
+      expect(editor.getActiveMarks().map((m) => m.type)).toEqual(["bold"]);
+      element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "Q", bubbles: true, cancelable: true }));
+      expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "hello" }, { type: "text", text: "Q", marks: [{ type: "bold" }] }]);
+      editor.destroy();
+    });
+  });
+});
+
+describe("canApplyMarks / toggleMark across selection kinds", () => {
+  function setup() {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const cell = (id: string, text: string) => ({ id, type: "tableCell", props: {}, content: [{ type: "text" as const, text }] });
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "hello" }] },
+      { id: "code", type: "codeBlock", props: { language: "js" }, content: [{ type: "text", text: "const accent = 1;" }] },
+      { id: "t1", type: "table", props: {}, children: [
+        { id: "r1", type: "tableRow", props: {}, children: [cell("a", "Docs"), cell("b", "120")] },
+        { id: "r2", type: "tableRow", props: {}, children: [cell("c", "API"), cell("d", "880")] },
+      ] },
+    ] } });
+    return editor;
+  }
+
+  it("is false inside a code block, and Bold there changes nothing", () => {
+    const editor = setup();
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "code", offset: 6 }, focus: { blockId: "code", offset: 12 } }));
+    expect(editor.canApplyMarks()).toBe(false);
+    const before = JSON.stringify(editor.getDoc());
+    editor.commands.toggleMark("bold");
+    expect(JSON.stringify(editor.getDoc())).toBe(before);
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 5 } }));
+    expect(editor.canApplyMarks()).toBe(true);
+  });
+
+  it("a cells rectangle formats every selected cell and reports the common marks", () => {
+    const editor = setup();
+    editor.update((tx) => tx.setSelection({ type: "cells", tableId: "t1", anchor: [0, 0], focus: [1, 1] }));
+    expect(editor.canApplyMarks()).toBe(true);
+    editor.commands.toggleMark("bold");
+    const rows = editor.getDoc().blocks[2]!.children!;
+    for (const row of rows) for (const c of row.children!) expect(c.content).toEqual([{ type: "text", text: expect.any(String), marks: [{ type: "bold" }] }]);
+    expect(editor.getActiveMarks().map((m) => m.type)).toEqual(["bold"]);
+  });
+});
+
+describe("history after replacing a live DOM selection", () => {
+  it("restores the resulting caret on redo before further typing", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+    const first = element.querySelector('[data-id="p1"] [data-jul-editor-content]')!.firstChild!;
+    const second = element.querySelector('[data-id="p2"] [data-jul-editor-content]')!.firstChild!;
+    window.getSelection()!.setBaseAndExtent(first, 2, second, 3);
+    const type = (text: string) => element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: text, bubbles: true, cancelable: true }));
+    type("X");
+    type("Y");
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "heXYld" }]);
+    editor.commands.undo();
+    expect(editor.getDoc().blocks.map((b) => b.content)).toEqual(twoParas().blocks.map((b) => b.content));
+    editor.commands.redo();
+    type("Z");
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "heXYZld" }]);
+    editor.commands.undo();
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "heXYld" }]);
+    editor.destroy();
+  });
+});
+
+describe("block type commands", () => {
+  it("does not convert hidden descendants or void blocks in a text selection", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks).set("toggle", { type: "toggle", content: "inline", children: "any", props: { open: false } } as const) };
+    const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [
+      { id: "a", type: "paragraph", props: {}, content: [{ type: "text", text: "above" }] },
+      { id: "toggle", type: "toggle", props: {}, content: [{ type: "text", text: "closed" }], children: [{ id: "image", type: "image", props: { src: "https://example.com/a.png" } }, { id: "secret", type: "paragraph", props: {}, content: [{ type: "text", text: "secret" }] }] },
+      { id: "z", type: "paragraph", props: {}, content: [{ type: "text", text: "below" }] },
+    ] } });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "a", offset: 1 }, focus: { blockId: "z", offset: 2 } }));
+    editor.commands.setBlockType("heading", { level: 2 });
+    const toggle = editor.getDoc().blocks[1]!;
+    expect(toggle.children?.map((b) => b.type)).toEqual(["image", "paragraph"]);
+    expect(toggle.children?.[0]?.props.src).toBe("https://example.com/a.png");
+    editor.destroy();
+  });
+  it("changes every block in a reversed text selection and ignores a repeated change", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p2", offset: 3 }, focus: { blockId: "p1", offset: 1 } }));
+    editor.commands.setBlockType("heading", { level: 2 });
+    expect(editor.getDoc().blocks.map((b) => b.type)).toEqual(["heading", "heading"]);
+    editor.commands.setBlockType("heading", { level: 2 });
+    editor.commands.undo();
+    expect(editor.getDoc().blocks.map((b) => b.type)).toEqual(["paragraph", "paragraph"]);
+    editor.destroy();
+  });
+});
+
+describe("getBlockType across a void", () => {
+  it("reports the converted type so the same toolbar button can toggle it back", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const blocks: Block[] = [twoParas().blocks[0]!, { id: "d", type: "divider", props: {} }, twoParas().blocks[1]!];
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks } });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 1 }, focus: { blockId: "p2", offset: 2 } }));
+    editor.commands.setBlockType("bulletListItem");
+    expect(editor.getDoc().blocks.map((b) => b.type)).toEqual(["bulletListItem", "divider", "bulletListItem"]);
+    expect(editor.getBlockType()?.type).toBe("bulletListItem");
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["d"] }));
+    expect(editor.getBlockType()?.type).toBe("divider");
+    editor.destroy();
+  });
+});
+
+describe("Tab navigation", () => {
+  it("lets Tab leave when no indentation is possible", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 0 } }));
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    editor.destroy();
+  });
+
+  it("lets Tab reach a selected chart's controls", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "a", type: "paragraph", props: {}, content: [] }, { id: "chart", type: "chart", props: {} },
+    ] } });
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["chart"] }));
+    const before = editor.getDoc();
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.getDoc()).toEqual(before);
+    editor.destroy();
+  });
+
+  it("does not indent a selection beneath one of its own blocks at the boundary", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: twoParas() });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p2", offset: 3 }, focus: { blockId: "p1", offset: 0 } }));
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["p1", "p2"]);
+    editor.destroy();
+  });
+
+  it("indents and outdents all selected siblings in one undoable step", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "a", type: "paragraph", props: {}, content: [{ type: "text", text: "a" }] },
+      { id: "b", type: "paragraph", props: {}, content: [{ type: "text", text: "b" }] },
+      { id: "c", type: "paragraph", props: {}, content: [{ type: "text", text: "c" }] },
+    ] } });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "b", offset: 0 }, focus: { blockId: "c", offset: 1 } }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks[0]?.children?.map((b) => b.id)).toEqual(["b", "c"]);
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["a", "b", "c"]);
+    editor.destroy();
+  });
+});
+
+describe("moving selected blocks", () => {
+  it("moves all selected siblings together", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: ["a", "b", "c", "d"].map((id) => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }] })) } });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "b", offset: 0 }, focus: { blockId: "c", offset: 1 } }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["a", "d", "b", "c"]);
+    editor.commands.undo();
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["a", "b", "c", "d"]);
+    editor.destroy();
+  });
+});
+
+describe("inline input rule formatting", () => {
+  it("retains marks active before the shortcut", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [{ id: "p", type: "paragraph", props: {}, content: [] }] } });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p", offset: 0 }, focus: { blockId: "p", offset: 0 } }));
+    editor.commands.toggleMark("italic");
+    for (const ch of "**bold**x") element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: ch, bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "bold", marks: [{ type: "bold" }, { type: "italic" }] }, { type: "text", text: "x", marks: [{ type: "italic" }] }]);
+    editor.destroy();
+  });
+  it("ends the shortcut mark after the closing delimiter", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [{ id: "p", type: "paragraph", props: {}, content: [] }] } });
+    editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p", offset: 0 }, focus: { blockId: "p", offset: 0 } }));
+    for (const ch of "**bold**x") element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: ch, bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks[0]?.content).toEqual([{ type: "text", text: "bold", marks: [{ type: "bold" }] }, { type: "text", text: "x" }]);
+    editor.destroy();
+  });
+});
+
+describe("block keyboard selection", () => {
+  it("contracts horizontal shift selection without losing its anchor", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "a", type: "paragraph", props: {}, content: [{ type: "text", text: "a" }] },
+      { id: "v", type: "divider", props: {} }, { id: "b", type: "paragraph", props: {}, content: [{ type: "text", text: "b" }] },
+    ] } });
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["v"] }));
+    const press = (key: string) => element.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey: true, bubbles: true, cancelable: true }));
+    press("ArrowRight");
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["v", "b"] });
+    press("ArrowLeft");
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["v"] });
+    editor.destroy();
+  });
+
+  it("shrinks back toward its anchor when shift direction reverses", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "a", type: "paragraph", props: {}, content: [{ type: "text", text: "a" }] },
+      { id: "v", type: "divider", props: {} },
+      { id: "b", type: "paragraph", props: {}, content: [{ type: "text", text: "b" }] },
+    ] } });
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["v"] }));
+    const press = (key: string) => element.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey: true, bubbles: true, cancelable: true }));
+    press("ArrowDown");
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["v", "b"] });
+    press("ArrowUp");
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["v"] });
+    editor.destroy();
+  });
+});
+
+describe("arrow navigation from a void", () => {
+  it("enters the first table cell after an image", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "image", type: "image", props: {} },
+      { id: "table", type: "table", props: {}, children: [{ id: "row", type: "tableRow", props: {}, children: [{ id: "cell", type: "tableCell", props: {}, content: [{ type: "text", text: "A" }] }] }] },
+    ] } });
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["image"] }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+    expect(editor.getState().selection).toEqual({ type: "text", anchor: { blockId: "cell", offset: 0 }, focus: { blockId: "cell", offset: 0 } });
+    editor.destroy();
+  });
+});
+
+describe("block accessibility", () => {
+  it("retains custom plugin accessibility attributes", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks).set("custom", { type: "custom", content: "inline", children: "none", props: {}, wrapperAttrs: () => ({ role: "heading", "aria-level": "3" }) } as const) };
+    const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [{ id: "custom", type: "custom", props: {}, content: [{ type: "text", text: "Custom" }] }] } });
+    const wrapper = element.querySelector('[data-id="custom"]')!;
+    expect(wrapper.getAttribute("role")).toBe("heading");
+    expect(wrapper.getAttribute("aria-level")).toBe("3");
+    editor.destroy();
+  });
+  it("exposes heading, list item and table semantics and clears them after conversion", () => {
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+      { id: "h", type: "heading", props: { level: 2 }, content: [{ type: "text", text: "Title" }] },
+      { id: "li", type: "bulletListItem", props: {}, content: [{ type: "text", text: "Item" }] },
+      { id: "t", type: "table", props: {}, children: [{ id: "r", type: "tableRow", props: {}, children: [{ id: "c", type: "tableCell", props: {}, content: [{ type: "text", text: "Cell" }] }] }] },
+    ] } });
+    expect(element.querySelector('[data-id="h"]')?.getAttribute("role")).toBe("heading");
+    expect(element.querySelector('[data-id="h"]')?.getAttribute("aria-level")).toBe("2");
+    expect(element.querySelector('[data-id="li"]')?.getAttribute("role")).toBe("list");
+    expect(element.querySelector('[data-id="t"]')?.getAttribute("role")).toBe("table");
+    expect(element.querySelector('[data-id="r"]')?.getAttribute("role")).toBe("row");
+    expect(element.querySelector('[data-id="c"]')?.getAttribute("role")).toBe("columnheader");
+    editor.update((tx) => tx.setProps("t", { headerRow: false }));
+    expect(element.querySelector('[data-id="c"]')?.getAttribute("role")).toBe("cell");
+    editor.update((tx) => tx.setProps("t", { headerRow: true }));
+    expect(element.querySelector('[data-id="c"]')?.getAttribute("role")).toBe("columnheader");
+    editor.update((tx) => tx.setType("h", "paragraph"));
+    expect(element.querySelector('[data-id="h"]')?.hasAttribute("role")).toBe(false);
+    editor.destroy();
+  });
+});
+
+describe("moving independent selected runs", () => {
+  it("indents runs under their own preceding siblings and undoes them together", () => {
+    const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+    const element = document.createElement("div");
+    document.body.appendChild(element);
+    const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [p("a", [p("x"), p("y")]), p("b"), p("c")] } });
+    editor.update((tx) => tx.setSelection({ type: "block", ids: ["c", "y"] }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks[0]?.children?.[0]?.children?.map((b) => b.id)).toEqual(["y"]);
+    expect(editor.getDoc().blocks[1]?.children?.map((b) => b.id)).toEqual(["c"]);
+    editor.commands.undo();
+    expect(editor.getDoc().blocks[0]?.children?.map((b) => b.id)).toEqual(["x", "y"]);
+    expect(editor.getDoc().blocks.map((b) => b.id)).toEqual(["a", "b", "c"]);
+    editor.destroy();
+  });
+});
+
+describe("multi-parent structural selections", () => {
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  function setup(blocks: Block[]) {
+    const element = document.createElement("div"); document.body.appendChild(element);
+    return { element, editor: createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks } }) };
+  }
+  it("preserves an exact directional range and avoids expanding it after repeated moves", () => {
+    const { editor, element } = setup([p("r"), p("a", [p("x"), p("y")]), p("b"), p("z")]);
+    editor.update(tx => tx.setSelection({ type: "text", anchor: { blockId: "b", offset: 1 }, focus: { blockId: "y", offset: 0 } }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["y", "b"] });
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["y", "b"] });
+    expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["r", "a", "b", "z"]);
+    editor.commands.undo(); editor.commands.redo();
+    expect(editor.getState().selection).toEqual({ type: "block", ids: ["y", "b"] });
+    editor.destroy();
+  });
+  it("promotes selected runs without adopting unselected children", () => {
+    const { editor, element } = setup([p("a", [p("x"), p("y"), p("z")]), p("b", [p("u"), p("v")])]);
+    editor.update(tx => tx.setSelection({ type: "block", ids: ["y", "v"] }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["a", "y", "b", "v"]);
+    expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["x", "z"]);
+    editor.commands.undo(); editor.commands.redo();
+    expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["a", "y", "b", "v"]);
+    editor.destroy();
+  });
+  it("allows independent sibling moves inside isolating columns", () => {
+    const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks)
+      .set("columns", { type: "columns", content: "none", children: ["column"], props: {}, isolating: true })
+      .set("column", { type: "column", content: "none", children: "any", parent: ["columns"], props: {}, isolating: true }) } as typeof coreRegistry;
+    const column = (id: string, children: Block[]): Block => ({ id, type: "column", props: {}, children });
+    const element = document.createElement("div"); document.body.appendChild(element);
+    const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [{ id: "cols", type: "columns", props: {}, children: [column("a", [p("x"), p("y")]), column("b", [p("u"), p("v")])] }, p("end")] } });
+    editor.update(tx => tx.setSelection({ type: "block", ids: ["y", "v"] }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.getDoc().blocks[0]?.children?.map(b => b.children?.map(c => c.id))).toEqual([["y", "x"], ["v", "u"]]);
+    editor.destroy();
+  });
+});
+
+it("keeps following sibling order when a single outdent cannot adopt all types", () => {
+  const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks).set("paragraphChildren", { type: "paragraphChildren", content: "inline", children: ["paragraph"], props: {} }) } as typeof coreRegistry;
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [
+    { id: "a", type: "paragraph", props: {}, content: [], children: [
+      { id: "x", type: "paragraphChildren", props: {}, content: [] }, { id: "y", type: "image", props: {} }, { id: "z", type: "paragraph", props: {}, content: [] },
+    ] }, { id: "b", type: "paragraph", props: {}, content: [] },
+  ] } });
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["x"] }));
+  editor.commands.outdent();
+  expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["a", "x", "y", "z", "b"]);
+  editor.destroy();
+});
+
+it("deduplicates a selected ancestor without adopting its unselected sibling", () => {
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [p("a", [p("x", [p("child")]), p("tail")]), p("end")] } });
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["child", "x"] }));
+  editor.commands.outdent();
+  expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["a", "x", "end"]);
+  expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["tail"]);
+  expect(editor.getDoc().blocks[1]?.children?.map(b => b.id)).toEqual(["child"]);
+  editor.destroy();
+});
+
+it("does not outdent a run past another selected root promoted into its parent", () => {
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [p("g", [p("b"), p("c", [p("d")])]), p("end")] } });
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["b", "d"] }));
+  editor.commands.outdent();
+  expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["g", "end"]);
+  expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["b", "c", "d"]);
+  expect(editor.getState().selection).toEqual({ type: "block", ids: ["b", "d"] });
+  editor.destroy();
+});
+
+it("outdents a closed toggle without hiding its following sibling", () => {
+  const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks).set("toggle", { type: "toggle", content: "inline", children: "any", props: { open: false } }) } as typeof coreRegistry;
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [p("g", [{ ...p("t", [p("secret")]), type: "toggle" }, p("visible")]), p("end")] } });
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["t"] }));
+  editor.commands.outdent();
+  expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["g", "t", "end"]);
+  expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["visible"]);
+  expect(editor.getDoc().blocks[1]?.children?.map(b => b.id)).toEqual(["secret"]);
+  editor.destroy();
+});
+
+it("preserves an exact text selection including its selected ancestor and descendant", () => {
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [p("a"), p("b", [p("c")]), p("d")] } });
+  const selection = { type: "text" as const, anchor: { blockId: "c", offset: 1 }, focus: { blockId: "b", offset: 0 } };
+  editor.update(tx => tx.setSelection(selection));
+  editor.commands.indent();
+  expect(editor.getState().selection).toEqual(selection);
+  editor.destroy();
+});
+
+it("retains an exact directional text range when a moved void needs a trailing cursor slot", () => {
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [
+    { id: "divider", type: "divider", props: {} },
+    { id: "p", type: "paragraph", props: {}, content: [{ type: "text", text: "p" }] },
+    { id: "q", type: "paragraph", props: {}, content: [{ type: "text", text: "q" }] },
+  ] } });
+  const selection = { type: "text" as const, anchor: { blockId: "q", offset: 1 }, focus: { blockId: "p", offset: 0 } };
+  editor.update(tx => tx.setSelection(selection));
+  element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  expect(editor.getDoc().blocks.slice(0, 3).map(b => b.id)).toEqual(["p", "q", "divider"]);
+  expect(editor.getDoc().blocks).toHaveLength(4);
+  expect(editor.getState().selection).toEqual(selection);
+  editor.destroy();
+});
+
+it("allows sibling reordering in a schema with a restricted child list", () => {
+  const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks).set("group", { type: "group", content: "inline", children: ["paragraph"], props: {} }) } as typeof coreRegistry;
+  const p = (id: string): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }] });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [{ id: "g", type: "group", props: {}, content: [], children: [p("x"), p("y")] }, p("end")] } });
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["y"] }));
+  element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["y", "x"]);
+  editor.destroy();
+});
+
+it("lifts an ancestor and its selected descendant once at an arrow boundary", () => {
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry: coreRegistry, defaultValue: { version: 1, blocks: [p("a", [p("b", [p("c")]), p("d")]), p("z")] } });
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["b", "c"] }));
+  element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  expect(editor.getDoc().blocks.map(b => b.id)).toEqual(["b", "a", "z"]);
+  expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["c"]);
+  expect(editor.getDoc().blocks[1]?.children?.map(b => b.id)).toEqual(["d"]);
+  editor.commands.undo();
+  expect(editor.getDoc().blocks[0]?.children?.map(b => b.id)).toEqual(["b", "d"]);
+  editor.destroy();
+});
+
+it("uses each toggle's live open state when moving selected children", () => {
+  const registry = { ...coreRegistry, blocks: new Map(coreRegistry.blocks).set("toggle", { type: "toggle", content: "inline", children: "any", props: { open: false } }) } as typeof coreRegistry;
+  const p = (id: string, children?: Block[]): Block => ({ id, type: "paragraph", props: {}, content: [{ type: "text", text: id }], ...(children ? { children } : {}) });
+  const element = document.createElement("div"); document.body.appendChild(element);
+  const editor = createEditor({ element, registry, defaultValue: { version: 1, blocks: [
+    { ...p("a", [p("x"), p("y")]), type: "toggle" }, { ...p("b", [p("u"), p("v")]), type: "toggle" }, p("end"),
+  ] } });
+  element.querySelector('[data-id="a"]')!.setAttribute("data-jul-editor-open", "true");
+  element.querySelector('[data-id="b"]')!.setAttribute("data-jul-editor-open", "false");
+  editor.update(tx => tx.setSelection({ type: "block", ids: ["y", "v"] }));
+  element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", ctrlKey: true, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+  expect(editor.getDoc().blocks.map(b => b.children?.map(c => c.id))).toEqual([["y", "x"], ["u", "v"], undefined]);
+  editor.destroy();
 });

@@ -10,6 +10,7 @@ export type { DataSource, ResolveData } from "../data/resolve-data.js";
 export const dataTableSlashItem: SlashItem = {
   type: "dataTable",
   title: "Data table",
+  labelKey: "slashDataTable",
   keywords: ["table", "data", "csv", "표", "데이터", "표 데이터"],
   create: () => ({ id: newId(), type: "dataTable", props: { source: { type: "inline", csv: "Name,Role\nAlex,Editor\nSam,Reviewer" } } }),
 };

@@ -60,4 +60,10 @@ describe("activeMarks: non-collapsed selection considers only the OVERLAPPED run
     const marks = activeMarks(makeState([block], sel), createMarksRef());
     expect(marks.map((m) => m.type)).toEqual(["bold"]);
   });
+
+  it("a backward (right-to-left) selection inside a bold run returns [bold]", () => {
+    const block: Block = { id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "AB", marks: [{ type: "bold" }] }, { type: "text", text: "CD" }] };
+    const sel: Selection = { type: "text", anchor: { blockId: "p1", offset: 2 }, focus: { blockId: "p1", offset: 0 } };
+    expect(activeMarks(makeState([block], sel), createMarksRef()).map((m) => m.type)).toEqual(["bold"]);
+  });
 });

@@ -19,6 +19,14 @@ export function stripBase(pathname: string): string {
   return pathname.startsWith(`${BASE}/`) ? pathname.slice(BASE.length) : pathname;
 }
 
+/** Router path for a browser pathname: base stripped and trailing slashes dropped.
+ * GitHub Pages serves each route from `<route>/index.html` and redirects `/playground`
+ * to `/playground/`, so both spellings must resolve to the same route. */
+export function routePath(pathname: string): string {
+  const path = stripBase(pathname);
+  return path.length > 1 ? path.replace(/\/+$/, "") || "/" : path;
+}
+
 function fix(el: Element) {
   const attr = el.tagName === "A" ? "href" : el.tagName === "IMG" ? "src" : null;
   if (!attr) return;

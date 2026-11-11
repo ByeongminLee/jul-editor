@@ -97,6 +97,9 @@
 .showcase-docx .editor-content [data-jul-editor-image] { max-width: 100%; margin: 8pt auto; text-align: center; }
 .showcase-docx .editor-content [data-jul-editor-image] img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .showcase-docx .editor-content [data-jul-editor-image] input, .showcase-docx .editor-content [data-jul-editor-image] [data-jul-editor-align-group], .showcase-docx .editor-content [data-jul-editor-image] [data-jul-editor-resize-handle] { display: none; }
+/* no upload server in this demo: an inserted/imported picture stays a local pending upload that
+   Export writes into the .docx, so the "Pending upload" note is noise on the page */
+.showcase-docx .editor-content [data-jul-editor-image][data-state="queued"] > [role="status"] { display: none; }
 .showcase-docx .editor-content [data-jul-editor-selected] { outline: 2px solid var(--docx-accent); }
 .showcase-docx .editor-content [data-jul-editor-content][data-placeholder]:empty::before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }
 .showcase-docx .jul-paged__sheet { color: #1f2328; }

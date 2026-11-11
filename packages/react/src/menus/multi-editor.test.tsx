@@ -83,3 +83,72 @@ it("tracks external-root hover while an internal editor is mounted", async () =>
   });
   expect(blockId).toBe("hovered");
 });
+
+it("keeps slash suggestions open for multi-word queries", async () => {
+  const range = Range.prototype as Range & { getClientRects: () => DOMRectList; getBoundingClientRect: () => DOMRect };
+  range.getClientRects ??= () => [] as unknown as DOMRectList;
+  range.getBoundingClientRect ??= () => new DOMRect();
+  render(<Editor defaultValue={doc("slash")}><Editor.Content /><Editor.SlashMenu /><Probe id="slash" /></Editor>);
+  const root = document.querySelector<HTMLElement>("[data-jul-editor-root]")!;
+  act(() => editors.slash!.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "slash", offset: 0 }, focus: { blockId: "slash", offset: 0 } })));
+  for (const char of "/heading 2") act(() => root.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: char, bubbles: true, cancelable: true })));
+  await waitFor(() => expect(root.getAttribute("aria-expanded")).toBe("true"));
+  await waitFor(() => expect(document.querySelector('[role="option"]')?.textContent).toContain("Heading 2"));
+});
+
+it("labels slash results and announces an empty result separately", async () => {
+  const range = Range.prototype as Range & { getClientRects: () => DOMRectList; getBoundingClientRect: () => DOMRect };
+  range.getClientRects ??= () => [] as unknown as DOMRectList;
+  range.getBoundingClientRect ??= () => new DOMRect();
+  render(<Editor defaultValue={doc("empty-slash")}><Editor.Content /><Editor.SlashMenu /><Probe id="empty-slash" /></Editor>);
+  const root = document.querySelector<HTMLElement>("[data-jul-editor-root]")!;
+  act(() => editors["empty-slash"]!.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "empty-slash", offset: 0 }, focus: { blockId: "empty-slash", offset: 0 } })));
+  for (const char of "/no-such-result") act(() => root.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: char, bubbles: true, cancelable: true })));
+  await waitFor(() => expect(document.querySelector('[role="status"]')?.textContent).toBe("No results"));
+  const listbox = document.querySelector('[role="listbox"]')!;
+  expect(listbox.getAttribute("aria-label")).toBe("Block commands");
+  expect(listbox.querySelector('[role="status"]')).toBeNull();
+});
+
+it("exposes and restores valid suggestion semantics without other menus clearing them", async () => {
+  const range = Range.prototype as Range & { getClientRects: () => DOMRectList; getBoundingClientRect: () => DOMRect };
+  range.getClientRects ??= () => [] as unknown as DOMRectList;
+  range.getBoundingClientRect ??= () => new DOMRect();
+  render(<Editor defaultValue={doc("aria")}><Editor.Content aria-label="My editor" /><Editor.SlashMenu /><Editor.TagMenu onSearch={() => []} /><Probe id="aria" /></Editor>);
+  const root = document.querySelector<HTMLElement>("[data-jul-editor-root]")!;
+  act(() => editors.aria!.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "aria", offset: 0 }, focus: { blockId: "aria", offset: 0 } })));
+  act(() => root.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "/", bubbles: true, cancelable: true })));
+  await waitFor(() => expect(root.getAttribute("role")).toBe("combobox"));
+  expect(root.getAttribute("aria-expanded")).toBe("true");
+  expect(root.getAttribute("aria-label")).toBe("My editor");
+  act(() => root.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+  await waitFor(() => expect(root.getAttribute("role")).toBe("textbox"));
+  expect(root.hasAttribute("aria-expanded")).toBe(false);
+  expect(root.getAttribute("aria-label")).toBe("My editor");
+});
+
+it("closes the slash menu once a multi-word query matches nothing", async () => {
+  const range = Range.prototype as Range & { getClientRects: () => DOMRectList; getBoundingClientRect: () => DOMRect };
+  range.getClientRects ??= () => [] as unknown as DOMRectList;
+  range.getBoundingClientRect ??= () => new DOMRect();
+  render(<Editor defaultValue={doc("path")}><Editor.Content /><Editor.SlashMenu /><Probe id="path" /></Editor>);
+  const root = document.querySelector<HTMLElement>("[data-jul-editor-root]")!;
+  act(() => editors.path!.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "path", offset: 0 }, focus: { blockId: "path", offset: 0 } })));
+  for (const char of "/usr") act(() => root.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: char, bubbles: true, cancelable: true })));
+  await waitFor(() => expect(document.querySelector('[role="status"]')?.textContent).toBe("No results"));
+  for (const char of " is") act(() => root.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: char, bubbles: true, cancelable: true })));
+  await waitFor(() => expect(root.hasAttribute("aria-expanded")).toBe(false));
+  expect(document.querySelector("[data-jul-editor-slash-menu]")).toBeNull();
+});
+
+it("announces an empty tag result outside the listbox", async () => {
+  const range = Range.prototype as Range & { getClientRects: () => DOMRectList; getBoundingClientRect: () => DOMRect };
+  range.getClientRects ??= () => [] as unknown as DOMRectList;
+  range.getBoundingClientRect ??= () => new DOMRect();
+  render(<Editor defaultValue={doc("tag")}><Editor.Content /><Editor.TagMenu onSearch={() => []} /><Probe id="tag" /></Editor>);
+  const root = document.querySelector<HTMLElement>("[data-jul-editor-root]")!;
+  act(() => editors.tag!.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "tag", offset: 0 }, focus: { blockId: "tag", offset: 0 } })));
+  act(() => root.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "#", bubbles: true, cancelable: true })));
+  await waitFor(() => expect(document.querySelector('[role="status"]')?.textContent).toBe("No results"));
+  expect(document.querySelector('[role="listbox"] [role="status"]')).toBeNull();
+});

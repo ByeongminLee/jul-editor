@@ -65,3 +65,11 @@ describe("createLowlightHighlighter", () => {
     await expect(h.highlight("", "ts")).resolves.toEqual([]);
   });
 });
+
+it("lists the fence shorthands of a curated language as its aliases, never as a second option", () => {
+  const values = pluginCodeLanguages.map((l) => l.value);
+  const aliases = pluginCodeLanguages.flatMap((l) => l.aliases ?? []);
+  expect(aliases).toEqual(expect.arrayContaining(["javascript", "typescript", "py", "sh", "yml", "md", "rs", "c++"]));
+  expect(aliases.filter((alias) => values.includes(alias))).toEqual([]);
+  expect(new Set(aliases).size).toBe(aliases.length);
+});

@@ -18,9 +18,9 @@ import { ChartView, chartSlashItem } from "@jul-editor/plugins/chart";
 const doc: Doc = { version: 1, blocks: [{
   id: "visitors-chart", type: "chart",
   props: {
-    kind: "area", x: "month", y: "visitors",
+    kind: "area", x: "월", y: "방문자",
     source: { type: "inline", format: "json", json:
-      '[{"month":"Jan","visitors":120},{"month":"Feb","visitors":160}]' },
+      '[{"월":"1월","방문자":120},{"월":"2월","방문자":160}]' },
   },
 }] };
 
@@ -45,6 +45,21 @@ const doc: Doc = { version: 1, blocks: [{
 차트는 기본적으로 다채롭게 표시됩니다. 계열마다 색이 다르고, 계열이 하나인 막대 차트는 범주마다, 원형과 radial은 조각마다 8가지 색을 순환해서 씁니다. 에디터의 색상 영역에서 프리셋 팔레트를 고르거나 색상 칸마다 직접 바꾸고, 초기화 버튼으로 테마 기본값으로 되돌릴 수 있습니다. 바꾼 색은 블록에 `palette`로 저장됩니다. 색상 선택기에서 드래그하는 동안에는 칸만 바뀌어 보이고, 선택기를 닫거나 포커스를 잃을 때 블록에 한 번만 기록되므로 한 번의 편집은 실행 취소 한 단계입니다. 칸 하나를 바꾸면 8개 항목이 모두 저장되지만, 건드리지 않은 칸은 `var(--chart-N, 기본색)`으로 저장되어 계속 테마를 따르고 바꾼 칸만 고정 색이 됩니다.
 
 앱 전체 색상은 차트의 상위 요소에 CSS 변수 `--chart-1`부터 `--chart-8`까지 지정하세요. 지정하지 않으면 라이트·다크 테마에서 모두 잘 보이는 기본 색이 쓰입니다. `ChartView`의 `theme.series` 배열로도 같은 변수를 코드에서 지정할 수 있습니다. 블록의 `palette`는 항상 테마보다 우선합니다.
+
+```css
+:root {
+  --chart-1: #e8833a; --chart-2: #4a90c2; --chart-3: #5aa469; --chart-4: #c9566b;
+  --chart-5: #8e6fc4; --chart-6: #d4a82f; --chart-7: #2fa7a0; --chart-8: #8a93a6;
+}
+```
+
+```tsx
+// 두 계열의 꺾은선 차트에 이 차트만의 팔레트를 지정합니다.
+{ id: "c1", type: "chart", props: {
+  kind: "line", x: "월", y: ["방문자", "가입"],
+  palette: ["#3c94b7", "#f2784b"],
+  source: { type: "inline", csv: "월,방문자,가입\n1월,120,30\n2월,160,44" } } }
+```
 
 ## URL의 CSV 또는 JSON 파일
 

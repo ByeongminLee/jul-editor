@@ -155,6 +155,7 @@ function opSetType(store: Store, op: Extract<Op, { type: "setType" }>, registry:
   // setType is a write path too (e.g. an input rule converting a paragraph to
   // an embed/image), and an unsanitized url/src must never reach the store.
   const props = sanitizeBlockProps(blockType, normalizeProps(newProps ?? rec.props, newSpec.props));
+  if (rec.type === blockType && JSON.stringify(rec.props) === JSON.stringify(props)) return noop(store, op);
   const newRec: BlockRecord = { id: rec.id, type: blockType, props, childIds: rec.childIds, parentId: rec.parentId };
   if (newSpec.content === "code") newRec.content = normalizeInline((rec.content ?? []).map(inlineToCodeText), registry, { stripMarks: true });
   else if (newSpec.content === "inline") newRec.content = normalizeInline(rec.content, registry);

@@ -52,3 +52,53 @@ test("About prose, hero and diagram captions switch language from one MDX file p
   await expect(page.getByTestId("about-swimlane").getByText("각 줄을 왼쪽에서 오른쪽으로 읽으세요.")).toBeVisible();
   await expect(page.getByText("Three editing engines, then our approach")).toHaveCount(0);
 });
+
+test("browser Back restores About scroll position", async ({ page }) => {
+  await page.goto("/about");
+  await expect(page.getByTestId("about-charts")).toBeVisible();
+  await page.getByTestId("about-charts").scrollIntoViewIfNeeded();
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBeGreaterThan(500);
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Playground" }).click();
+  await expect(page.locator(".playground-workspace")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.goBack();
+  await expect(page.getByTestId("about-charts")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(before);
+});
+
+test("About keeps tables and charts within tablet widths and the code header above its sample", async ({ page }) => {
+  for (const width of [768, 800, 1024]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/about");
+    if (await page.getByRole("button", { name: "English" }).count()) await page.getByRole("button", { name: "English" }).click();
+    for (const locale of ["en", "ko"]) {
+      if (locale === "ko") await page.getByRole("button", { name: "한국어" }).click();
+      await expect(page.getByTestId("about-charts").locator(".recharts-bar-rectangle").first()).toBeVisible();
+      const boxes = await page.locator(".about-hero-model .docs-code").evaluate((el) => ({
+        head: el.querySelector(".docs-code-head")!.getBoundingClientRect().bottom,
+        code: el.querySelector("pre")!.getBoundingClientRect().top,
+      }));
+      expect(boxes.head).toBeLessThanOrEqual(boxes.code + 1);
+      await expect.poll(() => page.locator(".about-hero-model pre").evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      for (const chart of await page.locator(".about-bench-charts > section").all()) {
+        await expect.poll(() => chart.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      }
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test("overflowing About tables can be scrolled with the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 });
+  await page.goto("/about");
+  const wrapper = page.locator(".about-table-scroll").first();
+  await expect.poll(() => wrapper.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeGreaterThan(0);
+  await expect(wrapper).toHaveAttribute("tabindex", "0");
+  await wrapper.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => wrapper.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  await page.keyboard.press("ArrowLeft");
+  await expect.poll(() => wrapper.evaluate((el) => el.scrollLeft)).toBe(0);
+  await expect(wrapper.getByRole("table")).toBeVisible();
+});

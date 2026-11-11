@@ -31,6 +31,9 @@ export interface SlashItem {
    * the consuming app and passed as `<Editor.SlashMenu extraItems>` (menus/
    * itself has no dependency on @jul-editor/plugins). */
   create?: () => Block;
+  /** A `Labels` key (e.g. "slashChart") whose locale text replaces `title`
+   * -- how a plugin item with an English `title` gets localized. */
+  labelKey?: string;
 }
 
 /** The shape a custom block registers as `defineBlock({ slash: ... })`. */
@@ -97,6 +100,15 @@ export function mergeSlashItems(base: SlashItem[], extra: SlashItem[]): SlashIte
   if (extra.length === 0) return base;
   const overriddenTypes = new Set(extra.map((item) => item.type));
   return [...base.filter((item) => !overriddenTypes.has(item.type)), ...extra];
+}
+
+/** Applies each item's `labelKey` (when it names a known label) as its title. */
+export function localizeSlashItems(items: SlashItem[], labels: Labels): SlashItem[] {
+  return items.map((item) => {
+    if (!item.labelKey) return item;
+    const title = (labels as unknown as Record<string, unknown>)[item.labelKey];
+    return typeof title === "string" && title !== item.title ? { ...item, title } : item;
+  });
 }
 
 function matchesItem(query: string, item: SlashItem): boolean {

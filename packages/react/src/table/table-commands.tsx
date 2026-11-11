@@ -8,7 +8,8 @@ import type { ComponentPropsWithoutRef } from "react";
 import { forwardRef, useContext } from "react";
 import { LabelsContext } from "../context.js";
 import { Slot } from "../slot.js";
-import { useCommands } from "../hooks.js";
+import { useCommands, useEditor } from "../hooks.js";
+import { handleClick, handleMouseDown } from "../toolbar.js";
 import type { Labels } from "../labels.js";
 import { useTableState } from "./use-table-state.js";
 
@@ -24,9 +25,10 @@ export interface TableButtonProps extends ComponentPropsWithoutRef<"button"> {
  * `labelKey` (not a fixed string) so the fallback text follows `<Editor
  * locale>`/`<Editor labels>`, same convention as toolbar.tsx's own atoms. */
 function createTableButton(run: (commands: ReturnType<typeof useCommands>) => void, labelKey: keyof Labels) {
-  return forwardRef<HTMLButtonElement, TableButtonProps>(function TableButton({ asChild, children, onClick, disabled, ...props }, ref) {
+  return forwardRef<HTMLButtonElement, TableButtonProps>(function TableButton({ asChild, children, onClick, onMouseDown, disabled, ...props }, ref) {
     const { inTable } = useTableState();
     const commands = useCommands();
+    const editor = useEditor();
     const label = useContext(LabelsContext)[labelKey];
     const Comp = (asChild ? Slot : "button") as "button";
     return (
@@ -35,10 +37,8 @@ function createTableButton(run: (commands: ReturnType<typeof useCommands>) => vo
         type={asChild ? undefined : "button"}
         disabled={disabled ?? !inTable}
         {...toolbarItemAttrs}
-        onClick={(e) => {
-          onClick?.(e);
-          if (!e.defaultPrevented) run(commands);
-        }}
+        onMouseDown={handleMouseDown(onMouseDown)}
+        onClick={handleClick(editor, () => run(commands), onClick)}
         {...props}
       >
         {children ?? label}
@@ -56,10 +56,11 @@ export interface InsertTableButtonProps extends TableButtonProps {
 /** Unlike every other atom here, InsertTable is never disabled by
  * `useTableState` (it's how you GET into a table in the first place). */
 export const InsertTable = /* @__PURE__ */ forwardRef<HTMLButtonElement, InsertTableButtonProps>(function InsertTable(
-  { asChild, children, onClick, rows = 3, cols = 3, headerRow, ...props },
+  { asChild, children, onClick, onMouseDown, rows = 3, cols = 3, headerRow, ...props },
   ref,
 ) {
   const commands = useCommands();
+  const editor = useEditor();
   const label = useContext(LabelsContext).tableInsertTable;
   const Comp = (asChild ? Slot : "button") as "button";
   return (
@@ -67,10 +68,8 @@ export const InsertTable = /* @__PURE__ */ forwardRef<HTMLButtonElement, InsertT
       ref={ref}
       type={asChild ? undefined : "button"}
       {...toolbarItemAttrs}
-      onClick={(e) => {
-        onClick?.(e);
-        if (!e.defaultPrevented) commands.insertTable(rows, cols, headerRow !== undefined ? { headerRow } : undefined);
-      }}
+      onMouseDown={handleMouseDown(onMouseDown)}
+      onClick={handleClick(editor, () => commands.insertTable(rows, cols, headerRow !== undefined ? { headerRow } : undefined), onClick)}
       {...props}
     >
       {children ?? label}
@@ -92,9 +91,10 @@ export const DeleteTable = /* @__PURE__ */ createTableButton((c) => c.deleteTabl
 // disabled even INSIDE a table when the current cell isn't actually merged).
 
 function createTableStateButton(disabledWhen: (s: ReturnType<typeof useTableState>) => boolean, run: (commands: ReturnType<typeof useCommands>) => void, labelKey: keyof Labels) {
-  return forwardRef<HTMLButtonElement, TableButtonProps>(function TableStateButton({ asChild, children, onClick, disabled, ...props }, ref) {
+  return forwardRef<HTMLButtonElement, TableButtonProps>(function TableStateButton({ asChild, children, onClick, onMouseDown, disabled, ...props }, ref) {
     const state = useTableState();
     const commands = useCommands();
+    const editor = useEditor();
     const label = useContext(LabelsContext)[labelKey];
     const Comp = (asChild ? Slot : "button") as "button";
     return (
@@ -103,10 +103,8 @@ function createTableStateButton(disabledWhen: (s: ReturnType<typeof useTableStat
         type={asChild ? undefined : "button"}
         disabled={disabled ?? disabledWhen(state)}
         {...toolbarItemAttrs}
-        onClick={(e) => {
-          onClick?.(e);
-          if (!e.defaultPrevented) run(commands);
-        }}
+        onMouseDown={handleMouseDown(onMouseDown)}
+        onClick={handleClick(editor, () => run(commands), onClick)}
         {...props}
       >
         {children ?? label}
@@ -127,9 +125,10 @@ export const MoveRowDown = /* @__PURE__ */ createTableStateButton((s) => !s.inTa
 export const MoveColumnLeft = /* @__PURE__ */ createTableStateButton((s) => !s.inTable || s.col <= 0, (c) => c.moveColumnLeft(), "tableMoveColumnLeft");
 export const MoveColumnRight = /* @__PURE__ */ createTableStateButton((s) => !s.inTable || s.col + s.colspan >= s.cols, (c) => c.moveColumnRight(), "tableMoveColumnRight");
 
-export const ToggleHeaderRow = /* @__PURE__ */ forwardRef<HTMLButtonElement, TableButtonProps>(function ToggleHeaderRow({ asChild, children, onClick, disabled, ...props }, ref) {
+export const ToggleHeaderRow = /* @__PURE__ */ forwardRef<HTMLButtonElement, TableButtonProps>(function ToggleHeaderRow({ asChild, children, onClick, onMouseDown, disabled, ...props }, ref) {
   const { inTable, headerRow } = useTableState();
   const commands = useCommands();
+  const editor = useEditor();
   const label = useContext(LabelsContext).tableHeaderRow;
   const Comp = (asChild ? Slot : "button") as "button";
   return (
@@ -140,10 +139,8 @@ export const ToggleHeaderRow = /* @__PURE__ */ forwardRef<HTMLButtonElement, Tab
       aria-pressed={headerRow}
       data-active={headerRow ? "" : undefined}
       {...toolbarItemAttrs}
-      onClick={(e) => {
-        onClick?.(e);
-        if (!e.defaultPrevented) commands.toggleHeaderRow();
-      }}
+      onMouseDown={handleMouseDown(onMouseDown)}
+      onClick={handleClick(editor, () => commands.toggleHeaderRow(), onClick)}
       {...props}
     >
       {children ?? label}

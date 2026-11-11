@@ -175,6 +175,200 @@ describe("@jul-editor/react", () => {
     expect(content?.[0]).toMatchObject({ marks: [{ type: "bold" }] });
   });
 
+  it("toolbar Bold at a collapsed caret shows pressed (stored mark), and Mod-b/caret moves keep it in sync", () => {
+    render(
+      <Editor defaultValue={{ version: 1, blocks: [
+        { id: "p1", type: "paragraph", props: {}, content: [{ type: "text", text: "hello" }] },
+        { id: "p2", type: "paragraph", props: {}, content: [{ type: "text", text: "world" }] },
+      ] }}>
+        <Editor.Toolbar>
+          <Editor.Bold />
+        </Editor.Toolbar>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    const editor = testEditor();
+    const caret = (blockId: string, offset: number) => ({ type: "text" as const, anchor: { blockId, offset }, focus: { blockId, offset } });
+    act(() => {
+      editor.update((tx) => tx.setSelection(caret("p1", 2)));
+    });
+    const bold = screen.getByRole("button", { name: "Bold" });
+    expect(bold.getAttribute("aria-pressed")).toBe("false");
+    act(() => bold.click());
+    expect(bold.getAttribute("aria-pressed")).toBe("true");
+    act(() => {
+      editor.update((tx) => tx.setSelection(caret("p2", 2)));
+    });
+    expect(bold.getAttribute("aria-pressed")).toBe("false");
+    act(() => {
+      editor.getRoot().dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, metaKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(bold.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("toolbar buttons prevent mousedown's default (focus stays in the editor)", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")}>
+        <Editor.Toolbar>
+          <Editor.Bold />
+          <Editor.Heading level={1} />
+          <Editor.BulletList />
+          <Editor.Undo />
+        </Editor.Toolbar>
+        <Editor.Content />
+      </Editor>,
+    );
+    for (const button of screen.getAllByRole("button")) {
+      const ev = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+      button.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(true);
+    }
+  });
+
+  it("a pointer click on a toolbar button hands focus back to the editor at its selection", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")}>
+        <Editor.Toolbar>
+          <Editor.Heading level={1} />
+        </Editor.Toolbar>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    const editor = testEditor();
+    const sel = { type: "text" as const, anchor: { blockId: "p1", offset: 3 }, focus: { blockId: "p1", offset: 3 } };
+    act(() => {
+      editor.update((tx) => tx.setSelection(sel));
+    });
+    const h1 = screen.getByRole("button", { name: "Heading 1" });
+    h1.focus();
+    act(() => {
+      h1.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    });
+    expect(editor.getDoc().blocks[0]?.type).toBe("heading");
+    expect(editor.getRoot().contains(document.activeElement)).toBe(true);
+    expect(editor.getState().selection).toEqual(sel);
+  });
+
+  it("clicking a pressed block-type button toggles the block back to a paragraph", () => {
+    render(
+      <Editor defaultValue={makeDoc("hello")}>
+        <Editor.Toolbar>
+          <Editor.Heading level={1} />
+          <Editor.BulletList />
+          <Editor.Quote />
+        </Editor.Toolbar>
+        <Editor.Content />
+        <Probe />
+      </Editor>,
+    );
+    const editor = testEditor();
+    act(() => {
+      editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 1 }, focus: { blockId: "p1", offset: 1 } }));
+    });
+    for (const name of ["Heading 1", "Bullet list", "Quote"]) {
+      const button = screen.getByRole("button", { name });
+      act(() => button.click());
+      expect(button.getAttribute("aria-pressed")).toBe("true");
+      act(() => button.click());
+      expect(button.getAttribute("aria-pressed")).toBe("false");
+      expect(editor.getDoc().blocks[0]?.type).toBe("paragraph");
+    }
+  });
+
+  it("heading button reflects the full selection when levels differ", () => {
+    const value = { version: 1 as const, blocks: [
+      { id: "a", type: "heading", props: { level: 1 }, content: [{ type: "text" as const, text: "one" }] },
+      { id: "b", type: "heading", props: { level: 2 }, content: [{ type: "text" as const, text: "two" }] },
+    ] };
+    render(<Editor defaultValue={value}><Editor.Toolbar><Editor.Heading level={1} /></Editor.Toolbar><Editor.Content /><Probe /></Editor>);
+    act(() => testEditor().update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "a", offset: 0 }, focus: { blockId: "b", offset: 3 } })));
+    expect(screen.getByRole("button", { name: "Heading 1" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("heading button reflects a selected heading block", () => {
+    const value = { version: 1 as const, blocks: [{ id: "a", type: "heading", props: { level: 2 }, content: [{ type: "text" as const, text: "one" }] }] };
+    render(<Editor defaultValue={value}><Editor.Toolbar><Editor.Heading level={2} /></Editor.Toolbar><Editor.Content /><Probe /></Editor>);
+    act(() => testEditor().update((tx) => tx.setSelection({ type: "block", ids: ["a"] })));
+    expect(screen.getByRole("button", { name: "Heading 2" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("toolbar roving focus includes custom buttons and skips disabled items", () => {
+    render(<Editor defaultValue={makeDoc("hello")}><Editor.Toolbar>
+      <button disabled>Unavailable</button><button>Custom</button><Editor.Bold />
+    </Editor.Toolbar><Editor.Content /></Editor>);
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+    buttons[1]!.focus();
+    act(() => buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(buttons[2]);
+    act(() => buttons[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(buttons[1]);
+  });
+
+  it("leaves input navigation keys and popover buttons outside toolbar roving", () => {
+    render(<Editor defaultValue={makeDoc("hello")}><Editor.Toolbar>
+      <button>Link</button><form><input aria-label="URL" /><button>Apply</button></form><Editor.Bold />
+    </Editor.Toolbar><Editor.Content /></Editor>);
+    const input = screen.getByRole("textbox", { name: "URL" });
+    input.focus();
+    act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true })));
+    expect(document.activeElement).toBe(input);
+    expect(screen.getByRole("button", { name: "Apply" }).getAttribute("tabindex")).toBeNull();
+  });
+
+  it("roves toolbar buttons when the editor is inside a form", () => {
+    render(<form><Editor defaultValue={makeDoc("hello")}><Editor.Toolbar><Editor.Bold /><Editor.Italic /></Editor.Toolbar><Editor.Content /></Editor></form>);
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("tabindex"))).toEqual(["0", "-1"]);
+  });
+
+  it("a press on a disabled toolbar button does not take focus from the editor", () => {
+    render(<Editor defaultValue={makeDoc("hello")}><Editor.Toolbar><button disabled><span>Unavailable</span></button><Editor.Bold /></Editor.Toolbar><Editor.Content /></Editor>);
+    const press = (target: Element) => {
+      const event = new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(press(screen.getByText("Unavailable"))).toBe(true);
+    expect(press(screen.getByRole("button", { name: "Bold" }))).toBe(false);
+  });
+
+  it("toolbar roving tabindex survives a re-render", () => {
+    const doc = makeDoc("hello");
+    const tree = (extra: string) => (
+      <Editor defaultValue={doc}>
+        <Editor.Toolbar data-extra={extra}>
+          <Editor.Bold />
+          <Editor.Italic />
+          <Editor.Strike />
+        </Editor.Toolbar>
+        <Editor.Content />
+        <Probe />
+      </Editor>
+    );
+    const { rerender } = render(tree("a"));
+    const editor = testEditor();
+    const buttons = screen.getAllByRole("button");
+    buttons[0]!.focus();
+    act(() => {
+      buttons[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+      buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+    expect(buttons.map((b) => b.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
+    // a commit that changes the active marks re-renders the toolbar atoms
+    act(() => {
+      editor.update((tx) => tx.setSelection({ type: "text", anchor: { blockId: "p1", offset: 0 }, focus: { blockId: "p1", offset: 5 } }));
+    });
+    act(() => {
+      editor.commands.toggleMark("bold");
+    });
+    expect(buttons[0]!.getAttribute("aria-pressed")).toBe("true");
+    rerender(tree("b")); // the parent re-renders the toolbar itself
+    expect(buttons.map((b) => b.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
+  });
+
   // Locale/labels flow into the toolbar atoms' visible text AND
   // aria-label default (both from the same resolved Labels key), and into
   // the toolbar's own default aria-label ("Formatting"/"서식").

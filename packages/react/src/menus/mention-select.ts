@@ -8,6 +8,10 @@ import type { MentionItem } from "./types.js";
 
 export function selectMentionItem(item: MentionItem, ctx: UseSuggestionSelectCtx): void {
   const { editor, range } = ctx;
+  // Code blocks hold plain text only: a mention there would be dropped by
+  // every exporter.
+  const type = editor.getState().store.records.get(range.blockId)?.type;
+  if (type && editor.getRegistry?.().blocks.get(type)?.content === "code") return;
   const content = [
     { type: "mention" as const, attrs: { kind: item.kind, id: item.id, label: item.label } },
     { type: "text" as const, text: " " },
