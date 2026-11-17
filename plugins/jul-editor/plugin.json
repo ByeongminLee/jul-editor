@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "jul-editor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Skill for building with JulEditor: install, compose the React editor, save documents, convert Markdown/HTML, add plugins, and style it.",
   "author": { "name": "Byeongmin Lee" },
   "homepage": "https://byeongminlee.github.io/jul-editor/",

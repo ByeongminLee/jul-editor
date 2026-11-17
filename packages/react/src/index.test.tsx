@@ -26,7 +26,7 @@ function testEditor(): NonNullable<ReturnType<typeof useEditor>> {
 
 describe("@jul-editor/react", () => {
   it("exposes a VERSION string (kept for the playground's existing demo page)", () => {
-    expect(VERSION).toBe("0.1.0");
+    expect(VERSION).toBe("0.2.0");
   });
 
   it("mounts Editor.Content and reflects the initial doc through useEditor()", () => {
