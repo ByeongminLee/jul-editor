@@ -5,7 +5,7 @@
 // headless hooks. See Editor.tsx/toolbar.tsx/hooks.ts for the pieces; this
 // file only assembles them.
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export { EditorContent, EditorPlugin } from "./editor.js";
 export { EditorView } from "./editor-view.js";

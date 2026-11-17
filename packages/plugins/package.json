@@ -1,6 +1,6 @@
 {
   "name": "@jul-editor/plugins",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Optional JulEditor plugins: chart, diagram, data table, code, code workspace and document diff.",
   "license": "MIT",
   "homepage": "https://byeongminlee.github.io/jul-editor/",

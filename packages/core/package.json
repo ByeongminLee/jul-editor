@@ -1,6 +1,6 @@
 {
   "name": "@jul-editor/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-agnostic core of JulEditor: document model, editing engine and Markdown/HTML serialization.",
   "license": "MIT",
   "homepage": "https://byeongminlee.github.io/jul-editor/",
